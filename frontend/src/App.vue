@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-// Reactive state for the input field and model output
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
 
-// Handler for the button click
 async function handleSubmit() {
   try {
     const response = await fetch('http://localhost:8000/llm/runLLM', {
@@ -16,7 +14,6 @@ async function handleSubmit() {
       body: JSON.stringify({ input_string: userInput.value }),
     })
     if (!response.ok) {
-      // <<< fixed: wrap the string in backticks
       throw new Error(`Request failed with status ${response.status}`)
     }
     const data = await response.json()
