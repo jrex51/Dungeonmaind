@@ -1,18 +1,34 @@
 import ollama
+import requests
+import os
+import json
 
+# In case of local development (not with docker), it may be necessary to change here ollama with localhost.
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
-def run_custom_model(prompt: str) -> str:
+def run_custom_model(chat_history: list[dict]) -> str:
     """
-    Placeholder for custom LLM.
+    Sends a chat history to the Ollama model and returns the assistant's reply.
     """
-    # TODO: integrate model here
-    # Initialize the Ollama client
-    client = ollama.Client()
+    try:
+        payload = {
+            "model": "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
+            "messages": chat_history,
+            "stream": False
+        }
 
-    # Define the model
-    model = "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M"
+        #print("Sending payload:", json.dumps(payload, indent=2))
 
-    # Send the query to the model
-    response = client.generate(model=model, prompt=prompt)
+        response = requests.post(f"{OLLAMA_URL}/api/chat", json=payload)
+        response.raise_for_status()
 
-    return f"[model output: {response.response}]"
+        result = response.json()
+        #print("Ollama response JSON:", result)
+
+        return result.get("message", {}).get("content", "[No content in response]")
+    except requests.exceptions.RequestException as e:
+        print("Ollama call failed:", e)
+        return "[Ollama API error]"
+    except Exception as e:
+        print("Unexpected error:", e)
+        return "[Unexpected backend error]"
