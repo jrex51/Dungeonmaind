@@ -3,8 +3,13 @@ import { ref } from 'vue'
 
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
+const isLoading = ref<boolean>(false)
 
 async function handleSubmit() {
+  if (isLoading.value) return // prevent spamming the button
+  isLoading.value = true
+  modelOutput.value = ''
+
   try {
     const response = await fetch('http://localhost:8000/llm/runLLM', {
       method: 'POST',
@@ -13,14 +18,25 @@ async function handleSubmit() {
       },
       body: JSON.stringify({ input_string: userInput.value }),
     })
-    if (!response.ok) {
+
+    if (!response.ok || !response.body) {
       throw new Error(`Request failed with status ${response.status}`)
     }
-    const data = await response.json()
-    modelOutput.value = data.output
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = decoder.decode(value, { stream: true })
+      modelOutput.value += chunk
+    }
   } catch (error) {
     console.error('Error calling LLM endpoint:', error)
     modelOutput.value = 'Error calling model'
+  } finally {
+    isLoading.value = false // 🔓 unlock after done
   }
 }
 </script>
@@ -29,8 +45,9 @@ async function handleSubmit() {
   <div class="container">
     <h1>Enter Your Text</h1>
     <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
-    <button @click="handleSubmit" class="submit-button">Submit</button>
-
+    <button @click="handleSubmit" class="submit-button" :disabled="isLoading">
+      {{ isLoading ? 'Loading...' : 'Submit' }}
+    </button>
     <div v-if="modelOutput" class="output">
       <h2>Model Output:</h2>
       <p>{{ modelOutput }}</p>
@@ -75,6 +92,7 @@ h1 {
 .submit-button:hover {
   background-color: #369f6e;
 }
+
 
 .output {
   padding: 1rem;
