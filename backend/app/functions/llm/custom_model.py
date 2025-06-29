@@ -1,4 +1,5 @@
 import ollama
+from app.settings.config import settings
 
 
 def run_custom_model(prompt: str) -> str:
@@ -10,7 +11,8 @@ def run_custom_model(prompt: str) -> str:
     client = ollama.Client()
 
     # Define the model
-    model = "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M"
+    #model = "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M"
+    model = settings.llm_model
 
     # Send the query to the model
     response = client.generate(model=model, prompt=prompt)
