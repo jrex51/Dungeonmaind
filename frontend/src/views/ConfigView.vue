@@ -46,7 +46,8 @@ async function submitSelection() {
       <option value="hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M">Phi4-3.8B</option>
       <option value="hf.co/bartowski/Qwen_Qwen3-1.7B-GGUF:Q5_K_M">Qwen3-1.7B</option>
       <option value="hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M">Gemma3-1B</option>
-      <option value="option4">Option 4</option>
+      <option value="hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M">Gemma3-12B</option>
+      <option value="option5">Option 5</option>
     </select>
 
     <button @click="submitSelection" class="done-button">Done</button>
