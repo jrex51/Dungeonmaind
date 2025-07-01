@@ -26,8 +26,6 @@ async function handleSubmit() {
     if (!response.ok || !response.body) {
       throw new Error(`Request failed with status ${response.status}`)
     }
-    const data = await response.json()
-    modelOutput.value = data.output
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
@@ -39,9 +37,9 @@ async function handleSubmit() {
     }
   } catch (error) {
     console.error('Error calling LLM endpoint:', error)
-    modelOutput.value = 'Error calling model'
+    modelOutput.value = 'Error calling model, error: ' + error
   } finally {
-    isLoading.value = false // 🔓 unlock after done
+    isLoading.value = false //  unlock after done
   }
 }
 </script>

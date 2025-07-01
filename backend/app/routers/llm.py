@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from app.base_models.llm_base_models import LLMRequest, LLMResponse
+from fastapi import APIRouter
+from app.base_models.llm_base_models import LLMRequest
 from app.functions.llm.custom_model import run_custom_model
 
 from fastapi.responses import StreamingResponse
@@ -8,7 +8,6 @@ router = APIRouter()
 
 chat_history = []
 
-#@router.post("/runLLM", response_model=
 @router.post("/runLLM")
 async def run_llm(request: LLMRequest):
     chat_history.append({"role": "user", "content": request.input_string})

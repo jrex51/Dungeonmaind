@@ -1,4 +1,7 @@
-import ollama
+import requests
+import os
+import json
+
 from app.settings.config import settings
 
 # The python script, will get the OLLAMA_URL = "http://ollama:11434" from the docker compose file, if docker is used.
@@ -12,14 +15,11 @@ def run_custom_model(chat_history: list[dict]) -> str:
     """
     try:
         payload = {
-            "model": "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
+            "model": settings.llm_model,
             "messages": chat_history,
             "stream": True
         }
 
-        print(chat_history)
-
-        #print("Sending payload:", json.dumps(payload, indent=2))
         with requests.post(f"{OLLAMA_URL}/api/chat", json=payload, stream=True) as response:
             response.raise_for_status()
             for line in response.iter_lines():
@@ -28,7 +28,6 @@ def run_custom_model(chat_history: list[dict]) -> str:
                         data = json.loads(line.decode("utf-8"))
                         content = data.get("message", {}).get("content")
                         if content:
-                            #print(content)
                             yield content
                     except json.JSONDecodeError:
                         yield "[Malformed JSON]"
