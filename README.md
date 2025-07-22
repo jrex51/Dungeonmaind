@@ -22,11 +22,11 @@ stellen können – und erhalten eine Antwort basierend auf echten Transkription
 ### ✅ Bereits umgesetzt
 - [x] Sprachaufnahme über das Frontend (in Arbeit)
 - [x] Transkription mittels WhisperX
-- [x] Speicherung transkribierter Texte in einer Vektordatenbank
+- [x] Speicherung transkribierter Texte in einer Datenbank
 - [x] Anbindung eines lokalen LLM zur Beantwortung von Fragen
 
 ### 🔜 Geplant
-- [ ] Intuitive Web-Oberfläche (Vue + TypeScript)
+- [ ] Intuitive Web-Oberfläche (Vue + TypeScript) - teilweise umgesetzt
 - [ ] Export- und Archivierungsfunktion für Kampagnen
 - [ ] Offline-Modus für Laptops/Tablets auf Spieltischen
 - [ ] Charakter-, Ort- und Ereignis-Tracking
