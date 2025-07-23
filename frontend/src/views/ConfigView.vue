@@ -3,11 +3,18 @@ import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const STORAGE_KEY = 'selectedLLM'
-const selectedLLM = ref(localStorage.getItem(STORAGE_KEY) || 'hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M')
+const LLM_STORAGE_KEY = 'selectedLLM'
+const TRANSCRIPTION_STORAGE_KEY = 'transcriptionModel'
+const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || 'hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M')
+const selectedTranscriptionModel = ref(localStorage.getItem(TRANSCRIPTION_STORAGE_KEY) || 'base')
+const clearChat = ref(false)
 
 watch(selectedLLM, (newVal) => {
-  localStorage.setItem(STORAGE_KEY, newVal)
+  localStorage.setItem(LLM_STORAGE_KEY, newVal)
+})
+
+watch(selectedTranscriptionModel, (newVal) => {
+  localStorage.setItem('transcriptionModel', newVal)
 })
 
 function goHome() {
@@ -22,7 +29,9 @@ async function submitSelection() {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ selected_LLM: selectedLLM.value })
+      body: JSON.stringify({ selected_LLM: selectedLLM.value,
+        transcription_model: selectedTranscriptionModel.value,
+        clear_chat: clearChat.value })
     })
 
     if (!response.ok) {
@@ -49,6 +58,23 @@ async function submitSelection() {
       <option value="hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M">Gemma3-12B</option>
       <option value="option5">Option 5</option>
     </select>
+
+    <hr style="margin: 1rem 0" />
+
+    <label for="transModel">Choose Transcription Model:</label>
+    <select id="transModel" v-model="selectedTranscriptionModel">
+      <option value="base">Base</option>
+      <option value="medium">Medium</option>
+    </select>
+
+    <hr style="margin: 1rem 0" />
+
+    <label>
+      <input type="checkbox" v-model="clearChat" />
+      Clear Chat History
+    </label>
+
+    <hr style="margin: 1rem 0" />
 
     <button @click="submitSelection" class="done-button">Done</button>
   </div>

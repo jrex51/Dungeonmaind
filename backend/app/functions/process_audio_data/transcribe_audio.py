@@ -11,6 +11,8 @@ import torch
 import whisperx
 import tempfile
 
+from app.core.config import settings
+
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
     #set default device to GPU
@@ -22,7 +24,7 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
     # 1. Load the model
     print("Loading WhisperX")
-    model = whisperx.load_model("base", device, compute_type=compute_type)
+    model = whisperx.load_model(settings.transcription_model, device, compute_type=compute_type)
     # save model to local path (optional)
     # model_dir = "/path/"
     # model = whisperx.load_model("large-v2", device, compute_type=compute_type, download_root=model_dir)

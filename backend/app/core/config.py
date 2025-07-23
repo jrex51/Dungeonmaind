@@ -31,5 +31,11 @@ class Settings(BaseSettings):
         description="The default LLM model used by the backend"
     )
 
+    transcription_model: str = Field(
+        default="base",
+        validation_alias="TRANSCRIPTION_MODEL",
+        description="Transcription model (base or medium)"
+    )
+
 
 settings = Settings()

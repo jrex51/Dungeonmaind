@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
-from app.settings.config import settings
+from app.core.config import settings
 from app.routers import root, llm, process_audio_data, config_router
 
 # List of available api endpoints
