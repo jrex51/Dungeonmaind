@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { SERVER_CONFIG } from '../config/config'
 
 const router = useRouter()
 const userInput = ref<string>('')
@@ -28,7 +29,7 @@ async function handleLLMQuestionSubmit() {
   modelOutput.value = ''
 
   try {
-    const response = await fetch('http://localhost:8000/llm/runLLM', {
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -65,7 +66,7 @@ async function handleAudioUpload() {
   formData.append('audio', selectedAudioFile.value)
 
   try {
-    const response = await fetch('http://localhost:8000/processAudioData/transcribeAudioFile', {
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
       method: 'POST',
       body: formData,
     })
@@ -134,25 +135,25 @@ function playRecording(){
 
 async function transcribeRecording() {
   if (!audioChunks.value.length){
-  audioUploadStatus.value = 'No audio to transcribe !'
-  return
-}
+    audioUploadStatus.value = 'No audio to transcribe !'
+    return
+  }
 
-const audioBlob = new Blob(audioChunks.value,{type: 'audio/wav'})
-const formData = new FormData()
-formData.append('audio', audioBlob, 'recording.wav')
+  const audioBlob = new Blob(audioChunks.value,{type: 'audio/wav'})
+  const formData = new FormData()
+  formData.append('audio', audioBlob, 'recording.wav')
 
-try {
-  const response = await fetch('http://localhost:8000/processAudioData/transcribeAudioFile',{
-  method: 'POST',
-  body: formData
-})
+  try {
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,{
+      method: 'POST',
+      body: formData
+    })
 
-if (!response.ok){
-  throw new Error(`Transcription failed with status ${response.status}`)
-}
+    if (!response.ok){
+      throw new Error(`Transcription failed with status ${response.status}`)
+    }
 
-const result = await response.json()
+    const result = await response.json()
     audioUploadStatus.value = `Transcription: ${result.message || 'Success'}`
   } catch (error) {
     console.error('Transcription error:', error)
@@ -208,7 +209,7 @@ const result = await response.json()
 
     <h1>Upload Audio File</h1>
     <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
-    <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
+    <button @click="handleAudioUpload" class="submit-button">Transcribe Audio</button>
 
     <div v-if="audioUploadStatus" class="output">
       <p>{{ audioUploadStatus }}</p>

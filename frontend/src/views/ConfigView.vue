@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { SERVER_CONFIG, LLM_OPTIONS, DEFAULT_LLM, TRANSCRIPTION_MODELS, DEFAULT_TRANSCRIPTION_MODEL } from '@/config/config'
 
 const router = useRouter()
 const LLM_STORAGE_KEY = 'selectedLLM'
 const TRANSCRIPTION_STORAGE_KEY = 'transcriptionModel'
-const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || 'hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M')
-const selectedTranscriptionModel = ref(localStorage.getItem(TRANSCRIPTION_STORAGE_KEY) || 'base')
+const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || DEFAULT_LLM)
+const selectedTranscriptionModel = ref(localStorage.getItem(TRANSCRIPTION_STORAGE_KEY) || DEFAULT_TRANSCRIPTION_MODEL)
 const clearChat = ref(false)
 
 watch(selectedLLM, (newVal) => {
@@ -24,7 +25,7 @@ function goHome() {
 async function submitSelection() {
   goHome()
   try {
-    const response = await fetch('http://localhost:8000/config/changeConfig', {
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.CHANGE_CONFIG}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -38,7 +39,7 @@ async function submitSelection() {
       throw new Error(`Request failed with status ${response.status}`)
     }
 
-    console.log('Auswahl erfolgreich gesendet:', selectedLLM.value)
+    console.log('Configuration successfully submitted:', selectedLLM.value)
   } catch (error) {
     console.error('Error calling LLM endpoint:', error)
   }
@@ -52,19 +53,18 @@ async function submitSelection() {
 
     <label for="selection">Choose an LLM:</label>
     <select id="selection" v-model="selectedLLM">
-      <option value="hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M">Phi4-3.8B</option>
-      <option value="hf.co/bartowski/Qwen_Qwen3-1.7B-GGUF:Q5_K_M">Qwen3-1.7B</option>
-      <option value="hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M">Gemma3-1B</option>
-      <option value="hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M">Gemma3-12B</option>
-      <option value="option5">Option 5</option>
+      <option v-for="llm in LLM_OPTIONS" :key="llm.value" :value="llm.value">
+        {{ llm.label }}
+      </option>
     </select>
 
     <hr style="margin: 1rem 0" />
 
     <label for="transModel">Choose Transcription Model:</label>
     <select id="transModel" v-model="selectedTranscriptionModel">
-      <option value="base">Base</option>
-      <option value="medium">Medium</option>
+      <option v-for="model in TRANSCRIPTION_MODELS" :key="model.value" :value="model.value">
+        {{ model.label }}
+      </option>
     </select>
 
     <hr style="margin: 1rem 0" />
