@@ -19,6 +19,8 @@ const audioChunks = ref<Blob[]>([])
 const recordedAudioURL = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
 
+const diceResult = ref<string>('')
+
 function goToConfig() {
   router.push('/config')
 }
@@ -161,6 +163,11 @@ async function transcribeRecording() {
   }
 }
 
+function rollDice(sides: number) {
+  const result = Math.floor(Math.random() * sides) + 1
+  diceResult.value = `W${sides} → ${result}`
+}
+
 </script>
 
 <template>
@@ -213,6 +220,19 @@ async function transcribeRecording() {
 
     <div v-if="audioUploadStatus" class="output">
       <p>{{ audioUploadStatus }}</p>
+    </div>
+
+    <div class="dice-widget">
+      <div class="dice-buttons">
+      <button @click="rollDice(4)" class="dice-button">W4</button>
+      <button @click="rollDice(6)" class="dice-button">W6</button>
+      <button @click="rollDice(8)" class="dice-button">W8</button>
+      <button @click="rollDice(12)" class="dice-button">W12</button>
+      <button @click="rollDice(20)" class="dice-button">W20</button>
+      </div>
+      <div class="dice-result" v-if="diceResult">
+      {{ diceResult }}
+      </div>
     </div>
   </div>
 </template>
@@ -301,5 +321,46 @@ h2 {
   background-color: #f9f9f9;
   border-radius: 4px;
   border: 1px solid #eee;
+}
+
+.dice-widget {
+  position: fixed;
+  bottom: 240px;
+  right: 160px;
+  background-color: white;
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  width: 320px;
+}
+
+.dice-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.dice-button {
+  flex: 1 0 30%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  background-color: #42b983;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dice-button:hover {
+  background-color: #369f6e;
+}
+
+.dice-result {
+  margin-top: 1rem;
+  text-align: center;
+  font-weight: bold;
 }
 </style>
