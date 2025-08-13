@@ -81,31 +81,62 @@ async function submitSelection() {
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+
 .config-page {
   max-width: 600px;
-  margin: 2rem auto;
-  padding: 1rem;
+  margin: 80px auto 2rem auto; /* leave room for header */
+  padding: 2rem;
+  background-color: rgba(163, 148, 95, 0.8); /* parchment look */
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 600;
+  font-size: 1.2rem;
+  color: #392401;
   text-align: center;
+  box-sizing: border-box;
+}
+
+label, 
+option,
+input[type="checkbox"] + label {
+  font-weight: 600;
+  font-size: 1.1rem;
+  font-family: 'MedievalSharp', cursive;
 }
 
 select {
   margin-top: 1rem;
-  padding: 0.5rem;
-  font-size: 1rem;
+  padding: 0.75rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 600;
+  font-size: 1.1rem;
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #695710;
+  background-color: #f1e6b4;
+  color: #4c3e06;
+  box-sizing: border-box;
 }
 
 .done-button {
   margin-top: 2rem;
   padding: 0.75rem 1.5rem;
+  font-family: 'MedievalSharp';
+  font-weight: bold; 
+  font-weight: 400;
   font-size: 1rem;
-  background-color: #42b983;
+  background-color: #b74d30;
   color: white;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid #8e7513;
+  border-radius: 10px;
   cursor: pointer;
+  
 }
 
 .done-button:hover {
-  background-color: #369f6e;
+  background-color: #7e6f34;
 }
 </style>
+

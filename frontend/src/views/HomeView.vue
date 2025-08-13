@@ -173,71 +173,99 @@ function rollDice(sides: number) {
 <template>
   <div class="container">
 
-     <div class="header">
-       <div class="header-left"></div>
-       <h1>Dungeonmaind</h1>
-       <button class="config-button" @click="goToConfig">Config</button>
+    <div class="header">
+      <div class="header-left"></div>
+      <h1>Dungeonmaind</h1>
+      <button class="config-button" @click="goToConfig">Config</button>
     </div>
 
-    <h2>Enter Your Text</h2>
-    <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
-    <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
-      {{ isLoading ? 'Loading...' : 'Submit' }}
-    </button>
-    <div v-if="modelOutput" class="output">
-      <h3>Model Output:</h3>
-      <p>{{ modelOutput }}</p>
-    </div>
-
-    <hr style="margin: 2rem 0" />
-
-    <h1> Record Using Microphone</h1>
-    <button @click="startRecording" v-if="!isRecording" class="submit-button"> Start Recording </button>
-    <button @click="stopRecording" v-if="isRecording" class="submit-button"> Stop Recording </button>
-
-    <div v-if="isRecording" class = "output">
-      <p> Recording in progress </p>
-    </div>
-
-    <div v-if="micPermissionStatus" class = "output">
-      <p>{{ micPermissionStatus }} </p>
-    </div>
-
-    <div v-if="recordedAudioURL" class = "output">
-      <p>Recording completed </p>
-    </div>
-
-    <div v-if="recordedAudioURL" class = "play-button">
-      <button @click="playRecording" class="submit-button"> Play Recording </button>
-      <button @click="transcribeRecording" class="submit-button"> Transcribe Recording </button>
-    </div>
-
-    <hr style="margin: 2rem 0" />
-
-    <h1>Upload Audio File</h1>
-    <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
-    <button @click="handleAudioUpload" class="submit-button">Transcribe Audio</button>
-
-    <div v-if="audioUploadStatus" class="output">
-      <p>{{ audioUploadStatus }}</p>
-    </div>
-
-    <div class="dice-widget">
-      <div class="dice-buttons">
-      <button @click="rollDice(4)" class="dice-button">W4</button>
-      <button @click="rollDice(6)" class="dice-button">W6</button>
-      <button @click="rollDice(8)" class="dice-button">W8</button>
-      <button @click="rollDice(12)" class="dice-button">W12</button>
-      <button @click="rollDice(20)" class="dice-button">W20</button>
+    <div class="centered-content">
+      <div class="content-section">
+        <h2>Enter Your Text</h2>
+        <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
+        <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
+          {{ isLoading ? 'Loading...' : 'Submit' }}
+        </button>
+        <div v-if="modelOutput" class="output">
+          <h3>Model Output:</h3>
+          <p>{{ modelOutput }}</p>
+        </div>
       </div>
-      <div class="dice-result" v-if="diceResult">
-      {{ diceResult }}
+
+      <hr style="margin: 2rem 0" />
+
+      <div class="content-section">
+        <h2> Record Using Microphone</h2>
+        <button @click="startRecording" v-if="!isRecording" class="submit-button"> Start Recording </button>
+        <button @click="stopRecording" v-if="isRecording" class="submit-button"> Stop Recording </button>
+
+        <div v-if="isRecording" class="output">
+          <p> Recording in progress </p>
+        </div>
+
+        <div v-if="micPermissionStatus" class="output">
+          <p>{{ micPermissionStatus }} </p>
+        </div>
+
+        <div v-if="recordedAudioURL" class="output">
+          <p>Recording completed </p>
+        </div>
+
+        <div v-if="recordedAudioURL" class="play-button">
+          <button @click="playRecording" class="submit-button"> Play Recording </button>
+          <button @click="transcribeRecording" class="submit-button"> Transcribe Recording </button>
+        </div>
       </div>
-    </div>
-  </div>
+
+      <hr style="margin: 2rem 0" />
+
+      <div class="content-section">
+        <h2>Upload Audio File</h2>
+        <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
+        <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
+
+        <div v-if="audioUploadStatus" class="output">
+          <p>{{ audioUploadStatus }}</p>
+        </div>
+      </div> <!-- Close content-section before dice-widget -->
+
+      <div class="dice-widget">
+        <div class="dice-buttons">
+          <button @click="rollDice(4)" class="dice-button">W4</button>
+          <button @click="rollDice(6)" class="dice-button">W6</button>
+          <button @click="rollDice(8)" class="dice-button">W8</button>
+          <button @click="rollDice(12)" class="dice-button">W12</button>
+          <button @click="rollDice(20)" class="dice-button">W20</button>
+        </div>
+        <div class="dice-result" v-if="diceResult">
+          {{ diceResult }}
+        </div>
+      </div>
+    </div> <!-- Close centered-content -->
+  </div> <!-- Close container -->
 </template>
 
+
+<!-- This block essential for full-page background -->
+<style>
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('/bg-texture.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-color: rgba(160, 122, 57, 0.95);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+</style>
+
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+
 .container {
   max-width: 600px;
   margin: 2rem auto;
@@ -245,6 +273,7 @@ function rollDice(sides: number) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  max-height: 90vh; /* limits height to viewport height minus some margin */
 }
 
 .header {
@@ -252,88 +281,168 @@ function rollDice(sides: number) {
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
-  background-color: #35495e;
+  height: 50px;
+  background-color: rgba(160, 122, 57, 0.95);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 1rem;
   box-sizing: border-box;
-  color: white;
+  color: #e0d5b7;
   z-index: 1000;
-  gap: 100px;
 }
 
+.centered-content {
+  background-color: rgba(163, 148, 95, 0.8);
+  padding: 2rem;
+  border-radius: 8px;
+  max-width: 600px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+}
 
 .config-button {
   position: absolute;
   right: 1rem;
   padding: 0.5rem 1rem;
-  background-color: #35495e;
-  border: none;
+  background-color: rgba(53, 73, 94, 0.9);
+  border: 1px solid #4a575e;
   border-radius: 4px;
   color: white;
   cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: normal; 
   z-index: 1001;
+  transition: background-color 0.3s ease;
 }
 
 .config-button:hover {
-  background-color: #2c3e50;
+  background-color: #4a575e;
 }
 
-h2 {
-  margin-bottom: 1rem;
+.content-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+h1 {
+  color: #392401;
   text-align: center;
+  padding-top: 20px;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder; 
+}
+
+
+h2 {
+  color: #392401;
+  text-align: center;
+  margin-top: 0;
+  font-size: x-large;
+  margin-bottom: 1.5rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder; 
+}
+
+hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid rgba(94, 80, 53, 0.5);
+  margin: 2rem 0;
 }
 
 .input-field {
-  padding: 0.5rem;
+  padding: 0.75rem;
   font-size: 1rem;
   margin-bottom: 1rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  border: 1px solid #695710;
+  border-radius: 10px;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder; 
+  background-color: #f1e6b4;
+  
+  color: #4c3e06;
+  width: 90%;
+  box-sizing: border-box;
 }
 
 .submit-button {
-  padding: 0.75rem;
+  padding: 0.75rem 1.5rem;
   font-size: 1rem;
-  background-color: #42b983;
+  background-color: #b74d30;
   color: white;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid #8e7513;
+  border-radius: 10px;
   cursor: pointer;
   margin-bottom: 1rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: normal; 
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
 }
 
-.submit-button:hover {
-  background-color: #369f6e;
+.submit-button:hover:not(:disabled) {
+  background-color: #7e6f34;
+  transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .play-button {
   display: flex;
   justify-content: center;
   margin-top: 1rem;
-  gap: 25px
+  gap: 1rem;
 }
 
 .output {
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
   padding: 1rem;
-  background-color: #f9f9f9;
-  border-radius: 4px;
-  border: 1px solid #eee;
+  margin-top: 1rem;
+  background-color: rgba(110, 97, 50, 0.7);
+  color: white;
+  border-radius: 10px;
+  border: 1px solid #000000;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bold; 
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.output p {
+  margin: 0;
+}
+
+.output h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #f1e6b4;
 }
 
 .dice-widget {
   position: fixed;
-  bottom: 240px;
-  right: 160px;
-  background-color: white;
-  border: 2px solid #ccc;
-  border-radius: 12px;
+  right: 25%;
+  top: 43%;
+  transform: translateX(20%);
+  background-color: rgba(163, 148, 95, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
   padding: 1.5rem;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
-  z-index: 1001;
-  width: 320px;
+  width: 300px;
+  margin-left: 2rem;
+  z-index: 100;
+  font-family: 'MedievalSharp', cursive;
+  color: #392401;
 }
 
 .dice-buttons {
@@ -347,7 +456,7 @@ h2 {
   flex: 1 0 30%;
   padding: 0.75rem;
   font-size: 1rem;
-  background-color: #42b983;
+  background-color: #b74d30;
   color: white;
   border: none;
   border-radius: 6px;
