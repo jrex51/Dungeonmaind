@@ -1,13 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
+import LoginView from '@/views/LoginView.vue'
+import { useSessionStore } from '@/stores/session.ts'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
+      name: 'login',
+      component: LoginView,
+    },
+    {
+      path: '/home',
       name: 'home',
       component: HomeView,
+      meta: { requiresAuth: true },
     },
     {
       path: '/about',
@@ -23,6 +31,16 @@ const router = createRouter({
       component: () => import('../views/ConfigView.vue'),
     },
   ],
-})
+});
+
+router.beforeEach((to) => {
+  const store = useSessionStore();
+  if (to.meta.requiresAuth && !store.currentPlayer) {
+    return { name: "login" };
+  }
+  if (to.name === "login" && store.currentPlayer) {
+    return { name: "home" };
+  }
+});
 
 export default router

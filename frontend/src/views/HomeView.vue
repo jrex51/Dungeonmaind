@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
+import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 
 const router = useRouter()
+const store = useSessionStore()
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
 const isLoading = ref<boolean>(false)
+let socket: WebSocket;
 
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
@@ -23,6 +27,49 @@ function goToConfig() {
   router.push('/config')
 }
 
+// socket = new WebSocket(wsUrl(SERVER_CONFIG.BASE_URL, SERVER_CONFIG.ENDPOINTS.WS_PLAYERS));
+// socket.onmessage = (ev) => console.log("WS", ev.data);
+
+onMounted(() => {
+  socket = new WebSocket(wsUrl(
+    SERVER_CONFIG.BASE_URL,
+    SERVER_CONFIG.ENDPOINTS.WS_PLAYERS
+  ));
+
+  socket.onopen = () => {
+    store.loadPlayers();        // ← holt die IST-Spielerliste
+  };
+
+  socket.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "join") {
+      // Duplizate vermeiden:
+      if (!store.players.some(p => p.id === msg.player.id)) {
+        store.players.push(msg.player);
+      }
+    } else if (msg.type === "leave") {
+      store.players = store.players.filter(
+        p => p.id !== msg.player_id
+      );
+    }
+  };
+});
+
+onUnmounted(() => socket?.close());
+
+function wsUrl(baseHttpUrl: string, path: string): string {
+  const u = new URL(baseHttpUrl);                 // http://192.168.1.5:8000
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";  // → ws://…
+  u.pathname = path.startsWith("/") ? path : `/${path}`;  // /ws/players
+  return u.toString();                            // ws://192.168.1.5:8000/ws/players
+}
+
+
+async function onLeave() {
+  await store.leave();
+  router.push({ name: "login" });
+}
+
 async function handleLLMQuestionSubmit() {
   if (isLoading.value) return // prevent spamming the button
   isLoading.value = true
@@ -31,10 +78,11 @@ async function handleLLMQuestionSubmit() {
   try {
     const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({input_string: userInput.value}),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        player_id: store.currentPlayer?.id,
+        input_string: userInput.value
+      }),
     })
     if (!response.ok || !response.body) {
       throw new Error(`Request failed with status ${response.status}`)
@@ -172,6 +220,20 @@ async function transcribeRecording() {
        <button class="config-button" @click="goToConfig">Config</button>
     </div>
 
+    <section>
+      <h2>Hallo, {{ store.currentPlayer?.name }}!</h2>
+      <p v-if="store.isLeader">Du bist Leader.</p>
+
+      <button @click="onLeave">Verlassen</button>
+
+      <h3>Spieler</h3>
+      <ul>
+        <li v-for="p in store.players" :key="p.id">
+          {{ p.name }} ({{ p.role }})
+        </li>
+      </ul>
+    </section>
+
     <h2>Enter Your Text</h2>
     <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
     <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
@@ -214,6 +276,7 @@ async function transcribeRecording() {
     <div v-if="audioUploadStatus" class="output">
       <p>{{ audioUploadStatus }}</p>
     </div>
+
   </div>
 </template>
 

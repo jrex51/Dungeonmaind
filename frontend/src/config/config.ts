@@ -2,9 +2,11 @@
 export const SERVER_CONFIG = {
   BASE_URL: 'http://localhost:8000',
   ENDPOINTS: {
-    RUN_LLM: '/llm/runLLM',
+    RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
     CHANGE_CONFIG: '/config/changeConfig',
+    CHECK_CONNECTION: '/health/checkConnection',
+    WS_PLAYERS: '/ws/players',
   },
 }
 
