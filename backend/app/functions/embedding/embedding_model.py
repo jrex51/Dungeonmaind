@@ -37,7 +37,6 @@ def embedd_text(embedding_text: list, persist_directory="./chroma_db"):
 
     print(f"Saved {len(documents)} documents to Chroma at '{persist_directory}'")
 
-
 def embedding_search(query: str, persist_directory="./chroma_db", top_k=5):
     embedding_model = SentenceTransformerEmbeddings(
         model_name="all-MiniLM-L6-v2"
