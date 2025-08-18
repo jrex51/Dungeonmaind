@@ -15,6 +15,8 @@ import os
 from app.functions.embedding.embedding_model import embedd_text
 
 
+from app.core.config import settings
+
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
     model_dir = os.getenv("WHISPERX_MODELS_DIR", None)
@@ -39,8 +41,9 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
         download_root=model_dir  # If None, uses default HF cache
     )
     # 1. Load the model
-    #print("Loading WhisperX")
-    #model = whisperx.load_model("base", device, compute_type=compute_type)
+
+    print("Loading WhisperX")
+    model = whisperx.load_model(settings.transcription_model, device, compute_type=compute_type)
     # save model to local path (optional)
     # model_dir = "/path/"
     # model = whisperx.load_model("large-v2", device, compute_type=compute_type, download_root=model_dir)
@@ -63,9 +66,20 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
     result_a = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
     print(result_a["segments"])
+    # 3. Assign speaker labels
 
     texts = [segment['text'] for segment in result_a["segments"]]
     embedd_text(texts)
 
+    #created a HF token and then added it
+    diarize_model = whisperx.diarize.DiarizationPipeline(use_auth_token="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", device=device)
 
-    return result_a["segments"]
+    # add min/max number of speakers if known
+    diarize_segments = diarize_model(audio)
+    # diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
+
+    result_b = whisperx.assign_word_speakers(diarize_segments, result_a)
+    print(diarize_segments)
+    print(result_b["segments"]) # segments are now assigned speaker IDs
+
+    return result_b["segments"]

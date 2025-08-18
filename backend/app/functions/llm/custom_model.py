@@ -2,7 +2,7 @@ import requests
 import os
 import json
 
-from app.settings.config import settings
+from app.core.config import settings
 
 
 # The python script, will get the OLLAMA_URL = "http://ollama:11434" from the docker compose file, if docker is used.
