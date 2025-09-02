@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException, status
 from uuid import UUID
-from app.domain.store import SingleGroupStore
 from app.base_models.schemas import PlayerIn, PlayerOut, GroupStateOut
 from app.domain.models import Role as DomainRole
 from app.domain.store import store
@@ -31,9 +30,11 @@ async def join(payload: PlayerIn):
             }
         })
     except ValueError as e:
-        # Regelverletzung: 400 (oder 409 falls Name/Leader schon vergeben)
+        # Regelverletzung: 400 (oder 409, falls Name/Leader schon vergeben)
         detail = str(e)
-        code = status.HTTP_409_CONFLICT if "exists" in detail.lower() or "taken" in detail.lower() or "full" in detail.lower() else status.HTTP_400_BAD_REQUEST
+        print(detail)
+        print(detail.__contains__("Group role"))
+        code = status.HTTP_409_CONFLICT if "group size" in detail.lower() or "group role" in detail.lower() or "player name" in detail.lower() else status.HTTP_400_BAD_REQUEST
         raise HTTPException(code, detail=detail)
     return PlayerOut(**player.__dict__)
 

@@ -11,7 +11,6 @@ const router = useRouter();
 
 // --- Logik für checkConnection ---
 
-// const router = useRouter()
 type Status = "idle" | "checking" | "ok" | "error";
 
 // checkConnection
@@ -76,8 +75,8 @@ const serverError = ref("");
 // einfache Validierung für den Namen
 const nameError = computed(() => {
   const n = playerName.value.trim();
-  if (n.length === 0) return "Bitte einen Namen eintragen.";
-  if (n.length < 2) return "Name muss mindestens 2 Zeichen haben."
+  if (n.length === 0) return "Please enter a name.";
+  if (n.length < 2) return "Your name must be at least 2 characters."
   return "";
 });
 
@@ -91,14 +90,37 @@ async function onSubmit(e: Event) {
   if (result.ok) setApiBaseFromInput(baseUrl.value);
   touched.value = true;
 
-  if (!canSubmit.value ||!role.value) return;
+  if (!canSubmit.value || !role.value) return;
 
   submitting.value = true;
   try {
     await store.join(playerName.value.trim(), role.value);
     await router.push({ name: "home" });
-  } catch (err) {
-    serverError.value = err instanceof Error ? err.message : String(err);
+  } catch (err: any) {
+    console.error("Join error:", err);
+
+  if (err?.response) {
+    // Axios-Format
+    const data = err.response.data;
+    serverError.value =
+      typeof data === "object" && data.detail
+        ? data.detail
+        : JSON.stringify(data);
+  } else if (err instanceof Error) {
+    try {
+      // versuchen JSON aus err.message zu parsen
+      const data = JSON.parse(err.message);
+      serverError.value =
+        typeof data === "object" && data.detail
+          ? data.detail
+          : err.message;
+    } catch {
+      // fallback: plain Error message
+      serverError.value = err.message;
+    }
+    } else {
+      serverError.value = String(err);
+    }
   } finally {
     submitting.value = false;
   }
@@ -171,6 +193,7 @@ async function onSubmit(e: Event) {
         autocomplete="name"
         />
       <p v-if="touched && nameError" class="error">{{ nameError }}</p>
+      <p v-if="serverError" class="error">{{ serverError }}</p>
 
       <!-- 3) Beitreten -->
       <button type="submit" :disabled="!canSubmit || submitting">

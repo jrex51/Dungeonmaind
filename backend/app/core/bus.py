@@ -1,4 +1,4 @@
-# Methode um das frontend bei Updates im Backend zu aktualisieren (vor allem wenn sich gruppenmitglieder ändern)
+# Methode um das frontend bei Updates im Backend zu aktualisieren (vor allem, wenn sich gruppenmitglieder ändern)
 
 import asyncio, json
 

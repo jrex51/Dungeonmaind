@@ -234,7 +234,7 @@ async function transcribeRecording() {
       </ul>
     </section>
 
-    <h2>Enter Your Text</h2>
+    <h2>Ask Something about the DnD-Session</h2>
     <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
     <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
       {{ isLoading ? 'Loading...' : 'Submit' }}
@@ -244,38 +244,43 @@ async function transcribeRecording() {
       <p>{{ modelOutput }}</p>
     </div>
 
-    <hr style="margin: 2rem 0" />
+    <!-- Nur Leader sieht das -->
+    <div v-if="store.isLeader">
 
-    <h1> Record Using Microphone</h1>
-    <button @click="startRecording" v-if="!isRecording" class="submit-button"> Start Recording </button>
-    <button @click="stopRecording" v-if="isRecording" class="submit-button"> Stop Recording </button>
+      <hr style="margin: 2rem 0" />
 
-    <div v-if="isRecording" class = "output">
-      <p> Recording in progress </p>
+      <h1> Record Using Microphone</h1>
+      <button @click="startRecording" v-if="!isRecording" class="submit-button"> Start Recording </button>
+      <button @click="stopRecording" v-if="isRecording" class="submit-button"> Stop Recording </button>
+
+      <div v-if="isRecording" class = "output">
+        <p> Recording in progress </p>
+      </div>
+
+      <div v-if="micPermissionStatus" class = "output">
+        <p>{{ micPermissionStatus }} </p>
+      </div>
+
+      <div v-if="recordedAudioURL" class = "output">
+        <p>Recording completed </p>
+      </div>
+
+      <div v-if="recordedAudioURL" class = "play-button">
+        <button @click="playRecording" class="submit-button"> Play Recording </button>
+        <button @click="transcribeRecording" class="submit-button"> Transcribe Recording </button>
+      </div>
+
+      <hr style="margin: 2rem 0" />
+
+      <h1>Upload Audio File</h1>
+      <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
+      <button @click="handleAudioUpload" class="submit-button">Transcribe Audio</button>
+
+      <div v-if="audioUploadStatus" class="output">
+        <p>{{ audioUploadStatus }}</p>
+      </div>
     </div>
-
-    <div v-if="micPermissionStatus" class = "output">
-      <p>{{ micPermissionStatus }} </p>
-    </div>
-
-    <div v-if="recordedAudioURL" class = "output">
-      <p>Recording completed </p>
-    </div>
-
-    <div v-if="recordedAudioURL" class = "play-button">
-      <button @click="playRecording" class="submit-button"> Play Recording </button>
-      <button @click="transcribeRecording" class="submit-button"> Transcribe Recording </button>
-    </div>
-
-    <hr style="margin: 2rem 0" />
-
-    <h1>Upload Audio File</h1>
-    <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
-    <button @click="handleAudioUpload" class="submit-button">Transcribe Audio</button>
-
-    <div v-if="audioUploadStatus" class="output">
-      <p>{{ audioUploadStatus }}</p>
-    </div>
+    <!-- Ende Leader-Bereich -->
 
   </div>
 </template>

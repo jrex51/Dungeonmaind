@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import secrets
-import string
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Optional
@@ -65,7 +63,7 @@ class Group:
         if role is Role.leader and self.leader_id() is not None:
             raise ValueError(f"Group role 'leader' already exists")
         if self.has_name(name):
-            raise ValueError(f"Group name '{name}' already exists") # eindeutige Namen erzwingen - muss nicht zwingend da ID eindeutig ist, aber angenehmer um Verwechslungen zu vermeiden
+            raise ValueError(f"Player name '{name}' already exists") # eindeutige Namen erzwingen - muss nicht zwingend da ID eindeutig ist, aber angenehmer um Verwechslungen zu vermeiden
         player = Player(id=uuid4(), name=name, role=role)
         self.players[player.id] = player
         return player
