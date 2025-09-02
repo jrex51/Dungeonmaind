@@ -45,6 +45,7 @@ and get accurate answers based on real transcriptions of their sessions.
 ### Requirements
 - Python 3.12
 - Git
+- Node.js
 - (optional but recommended) GPU with CUDA for accelerated transcription by WhisperX and answer-response times by the llm
 - ffmpeg (for WhisperX) - very important!
   
@@ -67,7 +68,7 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 
 ### 3. Initialize the frontend
-See the README.md file in the 'frontend' folder
+See the README.md file in the 'frontend' folder (first run ```npm install```, then ```npm run dev```)
 
 ___
 
