@@ -229,20 +229,21 @@ function rollDice(sides: number) {
 
     <div class="centered-content">
       <section>
-      <h2>Hallo, {{ store.currentPlayer?.name }}!</h2>
-      <p v-if="store.isLeader">Du bist Leader.</p>
+        <h2>Hallo, {{ store.currentPlayer?.name }}!</h2>
+        <p v-if="store.isLeader">Du bist Leader.</p>
 
-      <button @click="onLeave">Verlassen</button>
+        <button @click="onLeave">Verlassen</button>
 
-      <h3>Spieler</h3>
-      <ul>
-        <li v-for="p in store.players" :key="p.id">
-          {{ p.name }} ({{ p.role }})
-        </li>
-      </ul>
-    </section>
+        <h3>Spieler</h3>
+        <ul>
+          <li v-for="p in store.players" :key="p.id">
+            {{ p.name }} ({{ p.role }})
+          </li>
+        </ul>
+      </section>
+
       <div class="content-section">
-        <h2>Enter Your Text</h2>
+        <h2>Ask Something about the DnD-Session</h2>
         <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
@@ -252,16 +253,6 @@ function rollDice(sides: number) {
           <p>{{ modelOutput }}</p>
         </div>
       </div>
-
-    <h2>Ask Something about the DnD-Session</h2>
-    <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
-    <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
-      {{ isLoading ? 'Loading...' : 'Submit' }}
-    </button>
-    <div v-if="modelOutput" class="output">
-      <h3>Model Output:</h3>
-      <p>{{ modelOutput }}</p>
-    </div>
 
       <hr style="margin: 2rem 0" />
       <!-- Nur Leader sieht das -->
