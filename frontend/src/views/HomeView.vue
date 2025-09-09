@@ -185,7 +185,13 @@ function rollDice(sides: number) {
     <div class="centered-content">
       <div class="content-section">
         <h2>Enter Your Text</h2>
-        <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
+        <input
+          v-model="userInput"
+          type="text"
+          placeholder="Type something..."
+          class="input-field"
+          @keyup.enter="handleLLMQuestionSubmit"
+        />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
             Ask rulebook
