@@ -15,6 +15,7 @@ import os
 from app.functions.embedding.embedding_model import embedd_text
 
 
+
 from app.core.config import settings
 
 def transcribe_audio(audio_bytes: bytes, batch_size=16):

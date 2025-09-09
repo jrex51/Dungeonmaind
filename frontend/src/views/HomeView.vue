@@ -7,6 +7,7 @@ const router = useRouter()
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
 const isLoading = ref<boolean>(false)
+const askRulebook = ref<boolean>(false)
 
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
@@ -36,7 +37,9 @@ async function handleLLMQuestionSubmit() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({input_string: userInput.value}),
+      body: JSON.stringify({
+        input_string: userInput.value,
+        use_rulebook: askRulebook.value}),
     })
     if (!response.ok || !response.body) {
       throw new Error(`Request failed with status ${response.status}`)
@@ -183,6 +186,10 @@ function rollDice(sides: number) {
       <div class="content-section">
         <h2>Enter Your Text</h2>
         <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" v-model="askRulebook" />
+            Ask rulebook
+        </label>
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
@@ -313,7 +320,7 @@ body {
   color: white;
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
-  font-weight: normal; 
+  font-weight: normal;
   z-index: 1001;
   transition: background-color 0.3s ease;
 }
@@ -335,7 +342,7 @@ h1 {
   margin-top: 0;
   margin-bottom: 1.5rem;
   font-family: 'MedievalSharp', cursive;
-  font-weight: bolder; 
+  font-weight: bolder;
 }
 
 
@@ -346,7 +353,7 @@ h2 {
   font-size: x-large;
   margin-bottom: 1.5rem;
   font-family: 'MedievalSharp', cursive;
-  font-weight: bolder; 
+  font-weight: bolder;
 }
 
 hr {
@@ -363,9 +370,9 @@ hr {
   border: 1px solid #695710;
   border-radius: 10px;
   font-family: 'MedievalSharp', cursive;
-  font-weight: bolder; 
+  font-weight: bolder;
   background-color: #f1e6b4;
-  
+
   color: #4c3e06;
   width: 90%;
   box-sizing: border-box;
@@ -381,7 +388,7 @@ hr {
   cursor: pointer;
   margin-bottom: 1rem;
   font-family: 'MedievalSharp', cursive;
-  font-weight: normal; 
+  font-weight: normal;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
 }
@@ -414,7 +421,7 @@ hr {
   border-radius: 10px;
   border: 1px solid #000000;
   font-family: 'MedievalSharp', cursive;
-  font-weight: bold; 
+  font-weight: bold;
   font-weight: 400;
   box-sizing: border-box;
 }
