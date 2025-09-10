@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useSessionStore } from '@/stores/session.ts'
 import { SERVER_CONFIG, LLM_OPTIONS, DEFAULT_LLM, TRANSCRIPTION_MODELS, DEFAULT_TRANSCRIPTION_MODEL } from '@/config/config'
 
 const router = useRouter()
+const store = useSessionStore()
 const LLM_STORAGE_KEY = 'selectedLLM'
 const TRANSCRIPTION_STORAGE_KEY = 'transcriptionModel'
 const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || DEFAULT_LLM)
@@ -30,7 +32,8 @@ async function submitSelection() {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ selected_LLM: selectedLLM.value,
+      body: JSON.stringify({ player_id: store.currentPlayer?.id,
+        selected_LLM: selectedLLM.value,
         transcription_model: selectedTranscriptionModel.value,
         clear_chat: clearChat.value })
     })
@@ -98,7 +101,7 @@ async function submitSelection() {
   box-sizing: border-box;
 }
 
-label, 
+label,
 option,
 input[type="checkbox"] + label {
   font-weight: 600;
@@ -124,7 +127,7 @@ select {
   margin-top: 2rem;
   padding: 0.75rem 1.5rem;
   font-family: 'MedievalSharp';
-  font-weight: bold; 
+  font-weight: bold;
   font-weight: 400;
   font-size: 1rem;
   background-color: #b74d30;
@@ -132,7 +135,7 @@ select {
   border: 1px solid #8e7513;
   border-radius: 10px;
   cursor: pointer;
-  
+
 }
 
 .done-button:hover {

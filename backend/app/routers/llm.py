@@ -11,11 +11,11 @@ router = APIRouter()
 async def run_llm(req: LLMRequest):
     # 1) Spieler existiert?
     try:
-        print(f"versuche Spieler ID zu bekommen + {req.player_id}")
+        print(f"trying to get player ID + {req.player_id}")
         print(f"group size: {store.group.size()}")
         player = store.group.get_player(req.player_id)
     except KeyError:
-        print("hat nicht geklappt")
+        print("Player not found")
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
 
     # 2) Nachricht speichern
@@ -27,6 +27,7 @@ async def run_llm(req: LLMRequest):
         llm_resp = ""
         # komplette History
         history = await chat_store.history(player.id)
+        print(history)
         print(isinstance(history, dict))
         for chunk in run_custom_model(history):
             llm_resp += chunk
