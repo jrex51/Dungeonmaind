@@ -16,13 +16,6 @@ class Role(str, Enum):
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
-def make_join_code(length: int = 6) -> str:
-    """
-    Kurzer, menschenlesbarer Code (z.B. 'AB3FQ7') für den Gruppeneinstieg.
-    """
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
-
 @dataclass
 class Player:
     id: UUID

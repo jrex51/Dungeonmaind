@@ -1,8 +1,11 @@
 import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
+from app.core.bus import bus
 from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players
 
 # List of available api endpoints
@@ -26,6 +29,17 @@ LAN_REGEX = (
 )
 
 def create_app() -> FastAPI:
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
+        await bus.start()
+        try:
+            yield
+        finally:
+            logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
+            await bus.stop()
+
     # Configure root logger
     logging.basicConfig(
         level=logging.DEBUG if settings.debug else logging.INFO,
@@ -35,6 +49,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         debug=settings.debug,
         version="1.0.0",
+        lifespan=lifespan
     )
 
     application.add_middleware(

@@ -31,15 +31,17 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function persist(p: PlayerOut) {
-    localStorage.setItem("player", JSON.stringify(p));
+    sessionStorage.setItem("player", JSON.stringify(p));
   }
+
   function hydrate(): PlayerOut | null {
-    const raw = localStorage.getItem("player");
+    const raw = sessionStorage.getItem("player");
     if (!raw) return null;
     try { return JSON.parse(raw) as PlayerOut; } catch { return null;}
   }
+
   function clearPersist() {
-    localStorage.removeItem("player");
+    sessionStorage.removeItem("player");
   }
 
   return { currentPlayer, players, isLeader, join, loadPlayers, leave }

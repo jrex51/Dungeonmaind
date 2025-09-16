@@ -9,7 +9,8 @@ const store = useSessionStore()
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
 const isLoading = ref<boolean>(false)
-let socket: WebSocket;
+let socket: WebSocket | null = null;
+let pingTimer: number | null = null;
 
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
@@ -28,16 +29,32 @@ function goToConfig() {
   router.push('/config')
 }
 
-// socket = new WebSocket(wsUrl(SERVER_CONFIG.BASE_URL, SERVER_CONFIG.ENDPOINTS.WS_PLAYERS));
-// socket.onmessage = (ev) => console.log("WS", ev.data);
-onMounted(() => {
-  socket = new WebSocket(wsUrl(
-    SERVER_CONFIG.BASE_URL,
-    SERVER_CONFIG.ENDPOINTS.WS_PLAYERS
-  ));
 
-  socket.onopen = () => {
+
+onMounted(() => {
+
+  // Guard: ohne Player -> zurück zum Login
+  const p = store.currentPlayer;
+  if (!p) {
+    router.push({ name: 'login' });
+    return;
+  }
+
+  const url = new URL(SERVER_CONFIG.ENDPOINTS.WS_PLAYERS, SERVER_CONFIG.BASE_URL);
+  url.search = new URLSearchParams({
+    player_id: p.id,
+    name: p.name,
+    role: p.role,
+  }).toString();
+
+  socket = new WebSocket(url.toString());
+
+  socket.onopen = async () => {
     store.loadPlayers();        // ← holt die IST-Spielerliste
+
+    pingTimer = window.setInterval(() => {    // ← Hearbeat alle 15s
+      try { socket?.send('ping'); } catch {}
+    }, 15000);
   };
 
   socket.onmessage = (ev) => {
@@ -53,9 +70,18 @@ onMounted(() => {
       );
     }
   };
+
+  socket.onclose = () => {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    socket = null;
+  };
 });
 
-onUnmounted(() => socket?.close());
+onUnmounted(() => {
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+  try { socket?.close(); } catch {}
+  socket = null;
+});
 
 function wsUrl(baseHttpUrl: string, path: string): string {
   const u = new URL(baseHttpUrl);                 // http://192.168.1.5:8000
@@ -389,7 +415,7 @@ function getAbilityData(p: unknown) {
               <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
                 <div class="ability-label">{{ a.label }}</div>
                 <div class="ability-score">
-                  <span>{{ a.score ?? '—' }}</span>
+                  <span>{{ a.score ?? '-' }}</span>
                   <small v-if="a.mod !== undefined" class="ability-mod">
                     ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
                   </small>
