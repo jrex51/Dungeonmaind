@@ -1,25 +1,35 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 from app.base_models.llm_base_models import LLMRequest
 from app.functions.llm.custom_model import run_custom_model
-from fastapi.responses import StreamingResponse
+from app.core.chat_store import chat_store
+from app.domain.store import store
 from app.functions.embedding.embedding_model import embedding_search
-from app.core import chat_store
+
 
 router = APIRouter()
 
-chat_history = []
+@router.post("/run", response_class=StreamingResponse)
+async def run_llm(req: LLMRequest):
+    # 1) Spieler existiert?
+    try:
+        print(f"trying to get player ID + {req.player_id}")
+        print(f"group size: {store.group.size()}")
+        player = store.group.get_player(req.player_id)
+    except KeyError:
+        print("Player not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
 
-@router.post("/runLLM")
-async def run_llm(request: LLMRequest):
-    chat_store.chat_history.append({"role": "user", "content": request.input_string})
+    # 2) Nachricht speichern
+    print("speichere nachricht")
+    await chat_store.append(player.id, "user", req.input_string)
 
-    print(request.use_rulebook)
+    # 3) Embeddings erhalten für system prompt
     # k has to be adjusted after some testing later.
-    retrieved_docs = embedding_search(request.input_string, request.use_rulebook)
+    retrieved_docs = embedding_search(req.input_string, req.use_rulebook)
     context = "\n\n".join([doc.page_content for doc in retrieved_docs])
 
-
-    chat_store.chat_history.insert(0, {
+    system_message = {
         "role": "system",
         "content": (
             f"IMPORTANT: You are a LLM, which helps a group of players to play the roleplay game Dungeons and Dragons. "
@@ -32,21 +42,22 @@ async def run_llm(request: LLMRequest):
             f"{context}\n\n"
             f"--- End of context ---"
         )
-    })
+    }
 
-    print(chat_store.chat_history)
+    # 4) Generator zum Streamen
+    # Here some different solution has to be found, because the async with the await for the chat_store will not make the
+    # response streamable, because he always waits until the response is fully generated before ssend to the frontend
+    async def event_generator(system_prompt: str):
+        llm_resp = ""
+        # komplette History
+        history = await chat_store.history(player.id)
+        history.insert(0, system_prompt)
+        print(history)
+        for chunk in run_custom_model(history):
+            llm_resp += chunk
+            yield chunk
+        # 4) Antwort speichern
+        print(llm_resp)
+        await chat_store.append(player.id, "assistent", llm_resp)
 
-    def event_generator():
-        assistant_response = ""
-        for chunk in run_custom_model(chat_store.chat_history):
-            assistant_response += chunk
-            yield f"{chunk}"
-        # Append full assistant response to chat history after streaming
-        chat_store.chat_history.append({"role": "assistant", "content": assistant_response})
-        print(chat_store.chat_history)
-        # Remove the context from chat history (first message)
-        if chat_store.chat_history and chat_store.chat_history[0]["role"] == "system":
-            del chat_store.chat_history[0]
-        print(chat_store.chat_history)
-
-    return StreamingResponse(event_generator(), media_type="text/plain")
+    return StreamingResponse(event_generator(system_message), media_type="text/plain")

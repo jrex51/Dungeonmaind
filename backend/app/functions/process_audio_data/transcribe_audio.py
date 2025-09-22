@@ -67,11 +67,13 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
     result_a = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
     print(result_a["segments"])
-    # 5. Assign speaker labels
 
     texts = [segment['text'] for segment in result_a["segments"]]
     embedd_text(texts)
-
+    
+    # 5. Assign speaker labels
+    print("Assigning...")
+    
     #created a HF token and then added it
     diarize_model = whisperx.diarize.DiarizationPipeline(use_auth_token="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", device=device)
 

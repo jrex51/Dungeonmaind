@@ -1,7 +1,10 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
 class LLMRequest(BaseModel):
+    player_id: UUID = Field(..., description="ID aus /players")
     input_string: str = Field(..., description="Text prompt for the custom model")
     use_rulebook: bool = Field(False, description="Whether to consult the rulebook for the answer")
 

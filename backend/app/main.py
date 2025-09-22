@@ -3,16 +3,27 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
-from app.routers import root, llm, process_audio_data, config_router
+from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players
 
 # List of available api endpoints
 all_routers = [
     (root.router, "", ["root"]),
     (llm.router, "/llm", ["llm"]),
     (process_audio_data.router, "/processAudioData", ["processAudioData"]),
-    (config_router.router, "/config", ["config"])
+    (config_router.router, "/config", ["config"]),
+    (health.router, "/health", ["health"]),
+    (players.router, "/players", ["players"]),
+    (ws_players.router, "/ws", ["ws"]),
 ]
 
+# 192.168.x.x und beliebige localhost-Ports zulassen
+LAN_REGEX = (
+    r"^https?://("                         # http:// oder https://
+    r"192\.168\.\d{1,3}\.\d{1,3}"          # 192.168.*.*
+    r"|localhost"                          # localhost
+    r"|127\.0\.0\.1"                       # 127.0.0.1
+    r")(?::\d+)?$"                         # optional :Port
+)
 
 def create_app() -> FastAPI:
     # Configure root logger
@@ -28,7 +39,8 @@ def create_app() -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=[],
+        allow_origin_regex=LAN_REGEX,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
