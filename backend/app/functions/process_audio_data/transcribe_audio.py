@@ -10,19 +10,39 @@
 import torch
 import whisperx
 import tempfile
+import os
+
+from app.functions.embedding.embedding_model import embedd_text
+
+
 
 from app.core.config import settings
 
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
-    #set default device to GPU
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device == "cuda":
-        compute_type = "float16"
-    else:
-        compute_type = "int8"
+    model_dir = os.getenv("WHISPERX_MODELS_DIR", None)
 
+    print("WHISPERX_MODELS_DIR:", os.getenv("WHISPERX_MODELS_DIR"))
+
+    if model_dir is None:
+        # Dev/local environment: auto-detect device
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+    else:
+        # Docker: CPU-only setup
+        device = "cpu"
+        compute_type = "int8"
+        print("Warning: With Docker currently only CPU support is possible")
+
+    print("Loading WhisperX model...")
+    model = whisperx.load_model(
+        "base",  # or "medium.en", "large-v2", etc.
+        device,
+        compute_type=compute_type,
+        download_root=model_dir  # If None, uses default HF cache
+    )
     # 1. Load the model
+
     print("Loading WhisperX")
     model = whisperx.load_model(settings.transcription_model, device, compute_type=compute_type)
     # save model to local path (optional)
@@ -48,8 +68,12 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     result_a = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
     print(result_a["segments"])
 
+    texts = [segment['text'] for segment in result_a["segments"]]
+    embedd_text(texts)
+    
     # 5. Assign speaker labels
     print("Assigning...")
+    
     #created a HF token and then added it
     diarize_model = whisperx.diarize.DiarizationPipeline(use_auth_token="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", device=device)
 

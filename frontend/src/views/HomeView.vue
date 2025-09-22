@@ -10,6 +10,7 @@ const store = useSessionStore()
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
 const isLoading = ref<boolean>(false)
+const askRulebook = ref<boolean>(false)
 let socket: WebSocket;
 
 const selectedAudioFile = ref<File | null>(null)
@@ -83,7 +84,8 @@ async function handleLLMQuestionSubmit() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         player_id: store.currentPlayer?.id,
-        input_string: userInput.value
+        input_string: userInput.value,
+        use_rulebook: askRulebook.value
       }),
     })
     if (!response.ok || !response.body) {
@@ -244,7 +246,17 @@ function rollDice(sides: number) {
 
       <div class="content-section">
         <h2>Ask Something about the DnD-Session</h2>
-        <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
+        <input
+          v-model="userInput"
+          type="text"
+          placeholder="Type something..."
+          class="input-field"
+          @keyup.enter="handleLLMQuestionSubmit"
+        />
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" v-model="askRulebook" />
+            Ask rulebook
+        </label>
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
