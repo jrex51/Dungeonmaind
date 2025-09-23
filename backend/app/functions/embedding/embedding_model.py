@@ -5,7 +5,7 @@ import os
 import shutil
 
 
-def embedd_text(embedding_text: list, persist_directory="./data/chroma_db"): #os.getenv("CHROMA_DB_PATH", "./data/chroma_db")
+def embedd_text(embedding_text: list, persist_directory="./data/chroma_db"):
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(
         model_name="all-MiniLM-L6-v2"
@@ -14,15 +14,10 @@ def embedd_text(embedding_text: list, persist_directory="./data/chroma_db"): #os
     documents = [
         Document(
             page_content=text,
-            metadata={"source": "rulebook"}
+            metadata={"source": "transcriptions"}
         )
         for i, text in enumerate(embedding_text)
     ]
-    # Later metadata should be included, such as session id, user id, maybe even timestamps
-    #documents = [
-    #    Document(page_content=item["text"], metadata={"session_id": item["session_id"]})
-    #    for item in embedding_text
-    #]
 
     # Loads the chroma db vectorstore if already found under given path, otherwise creates it from scratch
     if os.path.exists(os.path.join(persist_directory, "chroma.sqlite3")):
