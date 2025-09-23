@@ -13,6 +13,8 @@ import tempfile
 import os
 
 from app.functions.embedding.embedding_model import embedd_text
+from app.domain.store import store
+
 from app.core.config import settings
 
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
@@ -73,13 +75,17 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     
     #created a HF token and then added it
     diarize_model = whisperx.diarize.DiarizationPipeline(use_auth_token="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", device=device)
+    
+    g = store.group
+    max_players = g.max_size
 
-    # add min/max number of speakers if known
+    #add min/max number of speakers
     diarize_segments = diarize_model(audio)
-    # diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
+    diarize_model(audio, min_speakers=1, max_speakers=max_players)
 
     result_b = whisperx.assign_word_speakers(diarize_segments, result_a)
     print(diarize_segments)
-    print(result_b["segments"]) # segments are now assigned speaker IDs
-
+    print(result_b["segments"]) #segments are now assigned speaker IDs
+    
+    #next align speaker IDs with player IDs
     return result_b["segments"]
