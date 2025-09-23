@@ -45,15 +45,13 @@ async def run_llm(req: LLMRequest):
     }
 
     # 4) Generator zum Streamen
-    # Here some different solution has to be found, because the async with the await for the chat_store will not make the
-    # response streamable, because he always waits until the response is fully generated before ssend to the frontend
     async def event_generator(system_prompt: str):
         llm_resp = ""
         # komplette History
         history = await chat_store.history(player.id)
         history.insert(0, system_prompt)
         print(history)
-        for chunk in run_custom_model(history):
+        async for chunk in run_custom_model(history):
             llm_resp += chunk
             yield chunk
         # 4) Antwort speichern

@@ -3,7 +3,7 @@ hf-xet==1.1.5
 pydantic-settings==2.10.1
 pydantic==2.11.7
 python-multipart==0.0.20
-requests==2.32.4
+httpx==0.28.1
 whisperx==3.4.2
 torch==2.7.1
 torchaudio==2.7.1
