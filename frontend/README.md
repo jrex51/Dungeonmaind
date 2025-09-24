@@ -26,7 +26,7 @@ npm install
 npm run dev
 ```
 
-### Compile and Hot-Reload for Development (lokal Server)
+### Compile and Hot-Reload for Development (local server)
 
 ```sh
 npm run dev -- --host
