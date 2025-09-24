@@ -231,7 +231,7 @@ function rollDice(sides: number) {
 
     <div class="centered-content">
       <section>
-        <h2>Hallo, {{ store.currentPlayer?.name }}!</h2>
+        <h2>Hello {{ store.currentPlayer?.name }}</h2>
         <p v-if="store.isLeader">Du bist Leader.</p>
 
         <button @click="onLeave">Verlassen</button>

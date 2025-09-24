@@ -1,6 +1,10 @@
+import { getApiBase } from '@/config/apiBase.ts'
 // Set the server and enpdoints
 export const SERVER_CONFIG = {
-  BASE_URL: 'http://localhost:8000',
+  //BASE_URL: 'http://localhost:8000',
+  get BASE_URL() {
+    return getApiBase(); // dynamisch vom aktuellen apiBase
+  },
   ENDPOINTS: {
     RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
