@@ -12,7 +12,7 @@ import whisperx
 import tempfile
 import os
 
-from app.functions.embedding.embedding_model import embedd_text
+from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 
 from app.core.config import settings
@@ -68,7 +68,7 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     print(result_a["segments"])
 
     texts = [segment['text'] for segment in result_a["segments"]]
-    embedd_text(texts)
+    embedd_transcriptions(texts)
     
     # 5. Assign speaker labels
     print("Assigning...")

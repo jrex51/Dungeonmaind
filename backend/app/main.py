@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
 from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players
+from app.functions.embedding.embedding_model import embedd_rulebook, read_text_files, delete_chromadb
+from contextlib import asynccontextmanager
 
 # List of available api endpoints
 all_routers = [
@@ -25,6 +27,22 @@ LAN_REGEX = (
     r")(?::\d+)?$"                         # optional :Port
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logging.info("Server starting: deleting old ChromaDB and re-embedding rulebook...")
+    delete_chromadb()
+
+    # Rulebook embedding
+    #texts, txt_paths = read_text_files()
+    #embedd_rulebook(texts, txt_paths)
+    logging.info("Rulebook successfully embedded.")
+
+    yield  # ← Server running
+
+    # Shutdown logic
+    logging.info("Server Dungeonmaind shutting down...")
+
 def create_app() -> FastAPI:
     # Configure root logger
     logging.basicConfig(
@@ -35,6 +53,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         debug=settings.debug,
         version="1.0.0",
+        lifespan=lifespan,
     )
 
     application.add_middleware(
