@@ -34,8 +34,8 @@ async def lifespan(app: FastAPI):
     delete_chromadb()
 
     # Rulebook embedding
-    #texts, txt_paths = read_text_files()
-    #embedd_rulebook(texts, txt_paths)
+    texts, txt_paths = read_text_files()
+    embedd_rulebook(texts, txt_paths)
     logging.info("Rulebook successfully embedded.")
 
     yield  # ← Server running
