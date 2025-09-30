@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
-from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players
+from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown
 
 # List of available api endpoints
 all_routers = [
@@ -14,6 +14,9 @@ all_routers = [
     (health.router, "/health", ["health"]),
     (players.router, "/players", ["players"]),
     (ws_players.router, "/ws", ["ws"]),
+    #(rulebook_markdown.router, "/folders", ["folders"]),
+    #(rulebook_markdown.router, "/file", ["file"]),
+    (rulebook_markdown.router, "/rulebook", ["rulebook"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen

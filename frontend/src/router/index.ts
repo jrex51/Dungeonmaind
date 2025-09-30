@@ -30,6 +30,11 @@ const router = createRouter({
       name: 'config',
       component: () => import('../views/ConfigView.vue'),
     },
+    {
+      path: '/rulebook',
+      name: 'rulebook',
+      component: () => import('../views/RulebookView.vue'),
+    },
   ],
 });
 

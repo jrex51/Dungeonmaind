@@ -11,6 +11,7 @@ const TRANSCRIPTION_STORAGE_KEY = 'transcriptionModel'
 const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || DEFAULT_LLM)
 const selectedTranscriptionModel = ref(localStorage.getItem(TRANSCRIPTION_STORAGE_KEY) || DEFAULT_TRANSCRIPTION_MODEL)
 const clearChat = ref(false)
+const deleteTranscriptions = ref(false)
 
 watch(selectedLLM, (newVal) => {
   localStorage.setItem(LLM_STORAGE_KEY, newVal)
@@ -35,7 +36,9 @@ async function submitSelection() {
       body: JSON.stringify({ player_id: store.currentPlayer?.id,
         selected_LLM: selectedLLM.value,
         transcription_model: selectedTranscriptionModel.value,
-        clear_chat: clearChat.value })
+        clear_chat: clearChat.value,
+        delete_transcriptions: deleteTranscriptions.value
+      })
     })
 
     if (!response.ok) {
@@ -71,11 +74,18 @@ async function submitSelection() {
     </select>
 
     <hr style="margin: 1rem 0" />
-
-    <label>
-      <input type="checkbox" v-model="clearChat" />
-      Clear Chat History
-    </label>
+    <div>
+      <label>
+        <input type="checkbox" v-model="clearChat" />
+        Clear Chat History
+      </label>
+    </div>
+    <div>
+      <label>
+        <input type="checkbox" v-model="deleteTranscriptions" />
+        Delete transcriptions
+      </label>
+    </div>
 
     <hr style="margin: 1rem 0" />
 

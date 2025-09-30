@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import {computed, ref, render} from 'vue'
 import { onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
+import { marked } from 'marked'
+
 
 const router = useRouter()
 const store = useSessionStore()
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
+let modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
 let socket: WebSocket;
@@ -26,8 +29,20 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 
 const diceResult = ref<string>('')
 
+//const backendMarkdown = ref<string>('')
+//let renderedMarkdown = ref<string>('')
+const backendMarkdown = ref<string[]>([])
+const currentMarkdownIndex = ref(0)
+let renderedMarkdown = ref('')
+
+
+
 function goToConfig() {
   router.push('/config')
+}
+
+function goToRulebook() {
+  router.push('/rulebook')
 }
 
 // socket = new WebSocket(wsUrl(SERVER_CONFIG.BASE_URL, SERVER_CONFIG.ENDPOINTS.WS_PLAYERS));
@@ -88,17 +103,49 @@ async function handleLLMQuestionSubmit() {
         use_rulebook: askRulebook.value
       }),
     })
-    if (!response.ok || !response.body) {
-      throw new Error(`Request failed with status ${response.status}`)
+    if (askRulebook.value) {
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+    } else {
+      if (!response.ok || !response.body) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    while (true) {
-      const {done, value} = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, {stream: true})
-      modelOutput.value += chunk
+
+    if(askRulebook.value) {
+      //const markdownJson = await response.text()
+      const markdownJson = await response.json()
+      console.log(markdownJson)
+      //backendMarkdown.value = markdownJson.markdown_text || ""
+      //backendMarkdown.value = markdownJson
+      backendMarkdown.value = markdownJson.markdown_texts || []
+      if (backendMarkdown.value.length > 0) {
+        currentMarkdownIndex.value = 0
+        renderedMarkdown.value = marked.parse(backendMarkdown.value[0])
+      }
+      //if (backendMarkdown.value.trim()) {
+      //  renderedMarkdown.value = marked.parse(backendMarkdown.value)
+      //  console.log(renderedMarkdown.value)
+      //}
+    } else {
+      if(!response.body) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+      // Removes any still shown previous rulebook searches.
+      backendMarkdown.value = []
+      renderedMarkdown.value = ""
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      while (true) {
+        const {done, value} = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, {stream: true})
+        modelOutput.value += chunk
+        modelOutputRendered = marked.parse(modelOutput.value)
+      }
     }
   } catch (error) {
     console.error('Error calling LLM endpoint:', error)
@@ -107,6 +154,21 @@ async function handleLLMQuestionSubmit() {
     isLoading.value = false //  unlock after done
   }
 }
+
+function showNextMarkdown() {
+  if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
+    currentMarkdownIndex.value++
+    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+  }
+}
+
+function showPrevMarkdown() {
+  if (currentMarkdownIndex.value > 0) {
+    currentMarkdownIndex.value--
+    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+  }
+}
+
 
 async function handleAudioUpload() {
   if (!selectedAudioFile.value) {
@@ -226,7 +288,10 @@ function rollDice(sides: number) {
      <div class="header">
        <div class="header-left"></div>
        <h1>Dungeonmaind</h1>
-       <button class="config-button" @click="goToConfig">Config</button>
+       <div class="header-right">
+         <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
+         <button class="config-button" @click="goToConfig">Config</button>
+       </div>
     </div>
 
     <div class="centered-content">
@@ -255,14 +320,23 @@ function rollDice(sides: number) {
         />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
-            Ask rulebook
+            Search rulebook
         </label>
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
-        <div v-if="modelOutput" class="output">
+        <div v-if="modelOutput" class="markdown-output">
           <h3>Model Output:</h3>
-          <p>{{ modelOutput }}</p>
+          <div v-html="modelOutputRendered"></div>
+        </div>
+        <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
+          <h3>Relevant SRD article</h3>
+          <div class="markdown-navigation">
+            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">Previous</button>
+            <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
+            <button @click="showNextMarkdown" :disabled="currentMarkdownIndex === backendMarkdown.length - 1">Next</button>
+          </div>
+          <div v-html="renderedMarkdown"></div>
         </div>
       </div>
 
@@ -359,11 +433,16 @@ body {
   background-color: rgba(160, 122, 57, 0.95);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   padding: 0 1rem;
   box-sizing: border-box;
   color: #e0d5b7;
   z-index: 1000;
+}
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .centered-content {
@@ -377,9 +456,9 @@ body {
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
 }
 
+
+.rulebook-button,
 .config-button {
-  position: absolute;
-  right: 1rem;
   padding: 0.5rem 1rem;
   background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
@@ -388,14 +467,13 @@ body {
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
   font-weight: normal;
-  z-index: 1001;
   transition: background-color 0.3s ease;
 }
 
+.rulebook-button:hover,
 .config-button:hover {
   background-color: #4a575e;
 }
-
 .content-section {
   display: flex;
   flex-direction: column;
@@ -545,5 +623,106 @@ hr {
   margin-top: 1rem;
   text-align: center;
   font-weight: bold;
+}
+
+
+:deep(.markdown-output) {
+  font-family: 'MedievalSharp', cursive;
+  color: #392401;
+  line-height: 1.5;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h1) {
+  font-size: 2rem;
+  color: #1a3b1a;
+  border-bottom: 2px solid #392401;
+  padding-bottom: 0.3rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h2) {
+  font-size: 1.5rem;
+  color: #2a4b2a;
+  border-bottom: 1px solid #392401;
+  padding-bottom: 0.2rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h3),
+:deep(.markdown-output h4),
+:deep(.markdown-output h5),
+:deep(.markdown-output h6) {
+  color: #3a5b3a;
+  margin-top: 0.8rem;
+  font-weight: bold;
+}
+
+:deep(.markdown-output strong) {
+  color: #8b0000; /* dark red for emphasis */
+  font-weight: bold;
+}
+
+:deep(.markdown-output em) {
+  color: #003366; /* dark blue */
+  font-style: italic;
+}
+
+:deep(.markdown-output strong em),
+:deep(.markdown-output em strong) {
+  color: #800080; /* purple */
+  font-weight: bold;
+  font-style: italic;
+}
+
+:deep(.markdown-output table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+:deep(.markdown-output th),
+:deep(.markdown-output td) {
+  border: 1px solid #392401;
+  padding: 0.3rem 0.5rem;
+  text-align: center;
+}
+
+:deep(.markdown-output th) {
+  background-color: #f5e6b4;
+  font-weight: bold;
+}
+
+:deep(.markdown-output tr:nth-child(even)) {
+  background-color: #faf0d4;
+}
+
+:deep(.markdown-output p) {
+  margin: 0.4rem 0;
+}
+
+:deep(.markdown-output h6) {
+  font-style: italic;
+  color: #4b2e2e;
+  margin-top: 0.5rem;
+}
+
+:deep(.scrollable-panel) {
+  max-height: 400px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: rgba(110, 97, 50, 0.7);
+  box-sizing: border-box;
+}
+
+:deep(.markdown-navigation) {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
 }
 </style>
