@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, type Ref } from 'vue'
+import { ref } from 'vue'
 import { onMounted, onUnmounted } from 'vue'
-import { useSessionStore } from '@/stores/session'
+import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
-
 
 const router = useRouter()
 const store = useSessionStore()
@@ -44,7 +43,7 @@ onMounted(() => {
   ));
 
   socket.onopen = () => {
-    store.loadPlayers();        
+    store.loadPlayers();        // ← holt die IST-Spielerliste
   };
 
   socket.onmessage = (ev) => {
@@ -62,8 +61,7 @@ onMounted(() => {
   };
 });
 
-onUnmounted(() => {
-  socket?.close()
+onUnmounted(() => { socket?.close()
   
   //Cleanly end recorder/mic on unmount
   if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
@@ -89,6 +87,7 @@ function wsUrl(baseHttpUrl: string, path: string): string {
   u.pathname = path.startsWith("/") ? path : `/${path}`;  // /ws/players
   return u.toString();                            // ws://192.168.1.5:8000/ws/players
 }
+
 
 async function onLeave() {
   await store.leave();
@@ -243,6 +242,14 @@ async function startRecording() {
   }
 }
 
+function rotateRecording() {
+  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
+  
+    mediaRecorder.value.requestData();
+    mediaRecorder.value.stop();
+  }
+}
+
 function stopRecording() {
   if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
     isFinalStop.value = true
@@ -250,14 +257,6 @@ function stopRecording() {
       clearInterval(audioRecorderInterval.value);
       audioRecorderInterval.value  = null
     }
-    mediaRecorder.value.requestData();
-    mediaRecorder.value.stop();
-  }
-}
-
-function rotateRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-  
     mediaRecorder.value.requestData();
     mediaRecorder.value.stop();
   }
@@ -326,8 +325,7 @@ function playRecording(){
     console.error('Transcription error:', error)
     audioUploadStatus.value = 'Transcription failed.'
   }
-}
-*/
+}*/
 
 function rollDice(sides: number) {
   const result = Math.floor(Math.random() * sides) + 1

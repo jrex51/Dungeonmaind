@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useSessionStore } from '@/stores/session'
+import { useSessionStore } from '@/stores/session.ts'
 import { SERVER_CONFIG, LLM_OPTIONS, DEFAULT_LLM, TRANSCRIPTION_MODELS, DEFAULT_TRANSCRIPTION_MODEL } from '@/config/config'
 
 const router = useRouter()

@@ -1,7 +1,7 @@
-#WhisperX is not compatible with python3.13.
-#It requires: Python 3.12
-#ffmpeg installation necessary
-#For GPU support:   https://developer.nvidia.com/cuda-12-8-1-download-archive (CUDA Toolkit 12.8.1)
+# WhisperX is not compatible with python3.13.
+# It requires: Python 3.12
+# ffmpeg installation necessary
+# For GPU support:   https://developer.nvidia.com/cuda-12-8-1-download-archive (CUDA Toolkit 12.8.1)
 #                   https://developer.nvidia.com/cudnn-downloads (cuDNN 9.10.2)
 #                   (ctranslate2==4.6.0)
 #                   pip uninstall torch torchaudio
@@ -12,7 +12,7 @@ import whisperx
 import tempfile
 import os
 
-from app.functions.embedding.embedding_model import embedd_text
+from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 from app.core.config import settings
 
@@ -22,7 +22,7 @@ try:
     computeType = "float16" if device == "cuda" else "int8"
     print(f"Loading transcription and alignment models on device: {device} with compute type: {computeType}")
 
-    # Cache the models globally
+    # 1. Load the transcription model
     transcription_model = whisperx.load_model(
         settings.transcription_model,
         device,
@@ -33,6 +33,7 @@ try:
     # Use a dictionary to cache alignment models by language to avoid reloading
     alignment_models_cache = {}
 
+    # 2. Load the diarization model
     # created an HF token and then added it
     diarize_model = whisperx.diarize.DiarizationPipeline(
         use_auth_token="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",
@@ -53,7 +54,7 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
         print("Error: Models are not loaded. Transcription aborted.")
         return None
 
-    # 1. More robust content type parsing
+    # Robust content type parsing and saving bytes to a temporary file
     file_extension_map = {
         'ogg': 'ogg',
         'webm': 'webm',
@@ -61,26 +62,28 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
         'mpeg': 'mp3',
         'mp4': 'mp4'
     }
-    fileExtension = 'webm'  # Default to webm
+    fileExtension = 'webm'
     for key in file_extension_map:
         if key in content_type:
             fileExtension = file_extension_map[key]
             break
 
     print("Loading audio...")
+    # 3. Save bytes to a temporary file (required by whisperx.load_audio)
     with tempfile.NamedTemporaryFile(suffix=f".{fileExtension}", delete=False) as tempAudio:
         tempAudio.write(audio_bytes)
         tempAudio.flush()
         tempAudioPath = tempAudio.name
 
     try:
+        # Load audio from the temporary file
         audio = whisperx.load_audio(tempAudioPath)
 
-        # 2. Transcribe using the cached model
+        # 4. Transcribe using the cached model
         result = transcription_model.transcribe(audio, batch_size=batch_size)
         print("Transcription segments:", result["segments"])
 
-        # 3. Dynamic language and cached alignment
+        # 5. Align whisper output to improve the word-level timestamps in your transcription.
         language_code = result["language"]
         if language_code not in alignment_models_cache:
             print(f"Loading alignment model for language: {language_code}...")
@@ -93,7 +96,7 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
             print(f"Using cached alignment model for language: {language_code}.")
             alignment_model, metadata = alignment_models_cache[language_code]
 
-        # 4. Align with dynamic model
+        # 6. Perform alignment
         print("Aligning...")
         resultA = whisperx.align(result["segments"], alignment_model, metadata, audio, device,
                                  return_char_alignments=False)
@@ -101,21 +104,31 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
 
         texts = [segment['text'] for segment in resultA["segments"]]
 
-        # 5. Guard for empty transcripts
+        # 7. Embed the resulting text
         if texts and any(text.strip() for text in texts):
-            embedd_text(texts)
+            embedd_transcriptions(texts)
 
-        # 6. Single, optimized diarization call with a guard
+        # 8. Assign speaker labels
         print("Assigning speakers...")
-        max_players = store.group.max_size if store.group else 5  # Default to 5 if store.group is None
+
+        # Max players is guaranteed to be available based on the user's requirement.
+        max_players = store.group.max_size
+
+        # Perform diarization with constraints
         diarizeSegments = diarize_model(audio, min_speakers=1, max_speakers=max_players)
 
+        # Assign speakers to the aligned segments
         resultB = whisperx.assign_word_speakers(diarizeSegments, resultA)
 
         print("Diarization segments:", diarizeSegments)
-        print("Final segments:", resultB["segments"])
+        print("Final segments (Diarized):", resultB["segments"])
 
-        return resultB["segments"]
+        # The final segments are the diarized result
+        final_segments = resultB["segments"]
+
+        # Return the diarized segments
+        return final_segments
+
 
     except Exception as e:
         print(f"An error occurred during transcription: {e}")

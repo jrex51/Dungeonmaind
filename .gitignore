@@ -1,8 +1,6 @@
 .idea/
-/ffmpeg
+
 **/.idea/
 **/.venv/
 **/.env.txt
-__pycache__/
-*.py[cod]
-backend/data/
+
