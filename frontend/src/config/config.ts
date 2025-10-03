@@ -1,9 +1,10 @@
-import { getApiBase } from '@/config/apiBase.ts'
+import { useSessionStore } from '@/stores/session.ts'
 // Set the server and enpdoints
 export const SERVER_CONFIG = {
   //BASE_URL: 'http://localhost:8000',
   get BASE_URL() {
-    return getApiBase(); // dynamisch vom aktuellen apiBase
+    const store = useSessionStore();
+    return store.backendUrl || "http://localhost:8000"; // Fallback
   },
   ENDPOINTS: {
     RUN_LLM: '/llm/run',

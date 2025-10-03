@@ -4,14 +4,15 @@ import * as api from "@/api/players"; // join, listPlayers und leave Funktion
 import type { PlayerOut, Role } from "@/api/players";
 
 export const useSessionStore = defineStore("session", () => {
-  const currentPlayer = ref<PlayerOut | null>(hydrate());
+  const currentPlayer = ref<PlayerOut | null>(hydratePlayer());
   const players = ref<PlayerOut[]>([]);
   const isLeader = computed(() => currentPlayer.value?.role === "leader");
+  const backendUrl = ref<string | null>(hydrateBackendUrl());
 
   async function join(name: string, role: Role) {
     const p = await api.join(name, role);
     currentPlayer.value = p;
-    persist(p);
+    persistPlayer(p);
     return p;
   }
 
@@ -30,17 +31,31 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
-  function persist(p: PlayerOut) {
+  function setBackendUrl(url: string) {
+  backendUrl.value = url;
+  persistBackendUrl(url);
+}
+
+  function persistPlayer(p: PlayerOut) {
     localStorage.setItem("player", JSON.stringify(p));
   }
-  function hydrate(): PlayerOut | null {
+  function persistBackendUrl(url: string) {
+  localStorage.setItem("backendUrl", url);
+}
+  function hydratePlayer(): PlayerOut | null {
     const raw = localStorage.getItem("player");
     if (!raw) return null;
     try { return JSON.parse(raw) as PlayerOut; } catch { return null;}
   }
+  function hydrateBackendUrl(): string | null {
+  const raw = localStorage.getItem("backendUrl");
+  if (!raw) return null;
+  return raw;
+}
   function clearPersist() {
     localStorage.removeItem("player");
+    localStorage.removeItem("backendUrl");
   }
 
-  return { currentPlayer, players, isLeader, join, loadPlayers, leave }
+  return { currentPlayer, players, isLeader, backendUrl, setBackendUrl, join, loadPlayers, leave }
 })
