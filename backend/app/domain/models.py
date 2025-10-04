@@ -13,8 +13,10 @@ class Role(str, Enum):
     leader = "leader"
     member = "member"
 
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
 
 def make_join_code(length: int = 6) -> str:
     """
@@ -23,6 +25,18 @@ def make_join_code(length: int = 6) -> str:
     alphabet = string.ascii_uppercase + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
+
+@dataclass
+class Abilities:
+    # stabile numerische Defaults, damit das Frontend keine "—" zeigt
+    str: int = 10
+    dex: int = 10
+    con: int = 10
+    int_: int = 10
+    wis: int = 10
+    cha: int = 10
+
+
 @dataclass
 class Player:
     id: UUID
@@ -30,9 +44,11 @@ class Player:
     role: Role
     created_at: datetime = field(default_factory=now_utc)
     last_seen_at: datetime = field(default_factory=now_utc)
+    abilities: Abilities = field(default_factory=Abilities)
 
     def touch(self) -> None:
         self.last_seen_at = now_utc()
+
 
 @dataclass
 class Group:
@@ -63,7 +79,8 @@ class Group:
         if role is Role.leader and self.leader_id() is not None:
             raise ValueError(f"Group role 'leader' already exists")
         if self.has_name(name):
-            raise ValueError(f"Player name '{name}' already exists") # eindeutige Namen erzwingen - muss nicht zwingend da ID eindeutig ist, aber angenehmer um Verwechslungen zu vermeiden
+            raise ValueError(
+                f"Player name '{name}' already exists")  # eindeutige Namen erzwingen - muss nicht zwingend da ID eindeutig ist, aber angenehmer um Verwechslungen zu vermeiden
         player = Player(id=uuid4(), name=name, role=role)
         self.players[player.id] = player
         return player
@@ -76,4 +93,3 @@ class Group:
         if not p:
             raise KeyError("Player not found.")
         return p
-
