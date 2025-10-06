@@ -12,6 +12,8 @@ export const SERVER_CONFIG = {
     CHANGE_CONFIG: '/config/changeConfig',
     CHECK_CONNECTION: '/health/checkConnection',
     WS_PLAYERS: '/ws/players',
+    RULEBOOK_FOLDERS: '/rulebook/folders',
+    RULEBOOK_FILE: '/rulebook/file',
   },
 }
 
