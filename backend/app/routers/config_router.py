@@ -3,6 +3,8 @@ from app.base_models.config_base_models import ConfigRequest, ConfigResponse
 from app.core.config import settings
 from app.core.chat_store import chat_store
 from app.domain.store import store
+from app.functions.embedding.embedding_model import delete_transcription_embeddings
+
 
 router = APIRouter()
 
@@ -41,6 +43,10 @@ async def submit_config(request: ConfigRequest):
             #chat_store.chat_history.clear()
             await chat_store.clear(player.id)
             print("[CHAT] Verlauf gelöscht.")
+
+        if request.delete_transcriptions:
+            delete_transcription_embeddings()
+
 
         return ConfigResponse(status="success")
     except Exception as e:

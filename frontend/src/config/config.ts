@@ -1,6 +1,11 @@
+import { useSessionStore } from '@/stores/session.ts'
 // Set the server and enpdoints
 export const SERVER_CONFIG = {
-  BASE_URL: 'http://localhost:8000',
+  //BASE_URL: 'http://localhost:8000',
+  get BASE_URL() {
+    const store = useSessionStore();
+    return store.backendUrl || "http://localhost:8000"; // Fallback
+  },
   ENDPOINTS: {
     RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
@@ -8,6 +13,8 @@ export const SERVER_CONFIG = {
     CHECK_CONNECTION: '/health/checkConnection',
     PLAYERS: '/players',
     WS_PLAYERS: '/ws/players',
+    RULEBOOK_FOLDERS: '/rulebook/folders',
+    RULEBOOK_FILE: '/rulebook/file',
   },
 }
 

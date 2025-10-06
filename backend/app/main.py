@@ -5,8 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
+from app.functions.embedding.embedding_model import embedd_rulebook, read_text_files, delete_chromadb
+from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown
+from contextlib import asynccontextmanager
 from app.core.bus import bus
-from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players
 
 # List of available api endpoints
 all_routers = [
@@ -17,6 +19,9 @@ all_routers = [
     (health.router, "/health", ["health"]),
     (players.router, "/players", ["players"]),
     (ws_players.router, "/ws", ["ws"]),
+    #(rulebook_markdown.router, "/folders", ["folders"]),
+    #(rulebook_markdown.router, "/file", ["file"]),
+    (rulebook_markdown.router, "/rulebook", ["rulebook"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen
@@ -28,17 +33,29 @@ LAN_REGEX = (
     r")(?::\d+)?$"                         # optional :Port
 )
 
-def create_app() -> FastAPI:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logging.info("Server starting: deleting old ChromaDB and re-embedding rulebook...")
+    delete_chromadb()
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
-        await bus.start()
-        try:
-            yield
-        finally:
-            logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
-            await bus.stop()
+    logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
+    await bus.start()
+
+    # Rulebook embedding
+    texts, txt_paths = read_text_files()
+    embedd_rulebook(texts, txt_paths)
+    logging.info("Rulebook successfully embedded.")
+
+    try:
+        yield  # Server running
+    finally:
+        # Shutdown logic
+        logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
+        await bus.stop()
+        logging.info("Server Dungeonmaind shutting down...")
+
+def create_app() -> FastAPI:
 
     # Configure root logger
     logging.basicConfig(
@@ -49,7 +66,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         debug=settings.debug,
         version="1.0.0",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     application.add_middleware(

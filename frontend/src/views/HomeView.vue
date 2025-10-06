@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import {computed, ref, render} from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
+import { marked } from 'marked'
+
 
 const router = useRouter()
 const store = useSessionStore()
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
+let modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
+const askRulebook = ref<boolean>(false)
 let socket: WebSocket | null = null;
 let pingTimer: number | null = null;
 
@@ -25,10 +30,21 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 
 const diceResult = ref<string>('')
 
+//const backendMarkdown = ref<string>('')
+//let renderedMarkdown = ref<string>('')
+const backendMarkdown = ref<string[]>([])
+const currentMarkdownIndex = ref(0)
+let renderedMarkdown = ref('')
+
+
+
 function goToConfig() {
   router.push('/config')
 }
 
+function goToRulebook() {
+  router.push('/rulebook')
+}
 
 
 onMounted(() => {
@@ -50,9 +66,9 @@ onMounted(() => {
   socket = new WebSocket(url.toString());
 
   socket.onopen = async () => {
-    store.loadPlayers();        // ← holt die IST-Spielerliste
+    store.loadPlayers();        // holt die IST-Spielerliste
 
-    pingTimer = window.setInterval(() => {    // ← Hearbeat alle 15s
+    pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
       try { socket?.send('ping'); } catch {}
     }, 15000);
   };
@@ -117,20 +133,53 @@ async function handleLLMQuestionSubmit() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         player_id: store.currentPlayer?.id,
-        input_string: userInput.value
+        input_string: userInput.value,
+        use_rulebook: askRulebook.value
       }),
     })
-    if (!response.ok || !response.body) {
-      throw new Error(`Request failed with status ${response.status}`)
+    if (askRulebook.value) {
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+    } else {
+      if (!response.ok || !response.body) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    while (true) {
-      const {done, value} = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, {stream: true})
-      modelOutput.value += chunk
+
+    if(askRulebook.value) {
+      //const markdownJson = await response.text()
+      const markdownJson = await response.json()
+      console.log(markdownJson)
+      //backendMarkdown.value = markdownJson.markdown_text || ""
+      //backendMarkdown.value = markdownJson
+      backendMarkdown.value = markdownJson.markdown_texts || []
+      if (backendMarkdown.value.length > 0) {
+        currentMarkdownIndex.value = 0
+        renderedMarkdown.value = marked.parse(backendMarkdown.value[0])
+      }
+      //if (backendMarkdown.value.trim()) {
+      //  renderedMarkdown.value = marked.parse(backendMarkdown.value)
+      //  console.log(renderedMarkdown.value)
+      //}
+    } else {
+      if(!response.body) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+      // Removes any still shown previous rulebook searches.
+      backendMarkdown.value = []
+      renderedMarkdown.value = ""
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      while (true) {
+        const {done, value} = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, {stream: true})
+        modelOutput.value += chunk
+        modelOutputRendered = marked.parse(modelOutput.value)
+      }
     }
   } catch (error) {
     console.error('Error calling LLM endpoint:', error)
@@ -139,6 +188,21 @@ async function handleLLMQuestionSubmit() {
     isLoading.value = false //  unlock after done
   }
 }
+
+function showNextMarkdown() {
+  if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
+    currentMarkdownIndex.value++
+    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+  }
+}
+
+function showPrevMarkdown() {
+  if (currentMarkdownIndex.value > 0) {
+    currentMarkdownIndex.value--
+    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+  }
+}
+
 
 async function handleAudioUpload() {
   if (!selectedAudioFile.value) {
@@ -365,16 +429,19 @@ async function heal(playerId: string, amount: number) {
 <template>
   <div class="container">
 
-    <div class="header">
-      <div class="header-left"></div>
-      <h1>Dungeonmaind</h1>
-      <button class="config-button" @click="goToConfig">Config</button>
+     <div class="header">
+       <div class="header-left"></div>
+       <h1>Dungeonmaind</h1>
+       <div class="header-right">
+         <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
+         <button class="config-button" @click="goToConfig">Config</button>
+       </div>
     </div>
 
     <div class="centered-content">
       <section>
-        <h2>Hallo, {{ store.currentPlayer?.name }}!</h2>
-        <p v-if="store.isLeader">Du bist Leader.</p>
+        <h2>Hello {{ store.currentPlayer?.name }}</h2>
+        <p v-if="store.isLeader">>You are leader.</p>
         <button class="submit-button" @click="onLeave">Leave</button>
         <h3>Spieler</h3>
         <ul>
@@ -387,13 +454,32 @@ async function heal(playerId: string, amount: number) {
       <!-- Left: main LLM -->
       <div class="content-section">
         <h2>Ask Something about the DnD-Session</h2>
-        <input v-model="userInput" type="text" placeholder="Type something..." class="input-field" />
+        <input
+          v-model="userInput"
+          type="text"
+          placeholder="Type something..."
+          class="input-field"
+          @keyup.enter="handleLLMQuestionSubmit"
+        />
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" v-model="askRulebook" />
+            Search rulebook
+        </label>
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
-        <div v-if="modelOutput" class="output">
+        <div v-if="modelOutput" class="markdown-output">
           <h3>Model Output:</h3>
-          <p>{{ modelOutput }}</p>
+          <div v-html="modelOutputRendered"></div>
+        </div>
+        <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
+          <h3>Relevant SRD article</h3>
+          <div class="markdown-navigation">
+            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">Previous</button>
+            <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
+            <button @click="showNextMarkdown" :disabled="currentMarkdownIndex === backendMarkdown.length - 1">Next</button>
+          </div>
+          <div v-html="renderedMarkdown"></div>
         </div>
       </div>
 
@@ -523,10 +609,24 @@ body {
 }
 
 .header {
-  position: fixed; top: 0; left: 0; right: 0; height: 50px;
-  background-color: rgba(160,122,57,0.95);
-  display: flex; align-items: center; justify-content: center;
-  padding: 0 1rem; box-sizing: border-box; color: #e0d5b7; z-index: 1000;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  background-color: rgba(160, 122, 57, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  box-sizing: border-box;
+  color: #e0d5b7;
+  z-index: 1000;
+}
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .centered-content {
@@ -539,56 +639,131 @@ body {
   margin-top: 60px; /* unter dem Header */
 }
 
+
+.rulebook-button,
 .config-button {
-  position: absolute; right: 1rem;
   padding: 0.5rem 1rem;
-  background-color: rgba(53,73,94,0.9);
-  border: 1px solid #4a575e; border-radius: 4px;
-  color: white; cursor: pointer;
+  background-color: rgba(53, 73, 94, 0.9);
+  border: 1px solid #4a575e;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
   font-family: 'MedievalSharp', cursive;
   font-weight: normal;
-  z-index: 1001;
   transition: background-color 0.3s ease;
 }
-.config-button:hover { background-color: #4a575e; }
+
+.rulebook-button:hover,
+.config-button:hover {
+  background-color: #4a575e;
+}
+.content-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 
 .content-section { display: flex; flex-direction: column; align-items: center; }
 h1 {
-  color: #392401; text-align: center; padding-top: 20px;
-  margin: 0 0 1.5rem; font-family: 'MedievalSharp', cursive; font-weight: bolder;
+  color: #392401;
+  text-align: center;
+  padding-top: 20px;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
 }
+
+
 h2 {
-  color: #392401; text-align: center; margin: 0 0 1.5rem;
-  font-size: x-large; font-family: 'MedievalSharp', cursive; font-weight: bolder;
+  color: #392401;
+  text-align: center;
+  margin-top: 0;
+  font-size: x-large;
+  margin-bottom: 1.5rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
 }
-hr { width: 100%; border: none; border-top: 1px solid rgba(94,80,53,0.5); margin: 2rem 0; }
+
+hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid rgba(94, 80, 53, 0.5);
+  margin: 2rem 0;
+}
 
 .input-field {
-  padding: 0.75rem; font-size: 1rem; margin-bottom: 1rem;
-  border: 1px solid #695710; border-radius: 10px;
-  font-family: 'MedievalSharp', cursive; font-weight: bolder;
-  background-color: #f1e6b4; color: #4c3e06;
-  width: 90%; box-sizing: border-box;
+  padding: 0.75rem;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #695710;
+  border-radius: 10px;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+  background-color: #f1e6b4;
+
+  color: #4c3e06;
+  width: 90%;
+  box-sizing: border-box;
 }
+
 .submit-button {
-  padding: 0.75rem 1.5rem; font-size: 1rem; background-color: #b74d30; color: white;
-  border: 1px solid #8e7513; border-radius: 10px; cursor: pointer; margin-bottom: 1rem;
-  font-family: 'MedievalSharp', cursive; transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  background-color: #b74d30;
+  color: white;
+  border: 1px solid #8e7513;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-bottom: 1rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: normal;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
 }
-.submit-button:hover:not(:disabled) { background-color: #7e6f34; transform: translateY(-1px); }
-.submit-button:disabled { opacity: 0.7; cursor: not-allowed; }
-.play-button { display: flex; justify-content: center; margin-top: 1rem; gap: 1rem; }
+
+.submit-button:hover:not(:disabled) {
+  background-color: #7e6f34;
+  transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.play-button {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+  gap: 1rem;
+}
 
 .output {
-  width: 100%; max-height: 300px; overflow-y: auto;
-  padding: 1rem; margin-top: 1rem;
-  background-color: rgba(110,97,50,0.7); color: white;
-  border-radius: 10px; border: 1px solid #000; box-sizing: border-box;
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: rgba(110, 97, 50, 0.7);
+  color: white;
+  border-radius: 10px;
+  border: 1px solid #000000;
   font-family: 'MedievalSharp', cursive;
+  font-weight: bold;
+  font-weight: 400;
+  box-sizing: border-box;
 }
-.output h3 { margin: 0 0 0.5rem; color: #f1e6b4; }
-.output p { margin: 0; }
+
+.output p {
+  margin: 0;
+}
+
+.output h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #f1e6b4;
+}
 
 /* Abilities and dice on right */
 .right-rail {
@@ -644,5 +819,106 @@ hr { width: 100%; border: none; border-top: 1px solid rgba(94,80,53,0.5); margin
 
 @media (max-width: 900px) {
   .right-rail { position: static; width: auto; margin: 1rem; }
+}
+
+
+:deep(.markdown-output) {
+  font-family: 'MedievalSharp', cursive;
+  color: #392401;
+  line-height: 1.5;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h1) {
+  font-size: 2rem;
+  color: #1a3b1a;
+  border-bottom: 2px solid #392401;
+  padding-bottom: 0.3rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h2) {
+  font-size: 1.5rem;
+  color: #2a4b2a;
+  border-bottom: 1px solid #392401;
+  padding-bottom: 0.2rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h3),
+:deep(.markdown-output h4),
+:deep(.markdown-output h5),
+:deep(.markdown-output h6) {
+  color: #3a5b3a;
+  margin-top: 0.8rem;
+  font-weight: bold;
+}
+
+:deep(.markdown-output strong) {
+  color: #8b0000; /* dark red for emphasis */
+  font-weight: bold;
+}
+
+:deep(.markdown-output em) {
+  color: #003366; /* dark blue */
+  font-style: italic;
+}
+
+:deep(.markdown-output strong em),
+:deep(.markdown-output em strong) {
+  color: #800080; /* purple */
+  font-weight: bold;
+  font-style: italic;
+}
+
+:deep(.markdown-output table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+:deep(.markdown-output th),
+:deep(.markdown-output td) {
+  border: 1px solid #392401;
+  padding: 0.3rem 0.5rem;
+  text-align: center;
+}
+
+:deep(.markdown-output th) {
+  background-color: #f5e6b4;
+  font-weight: bold;
+}
+
+:deep(.markdown-output tr:nth-child(even)) {
+  background-color: #faf0d4;
+}
+
+:deep(.markdown-output p) {
+  margin: 0.4rem 0;
+}
+
+:deep(.markdown-output h6) {
+  font-style: italic;
+  color: #4b2e2e;
+  margin-top: 0.5rem;
+}
+
+:deep(.scrollable-panel) {
+  max-height: 400px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: rgba(110, 97, 50, 0.7);
+  box-sizing: border-box;
+}
+
+:deep(.markdown-navigation) {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
 }
 </style>
