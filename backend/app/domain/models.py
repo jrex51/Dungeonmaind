@@ -13,6 +13,11 @@ class Role(str, Enum):
     leader = "leader"
     member = "member"
 
+class PlayerStatus(str, Enum):
+    active = "active"
+    inactive = "inactive"
+    kicked = "kicked"
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -21,6 +26,7 @@ class Player:
     id: UUID
     name: str
     role: Role
+    status: PlayerStatus = PlayerStatus.active
     max_hp: int = 10
     hp: int = 10
     temp_hp: int = 0

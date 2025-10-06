@@ -101,7 +101,6 @@ function wsUrl(baseHttpUrl: string, path: string): string {
   return u.toString();                            // ws://192.168.1.5:8000/ws/players
 }
 
-
 async function onLeave() {
   await store.leave();
   router.push({ name: "login" });
