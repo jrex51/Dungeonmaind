@@ -43,3 +43,13 @@ async def leave(player_id: UUID):
     await store.leave(player_id)
     await bus.publish({"type": "leave", "player_id": str(player_id)})
     return None
+
+@router.get("/{player_id}/exists")
+async def player_exists(player_id: UUID):
+    try:
+        player = store.group.players.get(player_id)
+        print("[CHECK] Player exists")
+        return {"exists": player is not None}
+    except KeyError:
+        print("[CHECK] Player does not exist")
+        return {"exists": False}

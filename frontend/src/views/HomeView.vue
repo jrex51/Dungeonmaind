@@ -320,7 +320,7 @@ function rollDice(sides: number) {
         />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
-            Search rulebook
+            show matching rulebook page
         </label>
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}

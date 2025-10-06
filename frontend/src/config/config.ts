@@ -36,3 +36,13 @@ export const TRANSCRIPTION_MODELS = [
 
 // Set the default transcription model
 export const DEFAULT_TRANSCRIPTION_MODEL = TRANSCRIPTION_MODELS[0].value
+
+// Set the available embedding models
+export const EMBEDDING_MODELS = [
+  { value: 'all-MiniLM-L6-v2', label: 'all-MiniLM-L6-v2' },
+  { value: 'all-MiniLM-L12-v2', label: 'all-MiniLM-L12-v2' },
+  { value: 'paraphrase-multilingual-MiniLM-L12-v2', label: 'paraphrase-multilingual-MiniLM-L12-v2' },
+]
+
+// Set the default embedding model
+export const DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODELS[0].value

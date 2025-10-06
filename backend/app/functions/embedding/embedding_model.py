@@ -12,7 +12,7 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
         source_db = "transcriptions"
 
     embedding_model = SentenceTransformerEmbeddings(
-        model_name="all-MiniLM-L6-v2"
+        model_name=settings.embedding_model
     )
 
     vectorstore = Chroma(
@@ -56,7 +56,7 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
 def embedd_transcriptions(embedding_text: list, persist_directory=settings.chroma_db_path):
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(
-        model_name="all-MiniLM-L6-v2"
+        model_name=settings.embedding_model
     )
 
     documents = [
@@ -78,7 +78,7 @@ def embedd_rulebook(embedding_text: list, txt_paths: dict, persist_directory =se
     embedding_text: list of text content
     txt_paths: dict mapping index in embedding_text -> absolute txt path
     """
-    embedding_model = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+    embedding_model = SentenceTransformerEmbeddings(model_name=settings.embedding_model)
 
     documents = []
     for text, txt_abs_path in zip(embedding_text, txt_paths):
@@ -125,7 +125,7 @@ def read_text_files(rulebook_folder=None):
 def delete_transcription_embeddings(persist_directory=settings.chroma_db_path):
     # Load embedding model
     embedding_model = SentenceTransformerEmbeddings(
-        model_name="all-MiniLM-L6-v2"
+        model_name=settings.embedding_model
     )
 
     if not os.path.exists(os.path.join(persist_directory, "chroma.sqlite3")):
@@ -154,11 +154,10 @@ def delete_transcription_embeddings(persist_directory=settings.chroma_db_path):
 
 
 # Not finished yet!
-def reembed_chroma_entries(persist_directory=settings.chroma_db_path,
-                           old_model="all-MiniLM-L6-v2",
-                           new_model="all-MiniLM-L6-v2"):
+def reembed_chroma_entries(new_model: str, persist_directory=settings.chroma_db_path):
+    old_model = settings.embedding_model
 
-    if(old_model == new_model):
+    if old_model == new_model:
         return
 
     old_embedding_model = SentenceTransformerEmbeddings(model_name=old_model)

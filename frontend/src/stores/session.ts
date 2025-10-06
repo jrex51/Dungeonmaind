@@ -25,9 +25,7 @@ export const useSessionStore = defineStore("session", () => {
     try {
       await api.leave(currentPlayer.value.id);
     } finally {
-      currentPlayer.value = null;
-      players.value = [];
-      clearPersist();
+      clearSession()
     }
   }
 
@@ -52,10 +50,16 @@ export const useSessionStore = defineStore("session", () => {
   if (!raw) return null;
   return raw;
 }
+  function clearSession() {
+    currentPlayer.value = null;
+    backendUrl.value = null;
+    players.value = [];
+    clearPersist();
+  }
   function clearPersist() {
     localStorage.removeItem("player");
     localStorage.removeItem("backendUrl");
   }
 
-  return { currentPlayer, players, isLeader, backendUrl, setBackendUrl, join, loadPlayers, leave }
+  return { currentPlayer, players, isLeader, backendUrl, setBackendUrl, join, loadPlayers, leave, clearSession }
 })

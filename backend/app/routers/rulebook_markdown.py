@@ -1,10 +1,12 @@
 import os
+from app.core.config import settings
 from fastapi import APIRouter, HTTPException
 from app.base_models.rulebook import FolderStructure, FolderContent, FileContentResponse
 from app.functions.embedding.markdown_reader import read_markdown_file
 
 router = APIRouter()
-BASE_DIR = "./data/markdowns"
+#BASE_DIR = "./data/markdowns"
+BASE_DIR = os.path.join(settings.backend_root_path, "data", "markdowns")
 
 @router.get("/folders", response_model=FolderStructure)
 async def get_folders():

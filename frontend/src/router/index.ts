@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import { useSessionStore } from '@/stores/session.ts'
+import { checkPlayerExists } from "@/api/players";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -38,8 +39,25 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const store = useSessionStore();
+
+  if (to.meta.requiresAuth) {
+    if (!store.currentPlayer) return { name: "login" };
+
+    try {
+      const res = await checkPlayerExists(store.currentPlayer.id);
+      if (!res.exists) {
+        store.clearSession();
+        return { name: "login" };
+      }
+    } catch (err) {
+      console.error("Fehler beim Prüfen des Players:", err);
+      store.clearSession();
+      return { name: "login" };
+    }
+  }
+
   if (to.meta.requiresAuth && !store.currentPlayer) {
     return { name: "login" };
   }

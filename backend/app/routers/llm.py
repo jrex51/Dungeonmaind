@@ -9,6 +9,7 @@ from app.core.chat_store import chat_store
 from app.domain.store import store
 from app.functions.embedding.embedding_model import embedding_search
 from app.functions.embedding.markdown_reader import read_markdown_file
+from app.core.config import settings
 
 
 router = APIRouter()
@@ -31,7 +32,12 @@ async def run_llm(req: LLMRequest):
     # k has to be adjusted after some testing later.
     retrieved_docs = embedding_search(req.input_string, req.use_rulebook)
     if req.use_rulebook:
-        md_paths = [doc.metadata.get("path") for doc in retrieved_docs]
+        md_paths = [
+            os.path.join(settings.backend_root_path, doc.metadata.get("path")[2:])
+            for doc in retrieved_docs
+        ]
+        print(settings.backend_root_path)
+        print(md_paths)
         markdown_texts = [read_markdown_file(path) for path in md_paths]
         print("markdown_text:", markdown_texts[0])
         if not markdown_texts:
@@ -46,7 +52,7 @@ async def run_llm(req: LLMRequest):
     sources = [doc.metadata.get("source") for doc in retrieved_docs]
     for doc in retrieved_docs:
         context += "--Source-- " + doc.metadata.get("source") + "--End Source-- \n"
-        if doc.metadata.get("path") is not "none":
+        if doc.metadata.get("path") is not None:
             full_path = doc.metadata.get("path")
             filename = os.path.basename(full_path).replace(".md", "")
             context += "-filename-" + filename + "-End filename- \n"

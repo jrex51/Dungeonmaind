@@ -36,3 +36,10 @@ export async function leave(playerId: string): Promise<void> {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error('HTTP ${res.status}');
 }
+
+export async function checkPlayerExists(playerId: string): Promise<{ exists: boolean }> {
+  const url = new URL(`/players/${playerId}/exists`, SERVER_CONFIG.BASE_URL).toString();
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
