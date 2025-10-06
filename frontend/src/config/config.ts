@@ -6,6 +6,7 @@ export const SERVER_CONFIG = {
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
     CHANGE_CONFIG: '/config/changeConfig',
     CHECK_CONNECTION: '/health/checkConnection',
+    PLAYERS: '/players',
     WS_PLAYERS: '/ws/players',
   },
 }

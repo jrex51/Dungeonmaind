@@ -2,7 +2,15 @@ import { getApiBase } from '@/config/apiBase.ts';
 
 export type Role = "leader" | "member";
 export type PlayerOut = {
-  id: string; name: string; role: Role; created_at: string; last_seen_at: string;
+  id: string;
+  name: string;
+  role: Role;
+  hp: number;
+  max_hp: number;
+  temp_hp: number;
+  attributes?: Record<string, number> | null;
+  created_at: string;
+  last_seen_at: string;
 }
 
 export async function join(name: string, role: Role): Promise<PlayerOut> {

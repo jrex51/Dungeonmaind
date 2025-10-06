@@ -44,5 +44,14 @@ export const useSessionStore = defineStore("session", () => {
     sessionStorage.removeItem("player");
   }
 
-  return { currentPlayer, players, isLeader, join, loadPlayers, leave }
+  function patchPlayer(id: string, patch: Partial<Pick<PlayerOut, 'hp'|'max_hp'|'temp_hp'|'attributes'>>) {
+    players.value = players.value.map((p): PlayerOut =>
+      p.id === id ? ({ ...p, ...patch } as PlayerOut) : p
+    );
+    if (currentPlayer.value?.id === id) {
+      currentPlayer.value = { ...(currentPlayer.value as PlayerOut), ...patch } as PlayerOut;
+    }
+  }
+
+  return { currentPlayer, players, isLeader, join, loadPlayers, leave, patchPlayer }
 })

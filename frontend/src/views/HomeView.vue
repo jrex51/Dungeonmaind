@@ -63,11 +63,22 @@ onMounted(() => {
       // Duplizate vermeiden:
       if (!store.players.some(p => p.id === msg.player.id)) {
         store.players.push(msg.player);
+      } else {
+        // falls der Join Player-Objekt neuere Felder bringt
+        store.players = store.players.map(p => p.id === msg.player.id ? msg.player : p);
       }
     } else if (msg.type === "leave") {
       store.players = store.players.filter(
         p => p.id !== msg.player_id
       );
+    } else if (msg.type === "health/update") {
+      store.patchPlayer(msg.player_id, {
+        hp: Number(msg.hp),
+        max_hp: Number(msg.max_hp),
+        temp_hp: Number(msg.temp_hp),
+      });
+    } else if (msg.type === "attributes/update") {
+      store.patchPlayer(msg.player_id, { attributes: msg.attributes });
     }
   };
 
@@ -332,6 +343,24 @@ const visiblePlayers = computed(() => {
 function getAbilityData(p: unknown) {
   return extractAbilities(p)
 }
+
+
+/* Healthbar */
+async function damage(playerId: string, amount: number) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ damage: amount }),
+  });
+}
+
+async function heal(playerId: string, amount: number) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ heal: amount }),
+  })
+}
 </script>
 
 <template>
@@ -395,7 +424,7 @@ function getAbilityData(p: unknown) {
       </div>
     </div>
 
-    <!-- Right: abilitiy and dice -->
+    <!-- Right: abilities, health and dice -->
     <aside class="right-rail">
       <section class="abilities-section rail-panel">
         <h2 v-if="!store.isLeader">Your ability scores</h2>
@@ -420,6 +449,26 @@ function getAbilityData(p: unknown) {
                     ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
                   </small>
                 </div>
+              </div>
+            </div>
+
+            <div class="healthbar">
+              <div class="healthbar__label">HP</div>
+              <div class="healthbar__track">
+                <div
+                  class="healthbar__fill"
+                  :style="{ width: Math.min(100, Math.round(((p.hp + (p.temp_hp ?? 0)) / Math.max(1, p.max_hp)) * 100)) + '%' }"
+                  :title="`HP ${p.hp}/${p.max_hp}${p.temp_hp ? ` (+${p.temp_hp} temp)` : ''}`"
+                />
+              </div>
+              <div class="healthbar__numbers">
+                {{ p.hp }} / {{ p.max_hp }} <span v-if="p.temp_hp">(+{{ p.temp_hp }})</span>
+              </div>
+
+              <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->
+              <div class="healthbar__controls" v-if="store.isLeader || p.id === store.currentPlayer?.id">
+                <button @click="damage(p.id, 1)">-1</button>
+                <button @click="heal(p.id, 1)">+1</button>
               </div>
             </div>
           </div>
