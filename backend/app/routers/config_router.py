@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from app.base_models.config_base_models import ConfigRequest, ConfigResponse
 from app.core.config import settings
-from app.core import chat_store
+from app.core.chat_store import chat_store
+from app.domain.store import store
 
 router = APIRouter()
 
@@ -32,7 +33,13 @@ async def submit_config(request: ConfigRequest):
         print(f"[CONFIG] Transkriptionsmodell geändert auf: {settings.transcription_model}")
 
         if request.clear_chat:
-            chat_store.chat_history.clear()
+            try:
+                player = store.group.get_player(request.player_id)
+            except KeyError:
+                print("Player not found")
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
+            #chat_store.chat_history.clear()
+            await chat_store.clear(player.id)
             print("[CHAT] Verlauf gelöscht.")
 
         return ConfigResponse(status="success")

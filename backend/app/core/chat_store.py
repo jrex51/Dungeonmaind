@@ -16,6 +16,10 @@ class ChatStore:
         async with self._lock:
             return list(self._by_player[player_id])
 
+    async def clear(self, player_id: UUID) -> None:
+        async with self._lock:
+            self._by_player[player_id].clear()
+
 chat_store = ChatStore()
 
 
