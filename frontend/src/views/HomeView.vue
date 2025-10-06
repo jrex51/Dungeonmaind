@@ -137,69 +137,59 @@ async function handleLLMQuestionSubmit() {
         use_rulebook: askRulebook.value
       }),
     })
-    if (askRulebook.value) {
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`)
-      }
-    } else {
-      if (!response.ok || !response.body) {
-        throw new Error(`Request failed with status ${response.status}`)
-      }
+    if (!response.ok || (!askRulebook.value && !response.body)) {
+      throw new Error(`Request failed with status ${response.status}`)
     }
 
-
-    if(askRulebook.value) {
-      //const markdownJson = await response.text()
+    if (askRulebook.value) {
       const markdownJson = await response.json()
-      console.log(markdownJson)
-      //backendMarkdown.value = markdownJson.markdown_text || ""
-      //backendMarkdown.value = markdownJson
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
-        renderedMarkdown.value = marked.parse(backendMarkdown.value[0])
+        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0])
       }
-      //if (backendMarkdown.value.trim()) {
-      //  renderedMarkdown.value = marked.parse(backendMarkdown.value)
-      //  console.log(renderedMarkdown.value)
-      //}
     } else {
-      if(!response.body) {
-        throw new Error(`Request failed with status ${response.status}`)
-      }
-      // Removes any still shown previous rulebook searches.
+      if (!response.body) throw new Error(`Request failed with status ${response.status}`)
+
+      // frühere Rulebook-Ausgaben leeren
       backendMarkdown.value = []
       renderedMarkdown.value = ""
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
+
       while (true) {
-        const {done, value} = await reader.read()
+        const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value, {stream: true})
+        const chunk = decoder.decode(value, { stream: true })
         modelOutput.value += chunk
-        modelOutputRendered = marked.parse(modelOutput.value)
       }
+
+      modelOutputRendered.value = await marked.parse(modelOutput.value)
     }
   } catch (error) {
     console.error('Error calling LLM endpoint:', error)
     modelOutput.value = 'Error calling model, error: ' + error
   } finally {
-    isLoading.value = false //  unlock after done
+    isLoading.value = false
   }
 }
 
-function showNextMarkdown() {
+async function showNextMarkdown() {
   if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
     currentMarkdownIndex.value++
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+    renderedMarkdown.value = await marked.parse(
+      backendMarkdown.value[currentMarkdownIndex.value]
+    )
   }
 }
 
-function showPrevMarkdown() {
+async function showPrevMarkdown() {
   if (currentMarkdownIndex.value > 0) {
     currentMarkdownIndex.value--
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+    renderedMarkdown.value = await marked.parse(
+      backendMarkdown.value[currentMarkdownIndex.value]
+    )
   }
 }
 
@@ -818,7 +808,11 @@ hr {
 .ability-mod { display: block; font-size: 0.75rem; font-weight: 600; color: #4c3e06; }
 
 @media (max-width: 900px) {
-  .right-rail { position: static; width: auto; margin: 1rem; }
+  .right-rail {
+    position: static;
+    width: auto;
+    margin: 1rem;
+  }
 }
 
 

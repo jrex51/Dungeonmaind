@@ -34,24 +34,28 @@ export const useSessionStore = defineStore("session", () => {
   function setBackendUrl(url: string) {
   backendUrl.value = url;
   persistBackendUrl(url);
-}
+  }
 
   function persistPlayer(p: PlayerOut) {
     localStorage.setItem("player", JSON.stringify(p));
   }
+
   function persistBackendUrl(url: string) {
   localStorage.setItem("backendUrl", url);
-}
+  }
+
   function hydratePlayer(): PlayerOut | null {
     const raw = localStorage.getItem("player");
     if (!raw) return null;
     try { return JSON.parse(raw) as PlayerOut; } catch { return null;}
   }
+
   function hydrateBackendUrl(): string | null {
   const raw = localStorage.getItem("backendUrl");
   if (!raw) return null;
   return raw;
-}
+  }
+
   function clearPersist() {
     localStorage.removeItem("player");
     localStorage.removeItem("backendUrl");
@@ -66,5 +70,5 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
-  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer }
+  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer, setBackendUrl }
 })
