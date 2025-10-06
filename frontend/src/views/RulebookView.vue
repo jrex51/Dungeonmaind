@@ -15,8 +15,13 @@ function goHome() {
   router.push('/')
 }
 async function fetchFolders() {
+  //const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
+  //folderStructure.value = await res.json()
   const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
-  folderStructure.value = await res.json()
+  const data = await res.json()
+  console.log("Fetched folders:", Object.keys(data))
+  delete data[""]
+  folderStructure.value = data
 }
 fetchFolders()
 
@@ -49,8 +54,12 @@ function toggleFolder(folder: string) {
             ▶ {{ folder }}
           </div>
           <ul v-if="expandedFolders.has(folder)">
-            <li v-for="file in data.files" :key="file" class="file" @click="fetchFile(folder ? folder + '/' + file : file)">
-              {{ file }}
+            <li v-for="file in data.files"
+                :key="file"
+                class="file"
+                @click="fetchFile(folder ? folder + '/' + file : file)"
+            >
+              {{ file.replace(/\.md$/, '') }}
             </li>
           </ul>
         </li>
@@ -58,7 +67,11 @@ function toggleFolder(folder: string) {
     </div>
 
     <div class="viewer">
-      <div v-html="renderedMarkdown" class="markdown-output  scrollable-panel"></div>
+      <div
+        v-if="selectedFile"
+        v-html="renderedMarkdown"
+        class="markdown-output scrollable-panel">
+      </div>
       <button class="goHome-button" @click="goHome">return</button>
     </div>
   </div>

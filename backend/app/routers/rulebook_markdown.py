@@ -11,8 +11,6 @@ async def get_folders():
     folder_dict = {}
     for root, dirs, files in os.walk(BASE_DIR):
         rel_root = os.path.relpath(root, BASE_DIR)
-        if "srd_texts" in rel_root:
-            continue
         if rel_root == ".":
             rel_root = ""
         folder_dict[rel_root] = FolderContent(
