@@ -10,19 +10,38 @@
 import torch
 import whisperx
 import tempfile
+import os
+
+from app.functions.embedding.embedding_model import embedd_transcriptions
+from app.domain.store import store
 
 from app.core.config import settings
 
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
-    #set default device to GPU
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device == "cuda":
-        compute_type = "float16"
-    else:
-        compute_type = "int8"
+    model_dir = os.getenv("WHISPERX_MODELS_DIR", None)
 
+    print("WHISPERX_MODELS_DIR:", os.getenv("WHISPERX_MODELS_DIR"))
+
+    if model_dir is None:
+        # Dev/local environment: auto-detect device
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+    else:
+        # Docker: CPU-only setup
+        device = "cpu"
+        compute_type = "int8"
+        print("Warning: With Docker currently only CPU support is possible")
+
+    print("Loading WhisperX model...")
+    model = whisperx.load_model(
+        "base",  # or "medium.en", "large-v2", etc.
+        device,
+        compute_type=compute_type,
+        download_root=model_dir  # If None, uses default HF cache
+    )
     # 1. Load the model
+
     print("Loading WhisperX")
     model = whisperx.load_model(settings.transcription_model, device, compute_type=compute_type)
     # save model to local path (optional)
@@ -47,17 +66,26 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
     result_a = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
     print(result_a["segments"])
-    # 5. Assign speaker labels
 
+    texts = [segment['text'] for segment in result_a["segments"]]
+    embedd_transcriptions(texts)
+    
+    # 5. Assign speaker labels
+    print("Assigning...")
+    
     #created a HF token and then added it
     diarize_model = whisperx.diarize.DiarizationPipeline(use_auth_token="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", device=device)
+    
+    g = store.group
+    max_players = g.max_size
 
-    # add min/max number of speakers if known
+    #add min/max number of speakers
     diarize_segments = diarize_model(audio)
-    # diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
+    diarize_model(audio, min_speakers=1, max_speakers=max_players)
 
     result_b = whisperx.assign_word_speakers(diarize_segments, result_a)
     print(diarize_segments)
-    print(result_b["segments"]) # segments are now assigned speaker IDs
-
+    print(result_b["segments"]) #segments are now assigned speaker IDs
+    
+    #next align speaker IDs with player IDs
     return result_b["segments"]

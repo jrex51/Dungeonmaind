@@ -26,6 +26,12 @@ npm install
 npm run dev
 ```
 
+### Compile and Hot-Reload for Development (local server)
+
+```sh
+npm run dev -- --host
+```
+
 ### Type-Check, Compile and Minify for Production
 
 ```sh

@@ -1,21 +1,30 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { SERVER_CONFIG, LLM_OPTIONS, DEFAULT_LLM, TRANSCRIPTION_MODELS, DEFAULT_TRANSCRIPTION_MODEL } from '@/config/config'
+import { useSessionStore } from '@/stores/session.ts'
+import { SERVER_CONFIG, LLM_OPTIONS, DEFAULT_LLM, TRANSCRIPTION_MODELS, DEFAULT_TRANSCRIPTION_MODEL, EMBEDDING_MODELS, DEFAULT_EMBEDDING_MODEL} from '@/config/config'
 
 const router = useRouter()
+const store = useSessionStore()
 const LLM_STORAGE_KEY = 'selectedLLM'
 const TRANSCRIPTION_STORAGE_KEY = 'transcriptionModel'
+const EMBEDDING_STORAGE_KEY = 'embeddingModel'
 const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || DEFAULT_LLM)
 const selectedTranscriptionModel = ref(localStorage.getItem(TRANSCRIPTION_STORAGE_KEY) || DEFAULT_TRANSCRIPTION_MODEL)
+const selectedEmbeddingModel = ref(localStorage.getItem(EMBEDDING_STORAGE_KEY) || DEFAULT_EMBEDDING_MODEL)
 const clearChat = ref(false)
+const deleteTranscriptions = ref(false)
 
 watch(selectedLLM, (newVal) => {
   localStorage.setItem(LLM_STORAGE_KEY, newVal)
 })
 
 watch(selectedTranscriptionModel, (newVal) => {
-  localStorage.setItem('transcriptionModel', newVal)
+  localStorage.setItem(TRANSCRIPTION_STORAGE_KEY, newVal)
+})
+
+watch(selectedEmbeddingModel, (newVal) => {
+  localStorage.setItem(EMBEDDING_STORAGE_KEY, newVal)
 })
 
 function goHome() {
@@ -30,9 +39,13 @@ async function submitSelection() {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ selected_LLM: selectedLLM.value,
+      body: JSON.stringify({ player_id: store.currentPlayer?.id,
+        selected_LLM: selectedLLM.value,
         transcription_model: selectedTranscriptionModel.value,
-        clear_chat: clearChat.value })
+        embedding_model: selectedEmbeddingModel.value,
+        clear_chat: clearChat.value,
+        delete_transcriptions: deleteTranscriptions.value
+      })
     })
 
     if (!response.ok) {
@@ -68,11 +81,30 @@ async function submitSelection() {
     </select>
 
     <hr style="margin: 1rem 0" />
+    <div>
+      <label>
+        <input type="checkbox" v-model="clearChat" />
+        Clear Chat History
+      </label>
+    </div>
 
-    <label>
-      <input type="checkbox" v-model="clearChat" />
-      Clear Chat History
-    </label>
+    <hr style="margin: 1rem 0" />
+
+    <label for="embeddingModel">Choose Embedding Model:</label>
+    <select id="embeddingModel" v-model="selectedEmbeddingModel">
+      <option v-for="model in EMBEDDING_MODELS" :key="model.value" :value="model.value">
+        {{ model.label }}
+      </option>
+    </select>
+
+    <div style="margin-top: 1rem;"></div>
+
+    <div>
+      <label>
+        <input type="checkbox" v-model="deleteTranscriptions" />
+        Delete transcriptions
+      </label>
+    </div>
 
     <hr style="margin: 1rem 0" />
 
@@ -98,7 +130,7 @@ async function submitSelection() {
   box-sizing: border-box;
 }
 
-label, 
+label,
 option,
 input[type="checkbox"] + label {
   font-weight: 600;
@@ -124,7 +156,7 @@ select {
   margin-top: 2rem;
   padding: 0.75rem 1.5rem;
   font-family: 'MedievalSharp';
-  font-weight: bold; 
+  font-weight: bold;
   font-weight: 400;
   font-size: 1rem;
   background-color: #b74d30;
@@ -132,7 +164,7 @@ select {
   border: 1px solid #8e7513;
   border-radius: 10px;
   cursor: pointer;
-  
+
 }
 
 .done-button:hover {

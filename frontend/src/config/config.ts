@@ -1,10 +1,19 @@
+import { useSessionStore } from '@/stores/session.ts'
 // Set the server and enpdoints
 export const SERVER_CONFIG = {
-  BASE_URL: 'http://localhost:8000',
+  //BASE_URL: 'http://localhost:8000',
+  get BASE_URL() {
+    const store = useSessionStore();
+    return store.backendUrl || "http://localhost:8000"; // Fallback
+  },
   ENDPOINTS: {
-    RUN_LLM: '/llm/runLLM',
+    RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
     CHANGE_CONFIG: '/config/changeConfig',
+    CHECK_CONNECTION: '/health/checkConnection',
+    WS_PLAYERS: '/ws/players',
+    RULEBOOK_FOLDERS: '/rulebook/folders',
+    RULEBOOK_FILE: '/rulebook/file',
   },
 }
 
@@ -27,3 +36,13 @@ export const TRANSCRIPTION_MODELS = [
 
 // Set the default transcription model
 export const DEFAULT_TRANSCRIPTION_MODEL = TRANSCRIPTION_MODELS[0].value
+
+// Set the available embedding models
+export const EMBEDDING_MODELS = [
+  { value: 'all-MiniLM-L6-v2', label: 'all-MiniLM-L6-v2' },
+  { value: 'all-MiniLM-L12-v2', label: 'all-MiniLM-L12-v2' },
+  { value: 'paraphrase-multilingual-MiniLM-L12-v2', label: 'paraphrase-multilingual-MiniLM-L12-v2' },
+]
+
+// Set the default embedding model
+export const DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODELS[0].value
