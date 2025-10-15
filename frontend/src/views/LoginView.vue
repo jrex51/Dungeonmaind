@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
-import type { Role } from "@/api/players";
+import type { Role } from "@/api/playersAPI.ts";
 import { useSessionStore } from '@/stores/session.ts'
 
 const store = useSessionStore();

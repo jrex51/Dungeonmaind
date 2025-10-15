@@ -77,7 +77,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => { socket?.close()
-  
+
   //Cleanly end recorder/mic on unmount
   if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
     isFinalStop.value = true
@@ -234,7 +234,7 @@ async function startRecording() {
       recordedAudioURL.value = null
     }
     audioChunks.value = []
-    
+
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     micPermissionStatus.value = 'Microphone access granted.';
     audioStream.value = stream;
@@ -265,7 +265,7 @@ async function startRecording() {
         audioChunks.value.push(e.data);
       }
     };
-    
+
     mediaRecorder.value.onstop = () => {
       if (audioChunks.value.length > 0) {
         const audioBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType });
@@ -279,7 +279,7 @@ async function startRecording() {
           audioStream.value.getTracks().forEach(track => track.stop());
           const finalBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType })
           recordedAudioURL.value = URL.createObjectURL(finalBlob)
-          audioChunks.value = []; 
+          audioChunks.value = [];
         }
       } else {
         audioChunks.value = [];
@@ -295,8 +295,8 @@ async function startRecording() {
         }
     }, 250);
 
-    const spliceTime = 5 * 60 * 1000; 
-    audioRecorderInterval.value = setInterval(rotateRecording, spliceTime); 
+    const spliceTime = 5 * 60 * 1000;
+    audioRecorderInterval.value = setInterval(rotateRecording, spliceTime);
 
   } catch (error) {
     console.error('Microphone access denied:', error);
@@ -306,7 +306,7 @@ async function startRecording() {
 
 function rotateRecording() {
   if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-  
+
     mediaRecorder.value.requestData();
     mediaRecorder.value.stop();
   }
@@ -328,21 +328,21 @@ async function sendAudioChunk(chunk: Blob) {
   const formData = new FormData()
   const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg';
   formData.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`);
-  
+
   try {
     const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
       method: 'POST',
       body: formData
     })
-    
+
     if (!response.ok) {
       console.error('Chunk upload failed with status:', response.status)
       return
     }
-    
+
     const result = await response.json()
     console.log('Chunk transcribed successfully:', result)
-    
+
   } catch (error) {
     console.error('Error sending audio chunk:', error)
   }
@@ -434,7 +434,7 @@ function rollDice(sides: number) {
         />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
-            show matching rulebook page
+            show matching rulebook pages
         </label>
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}

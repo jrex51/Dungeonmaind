@@ -2,7 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import { useSessionStore } from '@/stores/session.ts'
-import { checkPlayerExists } from "@/api/players";
+import { useConfigStore } from "@/stores/backendConfig.ts"
+import { checkPlayerExists } from "@/api/playersAPI.ts";
+import { fetchConfig } from "@/api/backendConfigAPI.ts";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -63,6 +65,16 @@ router.beforeEach(async (to) => {
   }
   if (to.name === "login" && store.currentPlayer) {
     return { name: "home" };
+  }
+
+  if (to.name === "config") {
+    try {
+     const config = await fetchConfig();
+     const configStore = useConfigStore();
+     configStore.setConfig(config);
+   } catch (error) {
+     console.error("Error loading config:", error);
+   }
   }
 });
 

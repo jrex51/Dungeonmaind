@@ -2,30 +2,18 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session.ts'
-import { SERVER_CONFIG, LLM_OPTIONS, DEFAULT_LLM, TRANSCRIPTION_MODELS, DEFAULT_TRANSCRIPTION_MODEL, EMBEDDING_MODELS, DEFAULT_EMBEDDING_MODEL} from '@/config/config'
+import { useConfigStore } from '@/stores/backendConfig'
+import { SERVER_CONFIG, LLM_OPTIONS, TRANSCRIPTION_MODELS, EMBEDDING_MODELS, EMBEDDING_TopK} from '@/config/config'
 
 const router = useRouter()
 const store = useSessionStore()
-const LLM_STORAGE_KEY = 'selectedLLM'
-const TRANSCRIPTION_STORAGE_KEY = 'transcriptionModel'
-const EMBEDDING_STORAGE_KEY = 'embeddingModel'
-const selectedLLM = ref(localStorage.getItem(LLM_STORAGE_KEY) || DEFAULT_LLM)
-const selectedTranscriptionModel = ref(localStorage.getItem(TRANSCRIPTION_STORAGE_KEY) || DEFAULT_TRANSCRIPTION_MODEL)
-const selectedEmbeddingModel = ref(localStorage.getItem(EMBEDDING_STORAGE_KEY) || DEFAULT_EMBEDDING_MODEL)
+const configStore = useConfigStore()
+const selectedLLM = ref(configStore.selectedLLM)
+const selectedTranscriptionModel = ref(configStore.transcriptionModel)
+const selectedEmbeddingModel = ref(configStore.embeddingModel)
+const selectedEmbeddingTopK = ref(configStore.embeddingTopK)
 const clearChat = ref(false)
 const deleteTranscriptions = ref(false)
-
-watch(selectedLLM, (newVal) => {
-  localStorage.setItem(LLM_STORAGE_KEY, newVal)
-})
-
-watch(selectedTranscriptionModel, (newVal) => {
-  localStorage.setItem(TRANSCRIPTION_STORAGE_KEY, newVal)
-})
-
-watch(selectedEmbeddingModel, (newVal) => {
-  localStorage.setItem(EMBEDDING_STORAGE_KEY, newVal)
-})
 
 function goHome() {
   router.push('/')
@@ -43,6 +31,7 @@ async function submitSelection() {
         selected_LLM: selectedLLM.value,
         transcription_model: selectedTranscriptionModel.value,
         embedding_model: selectedEmbeddingModel.value,
+        embedding_top_k: selectedEmbeddingTopK.value,
         clear_chat: clearChat.value,
         delete_transcriptions: deleteTranscriptions.value
       })
@@ -93,6 +82,15 @@ async function submitSelection() {
     <label for="embeddingModel">Choose Embedding Model:</label>
     <select id="embeddingModel" v-model="selectedEmbeddingModel">
       <option v-for="model in EMBEDDING_MODELS" :key="model.value" :value="model.value">
+        {{ model.label }}
+      </option>
+    </select>
+
+    <div style="margin-top: 1rem;"></div>
+
+    <label for="embeddingTopK">Choose Embedding TopK:</label>
+    <select id="embeddingTopK" v-model="selectedEmbeddingTopK">
+      <option v-for="model in EMBEDDING_TopK" :key="model.value" :value="model.value">
         {{ model.label }}
       </option>
     </select>

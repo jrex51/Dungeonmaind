@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 import os
 import shutil
 
-def embedding_search(query: str, source=False, persist_directory=settings.chroma_db_path, top_k=2):
+def embedding_search(query: str, source=False, persist_directory=settings.chroma_db_path):
     if source:
         source_db = "rulebook"
     else:
@@ -25,7 +25,7 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
         #results = vectorstore.similarity_search(query, k=top_k)
         results = vectorstore.similarity_search(
             query,
-            k=top_k,
+            k=settings.embedding_top_k,
             filter={"source": source_db}
         )
     # If LLM is asked use the transcriptions and the rulebook information
@@ -39,7 +39,7 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
         )
         results_transcriptions = vectorstore.similarity_search(
             query,
-            k=top_k,
+            k=settings.embedding_top_k,
             filter={"source": "transcriptions"}
         )
 

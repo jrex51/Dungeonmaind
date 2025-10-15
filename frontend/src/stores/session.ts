@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue'
-import * as api from "@/api/players"; // join, listPlayers und leave Funktion
-import type { PlayerOut, Role } from "@/api/players";
+import * as api from "@/api/playersAPI.ts"; // join, listPlayers und leave Funktion
+import type { PlayerOut, Role } from "@/api/playersAPI.ts";
 
 export const useSessionStore = defineStore("session", () => {
   const currentPlayer = ref<PlayerOut | null>(hydratePlayer());

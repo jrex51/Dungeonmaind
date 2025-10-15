@@ -48,7 +48,10 @@ async def leave(player_id: UUID):
 async def player_exists(player_id: UUID):
     try:
         player = store.group.players.get(player_id)
-        print("[CHECK] Player exists")
+        if player is not None:
+            print("[CHECK] Player exists")
+        else:
+            print("[CHECK] Player does not exist")
         return {"exists": player is not None}
     except KeyError:
         print("[CHECK] Player does not exist")
