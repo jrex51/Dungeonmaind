@@ -67,7 +67,7 @@ async function onLeave() {
   await router.push({ name: 'login' })
 }
 
-/** WebSocket lifecycle (merged + improved) */
+/** WebSocket lifecycle */
 onMounted(() => {
   // Guard: ohne Player -> zurück zum Login
   const p = store.currentPlayer
@@ -94,7 +94,6 @@ onMounted(() => {
       console.error('loadPlayers failed', e)
     }
 
-    // Heartbeat alle 15s
     pingTimer = window.setInterval(() => {
       try {
         socket?.send('ping')
@@ -371,7 +370,6 @@ async function patchAbility(playerId: string, key: AbilitySpec['key'], value: nu
       const msg = await res.text().catch(() => res.statusText)
       throw new Error(msg || `HTTP ${res.status}`)
     }
-    // No local — we rely on WS "update" to refresh the UI.
   } catch (e) {
     console.error('Ability PATCH failed:', e)
   } finally {
@@ -546,9 +544,6 @@ async function heal(playerId: string, amount: number) {
                 <div class="ability-label">{{ a.label }}</div>
                 <div class="ability-score">
                   <span>{{ a.score ?? '—' }}</span>
-                  <small v-if="a.mod !== undefined" class="ability-mod">
-                    ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
-                  </small>
                 </div>
 
                 <!-- + / − controls: only for the current member (not leader) -->

@@ -4,32 +4,22 @@ import * as api from '@/api/players';
 import type { PlayerOut, Role, Hp, AbilityScores } from '@/api/players';
 
 export const useSessionStore = defineStore('session', () => {
-  /* ========================
-   * State
-   * ====================== */
+  /* State */
   const currentPlayer = ref<PlayerOut | null>(hydratePlayer());
   const players = ref<PlayerOut[]>([]);
   const backendUrl = ref<string | null>(hydrateBackendUrl());
 
-  /* ========================
-   * Getters
-   * ====================== */
+  /* Getters */
   const isLeader = computed(() => currentPlayer.value?.role === 'leader');
 
-  /* ========================
-   * Types (for WS/patch upserts)
-   * ====================== */
+  /*  Types (for WS/patch upserts) */
   type PlayerUpsert =
     Partial<Omit<PlayerOut, 'hp' | 'abilities'>> & {
     hp?: Partial<Hp>;
     abilities?: Partial<AbilityScores> | Record<string, unknown>;
   };
 
-  type PlayerPatch = PlayerUpsert;
-
-  /* ========================
-   * Internal helpers
-   * ====================== */
+  /* Internal helpers */
   // Deep-merge hp and abilities; shallow-merge everything else
   function mergePlayers(base: PlayerOut, incoming: PlayerUpsert): PlayerOut {
     return {
@@ -60,13 +50,13 @@ export const useSessionStore = defineStore('session', () => {
 
   function persistPlayer(p: PlayerOut | null) {
     try {
-      if (p) localStorage.setItem('player', JSON.stringify(p));
-      else localStorage.removeItem('player');
+      if (p) sessionStorage.setItem('player', JSON.stringify(p));
+      else sessionStorage.removeItem('player');
     } catch {}
   }
 
   function removePersistedPlayer() {
-    try { localStorage.removeItem('player'); } catch {}
+    try { sessionStorage.removeItem('player'); } catch {}
   }
 
   function persistBackendUrl(url: string) {
@@ -75,7 +65,7 @@ export const useSessionStore = defineStore('session', () => {
 
   function hydratePlayer(): PlayerOut | null {
     try {
-      const raw = localStorage.getItem('player');
+      const raw = sessionStorage.getItem('player');
       return raw ? (JSON.parse(raw) as PlayerOut) : null;
     } catch { return null; }
   }
@@ -89,9 +79,7 @@ export const useSessionStore = defineStore('session', () => {
     try { localStorage.removeItem('backendUrl'); } catch {}
   }
 
-  /* ========================
-   * API actions
-   * ====================== */
+  /* API actions */
   async function join(name: string, role: Role) {
     const p = await api.join(name, role);
     currentPlayer.value = p;
@@ -121,9 +109,7 @@ export const useSessionStore = defineStore('session', () => {
     persistBackendUrl(url);
   }
 
-  /* ========================
-   * WebSocket helpers
-   * ====================== */
+  /* WebSocket helpers */
   function applyWsJoin(p: PlayerOut) {
     upsertPlayer(p);
   }
@@ -146,7 +132,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   // Patch helper used by granular WS events (hp/abilities)
-  function patchPlayer(id: string, patch: PlayerPatch) {
+  function patchPlayer(id: string, patch: PlayerUpsert) {
     const i = players.value.findIndex(p => p.id === id);
     if (i !== -1) {
       players.value[i] = mergePlayers(players.value[i], patch);
@@ -157,9 +143,7 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  /* ========================
-   * Expose store
-   * ====================== */
+  /* Expose store */
   return {
     // state
     currentPlayer,
