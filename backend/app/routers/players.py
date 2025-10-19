@@ -24,7 +24,6 @@ def player_to_out(player, request: Request | None = None) -> PlayerOut:
     """
     backend_url = str(request.base_url).rstrip("/") if request is not None else ""
 
-    # abilities: build a Pydantic Abilities model (not a dict)
     abilities_model = None
     if getattr(player, "abilities", None) is not None:
         a = player.abilities

@@ -6,19 +6,19 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-# ---- Core enums ----
+# Core enums
 class Role(str, Enum):
     leader = "leader"
     member = "member"
 
 
-# ---- Input models ----
+# Input models
 class PlayerIn(BaseModel):
     name: str = Field(min_length=2, max_length=50)
     role: Role
 
 
-# ---- Abilities ----
+# Abilities
 class Abilities(BaseModel):
     # Keep "int_" to match the frontend keys exactly
     str: int
@@ -38,7 +38,7 @@ class AbilitiesIn(BaseModel):
     cha: Optional[int] = None
 
 
-# ---- HP (nested) ----
+# HP (nested)
 class Hp(BaseModel):
     current: int = 0
     max: int = 10
@@ -51,7 +51,7 @@ class HpPatch(BaseModel):
     temp: Optional[int] = Field(None, ge=0)
 
 
-# ---- Output models ----
+# Output models
 class PlayerOut(BaseModel):
     id: UUID
     name: str
@@ -63,7 +63,7 @@ class PlayerOut(BaseModel):
     backend_url: Optional[str] = None
 
 
-# ---- Patch models ----
+# Patch models
 class PlayerPatch(BaseModel):
     """
     Unified player patch payload.
@@ -90,7 +90,7 @@ class PlayerPatch(BaseModel):
     cha: Optional[int] = None
 
 
-# ---- Action bodies (unchanged semantics) ----
+# Action bodies (unchanged semantics)
 class PlayerDamageBody(BaseModel):
     damage: int = Field(..., ge=0)
 
@@ -99,7 +99,7 @@ class PlayerHealBody(BaseModel):
     heal: int = Field(..., ge=0)
 
 
-# ---- Group ----
+# Group
 class GroupStateOut(BaseModel):
     group_id: UUID
     size: int
