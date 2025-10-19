@@ -111,18 +111,13 @@ onMounted(() => {
     } else if (msg.type === 'leave') {
       store.applyWsLeave(msg.player_id)
     } else if (msg.type === 'update' && msg.player?.id) {
-      // generic upsert path
+      // generic upsert path (expects full PlayerOut with nested hp)
       store.applyWsUpdate(msg.player)
-    } else if (msg.type === 'health/update') {
-      // domain-specific updates
-      store.patchPlayer(msg.player_id, {
-        hp: Number(msg.hp),
-        max_hp: Number(msg.max_hp),
-        temp_hp: Number(msg.temp_hp),
-      })
-    } else if (msg.type === 'attributes/update') {
-      store.patchPlayer(msg.player_id, { attributes: msg.attributes })
+    } else if (msg.type === 'health/update' && msg.hp) {
+      // backend now sends nested hp directly
+      store.patchPlayer(msg.player_id, { hp: msg.hp })
     }
+    // no attributes/abilities mapping needed anymore
   }
 
   socket.onclose = () => {
@@ -144,7 +139,6 @@ onUnmounted(() => {
   } catch {}
   socket = null
 
-  // restore full cleanup from old code
   llmAbort.value?.abort()
   audioStream.value?.getTracks().forEach((t) => t.stop())
   if (recordedAudioURL.value) URL.revokeObjectURL(recordedAudioURL.value)
@@ -161,18 +155,15 @@ async function handleLLMQuestionSubmit() {
   llmAbort.value = new AbortController()
 
   try {
-    const response = await fetch(
-      `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_id: store.currentPlayer?.id,
-          input_string: userInput.value,
-          use_rulebook: askRulebook.value,
-        }),
-      }
-    )
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        player_id: store.currentPlayer?.id,
+        input_string: userInput.value,
+        use_rulebook: askRulebook.value,
+      }),
+    })
     if (!response.ok || (!askRulebook.value && !response.body)) {
       throw new Error(`Request failed with status ${response.status}`)
     }
@@ -182,13 +173,10 @@ async function handleLLMQuestionSubmit() {
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
-        renderedMarkdown.value = await marked.parse(
-          backendMarkdown.value[0]
-        )
+        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0])
       }
     } else {
-      if (!response.body)
-        throw new Error(`Request failed with status ${response.status}`)
+      if (!response.body) throw new Error(`Request failed with status ${response.status}`)
 
       // frühere Rulebook-Ausgaben leeren
       backendMarkdown.value = []
@@ -217,18 +205,14 @@ async function handleLLMQuestionSubmit() {
 async function showNextMarkdown() {
   if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
     currentMarkdownIndex.value++
-    renderedMarkdown.value = await marked.parse(
-      backendMarkdown.value[currentMarkdownIndex.value]
-    )
+    renderedMarkdown.value = await marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
   }
 }
 
 async function showPrevMarkdown() {
   if (currentMarkdownIndex.value > 0) {
     currentMarkdownIndex.value--
-    renderedMarkdown.value = await marked.parse(
-      backendMarkdown.value[currentMarkdownIndex.value]
-    )
+    renderedMarkdown.value = await marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
   }
 }
 
@@ -248,20 +232,15 @@ async function handleAudioUpload() {
       {
         method: 'POST',
         body: formData,
-      }
+      },
     )
     if (!response.ok) {
       throw new Error(`Upload failed with status ${response.status}`)
     }
     const result = await response.json()
-    audioUploadStatus.value = `Upload successfull: ${
-      result.message || 'Audio file received'
-    }`
+    audioUploadStatus.value = `Upload successfull: ${result.message || 'Audio file received'}`
   } catch (error) {
-    console.error(
-      'An error occured while uploading your audio file:',
-      error
-    )
+    console.error('An error occured while uploading your audio file:', error)
     audioUploadStatus.value = 'Upload error'
   }
 }
@@ -284,8 +263,7 @@ async function startRecording() {
     recordedAudioURL.value = null
 
     mediaRecorder.value = new MediaRecorder(stream)
-    mediaRecorder.value.ondataavailable = (e) =>
-      e.data.size && audioChunks.value.push(e.data)
+    mediaRecorder.value.ondataavailable = (e) => e.data.size && audioChunks.value.push(e.data)
     mediaRecorder.value.onstop = () => {
       const audioBlob = new Blob(audioChunks.value, { type: 'audio/wav' })
       recordedAudioURL.value = URL.createObjectURL(audioBlob)
@@ -332,7 +310,7 @@ async function transcribeRecording() {
       {
         method: 'POST',
         body: formData,
-      }
+      },
     )
 
     if (!response.ok) {
@@ -368,22 +346,16 @@ const ABILITIES: AbilitySpec[] = [
 ]
 
 function getAbilityData(p: any) {
-  const abil = p?.abilities ?? {}
+  const ability = p?.abilities ?? {}
   return ABILITIES.map((spec) => {
-    const score =
-      typeof abil[spec.key] === 'number' ? abil[spec.key] : undefined
-    const mod =
-      score !== undefined ? Math.floor((score - 10) / 2) : undefined
+    const score = typeof ability[spec.key] === 'number' ? ability[spec.key] : undefined
+    const mod = score !== undefined ? Math.floor((score - 10) / 2) : undefined
     return { ...spec, score, mod }
   })
 }
 
 /** Ability change */
-async function patchAbility(
-  playerId: string,
-  key: AbilitySpec['key'],
-  value: number
-) {
+async function patchAbility(playerId: string, key: AbilitySpec['key'], value: number) {
   if (!playerId) return
   abilityBusy.value[key] = true
   try {
@@ -399,7 +371,7 @@ async function patchAbility(
       const msg = await res.text().catch(() => res.statusText)
       throw new Error(msg || `HTTP ${res.status}`)
     }
-    // No local mutation — we rely on WS "update" to refresh the UI.
+    // No local — we rely on WS "update" to refresh the UI.
   } catch (e) {
     console.error('Ability PATCH failed:', e)
   } finally {
@@ -433,25 +405,19 @@ const visiblePlayers = computed(() => {
 
 /* Healthbar */
 async function damage(playerId: string, amount: number) {
-  await fetch(
-    `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ damage: amount }),
-    }
-  )
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ damage: amount }),
+  })
 }
 
 async function heal(playerId: string, amount: number) {
-  await fetch(
-    `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ heal: amount }),
-    }
-  )
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ heal: amount }),
+  })
 }
 </script>
 
@@ -475,9 +441,7 @@ async function heal(playerId: string, amount: number) {
         <!-- Only leaders see the full player list -->
         <h3 v-if="store.isLeader">Spieler</h3>
         <ul v-if="store.isLeader">
-          <li v-for="p in store.players" :key="p.id">
-            {{ p.name }} ({{ p.role }})
-          </li>
+          <li v-for="p in store.players" :key="p.id">{{ p.name }} ({{ p.role }})</li>
         </ul>
       </section>
 
@@ -491,33 +455,21 @@ async function heal(playerId: string, amount: number) {
           class="input-field"
           @keyup.enter="handleLLMQuestionSubmit"
         />
-        <label
-          style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer"
-        >
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer">
           <input type="checkbox" v-model="askRulebook" />
           Ask rulebook
         </label>
-        <button
-          @click="handleLLMQuestionSubmit"
-          class="submit-button"
-          :disabled="isLoading"
-        >
+        <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
         <div v-if="modelOutput" class="markdown-output">
           <h3>Model Output:</h3>
           <div v-html="modelOutputRendered"></div>
         </div>
-        <div
-          v-if="backendMarkdown.length"
-          class="markdown-output scrollable-panel"
-        >
+        <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
           <h3>Relevant SRD article</h3>
           <div class="markdown-navigation">
-            <button
-              @click="showPrevMarkdown"
-              :disabled="currentMarkdownIndex === 0"
-            >
+            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">
               Previous
             </button>
             <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
@@ -537,11 +489,7 @@ async function heal(playerId: string, amount: number) {
       <!-- Leader-only: recording -->
       <div v-if="store.isLeader" class="content-section">
         <h2>Record Using Microphone</h2>
-        <button
-          @click="startRecording"
-          v-if="!isRecording"
-          class="submit-button"
-        >
+        <button @click="startRecording" v-if="!isRecording" class="submit-button">
           Start Recording
         </button>
         <button @click="stopRecording" v-if="isRecording" class="submit-button">
@@ -559,12 +507,8 @@ async function heal(playerId: string, amount: number) {
         </div>
 
         <div v-if="recordedAudioURL" class="play-button">
-          <button @click="playRecording" class="submit-button">
-            Play Recording
-          </button>
-          <button @click="transcribeRecording" class="submit-button">
-            Transcribe Recording
-          </button>
+          <button @click="playRecording" class="submit-button">Play Recording</button>
+          <button @click="transcribeRecording" class="submit-button">Transcribe Recording</button>
         </div>
       </div>
 
@@ -573,15 +517,8 @@ async function heal(playerId: string, amount: number) {
       <!-- Leader-only: upload -->
       <div v-if="store.isLeader" class="content-section">
         <h2>Upload Audio File</h2>
-        <input
-          type="file"
-          accept="audio/*"
-          @change="onAudioFileChange"
-          class="input-field"
-        />
-        <button @click="handleAudioUpload" class="submit-button">
-          Upload Audio
-        </button>
+        <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
+        <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
         <div v-if="audioUploadStatus" class="output">
           <p>{{ audioUploadStatus }}</p>
         </div>
@@ -649,19 +586,18 @@ async function heal(playerId: string, amount: number) {
                       Math.min(
                         100,
                         Math.round(
-                          ((p.hp + (p.temp_hp ?? 0)) / Math.max(1, p.max_hp)) *
-                            100
-                        )
+                          ((p.hp.current + (p.hp.temp ?? 0)) / Math.max(1, p.hp.max)) * 100,
+                        ),
                       ) + '%',
                   }"
-                  :title="`HP ${p.hp}/${p.max_hp}${
-                    p.temp_hp ? ` (+${p.temp_hp} temp)` : ''
+                  :title="`HP ${p.hp.current}/${p.hp.max}${
+                    p.hp.temp ? ` (+${p.hp.temp} temp)` : ''
                   }`"
                 />
               </div>
               <div class="healthbar__numbers">
-                {{ p.hp }} / {{ p.max_hp }}
-                <span v-if="p.temp_hp">(+{{ p.temp_hp }})</span>
+                {{ p.hp.current }} / {{ p.hp.max }}
+                <span v-if="p.hp.temp">(+{{ p.hp.temp }})</span>
               </div>
 
               <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->

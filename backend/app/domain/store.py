@@ -26,16 +26,17 @@ class SingleGroupStore:
         return list(self.group.players.values())
 
     async def get_player(self, player_id: UUID) -> Player:
-        return self.group.get_player(player_id)
+        async with self._lock:
+            return self.group.get_player(player_id)
 
     # Abilities Update für einen Spieler
     async def update_player_abilities(
-            self,
-            player_id: UUID,
-            changes: Mapping[str, Optional[int]],
+        self,
+        player_id: UUID,
+        changes: Mapping[str, Optional[int]],
     ) -> Player:
         """
-        Aktualisiert die übergebenen Ability-Felder (str/dex/con/int/wis/cha).
+        Aktualisiert die übergebenen Ability-Felder (str/dex/con/int_/wis/cha).
         'changes' enthält nur die Keys, die geändert werden sollen.
         """
         async with self._lock:
@@ -49,13 +50,9 @@ class SingleGroupStore:
             p.touch()
             return p
 
-
-    async def get_player(self, player_id: UUID) -> Player:
-        async with self._lock:
-            return self.group.get_player(player_id)
-
     async def save_player(self, player: Player) -> None:
         async with self._lock:
             self.group.players[player.id] = player
+
 
 store = SingleGroupStore()
