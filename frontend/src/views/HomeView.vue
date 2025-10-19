@@ -672,7 +672,27 @@ body {
 
 .header-right {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.header-right > .rulebook-button,
+.header-right > .config-button {
+  padding: 0.5rem 1rem;
+  background-color: rgba(53, 73, 94, 0.9);  /* wie zuvor */
+  border: 1px solid #4a575e;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: normal;
+  transition: background-color 0.3s ease;
+}
+
+.header-right > .rulebook-button:hover,
+.header-right > .config-button:hover {
+  background-color: #4a575e;
 }
 
 .centered-content {
@@ -687,21 +707,6 @@ body {
   margin-top: 60px;
 }
 
-.rulebook-button,
-.config-button {
-  position: absolute;
-  right: 1rem;
-  padding: 0.5rem 1rem;
-  background-color: rgba(53, 73, 94, 0.9);
-  border: 1px solid #4a575e;
-  border-radius: 4px;
-  color: white;
-  cursor: pointer;
-  font-family: 'MedievalSharp', cursive;
-  font-weight: normal;
-  z-index: 1001;
-  transition: background-color 0.3s ease;
-}
 .config-button:hover {
   background-color: #4a575e;
 }
