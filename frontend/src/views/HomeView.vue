@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, render } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
+import { marked } from 'marked'
+
 
 const router = useRouter()
 const store = useSessionStore()
@@ -10,9 +12,11 @@ const store = useSessionStore()
 /** UI state */
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
+let modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
-let socket: WebSocket | null = null
+let socket: WebSocket | null = null;
+let pingTimer: number | null = null;
 
 /** Audio (file upload) */
 const selectedAudioFile = ref<File | null>(null)
@@ -38,9 +42,85 @@ function apiBase(): string {
 }
 
 /** Navigation */
+//const backendMarkdown = ref<string>('')
+//let renderedMarkdown = ref<string>('')
+const backendMarkdown = ref<string[]>([])
+const currentMarkdownIndex = ref(0)
+let renderedMarkdown = ref('')
+
+
+
 function goToConfig() {
   router.push('/config')
 }
+
+function goToRulebook() {
+  router.push('/rulebook')
+}
+
+
+onMounted(() => {
+
+  // Guard: ohne Player -> zurück zum Login
+  const p = store.currentPlayer;
+  if (!p) {
+    router.push({ name: 'login' });
+    return;
+  }
+
+  const url = new URL(SERVER_CONFIG.ENDPOINTS.WS_PLAYERS, SERVER_CONFIG.BASE_URL);
+  url.search = new URLSearchParams({
+    player_id: p.id,
+    name: p.name,
+    role: p.role,
+  }).toString();
+
+  socket = new WebSocket(url.toString());
+
+  socket.onopen = async () => {
+    store.loadPlayers();        // holt die IST-Spielerliste
+
+    pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
+      try { socket?.send('ping'); } catch {}
+    }, 15000);
+  };
+
+  socket.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "join") {
+      // Duplizate vermeiden:
+      if (!store.players.some(p => p.id === msg.player.id)) {
+        store.players.push(msg.player);
+      } else {
+        // falls der Join Player-Objekt neuere Felder bringt
+        store.players = store.players.map(p => p.id === msg.player.id ? msg.player : p);
+      }
+    } else if (msg.type === "leave") {
+      store.players = store.players.filter(
+        p => p.id !== msg.player_id
+      );
+    } else if (msg.type === "health/update") {
+      store.patchPlayer(msg.player_id, {
+        hp: Number(msg.hp),
+        max_hp: Number(msg.max_hp),
+        temp_hp: Number(msg.temp_hp),
+      });
+    } else if (msg.type === "attributes/update") {
+      store.patchPlayer(msg.player_id, { attributes: msg.attributes });
+    }
+  };
+
+  socket.onclose = () => {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    socket = null;
+  };
+});
+
+onUnmounted(() => {
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+  try { socket?.close(); } catch {}
+  socket = null;
+});
 
 /** Build WS URL from HTTP base + path */
 function wsUrl(baseHttpUrl: string, path: string): string {
@@ -52,8 +132,8 @@ function wsUrl(baseHttpUrl: string, path: string): string {
 
 /** Session actions */
 async function onLeave() {
-  await store.leave()
-  router.push({ name: 'login' })
+  await store.leave();
+  router.push({ name: "login" });
 }
 
 /** WebSocket lifecycle */
@@ -100,38 +180,71 @@ async function handleLLMQuestionSubmit() {
   llmAbort.value = new AbortController()
 
   try {
-    const response = await fetch(
-      `${apiBase()}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_id: store.currentPlayer?.id,
-          input_string: userInput.value,
-          use_rulebook: askRulebook.value
-        }),
-        signal: llmAbort.value.signal
-      }
-    )
-    if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`)
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        player_id: store.currentPlayer?.id,
+        input_string: userInput.value,
+        use_rulebook: askRulebook.value
+      }),
+    })
+    if (!response.ok || (!askRulebook.value && !response.body)) {
+      throw new Error(`Request failed with status ${response.status}`)
+    }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, { stream: true })
-      modelOutput.value += chunk
+    if (askRulebook.value) {
+      const markdownJson = await response.json()
+      backendMarkdown.value = markdownJson.markdown_texts || []
+      if (backendMarkdown.value.length > 0) {
+        currentMarkdownIndex.value = 0
+        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0])
+      }
+    } else {
+      if (!response.body) throw new Error(`Request failed with status ${response.status}`)
+
+      // frühere Rulebook-Ausgaben leeren
+      backendMarkdown.value = []
+      renderedMarkdown.value = ""
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        modelOutput.value += chunk
+      }
+
+      modelOutputRendered.value = await marked.parse(modelOutput.value)
     }
-  } catch (error: any) {
-    if (error?.name !== 'AbortError') {
-      console.error('Error calling LLM endpoint:', error)
-      modelOutput.value = 'Error calling model, error: ' + error
-    }
+  } catch (error) {
+    console.error('Error calling LLM endpoint:', error)
+    modelOutput.value = 'Error calling model, error: ' + error
   } finally {
     isLoading.value = false
   }
 }
+
+async function showNextMarkdown() {
+  if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
+    currentMarkdownIndex.value++
+    renderedMarkdown.value = await marked.parse(
+      backendMarkdown.value[currentMarkdownIndex.value]
+    )
+  }
+}
+
+async function showPrevMarkdown() {
+  if (currentMarkdownIndex.value > 0) {
+    currentMarkdownIndex.value--
+    renderedMarkdown.value = await marked.parse(
+      backendMarkdown.value[currentMarkdownIndex.value]
+    )
+  }
+}
+
 
 /** Audio upload */
 async function handleAudioUpload() {
@@ -316,14 +429,35 @@ const visiblePlayers = computed(() => {
   }
   return store.currentPlayer ? [store.currentPlayer] : []
 })
+
+/* Healthbar */
+async function damage(playerId: string, amount: number) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ damage: amount }),
+  });
+}
+
+async function heal(playerId: string, amount: number) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ heal: amount }),
+  })
+}
 </script>
 
 <template>
   <div class="container">
-    <div class="header">
-      <div class="header-left"></div>
-      <h1>Dungeonmaind</h1>
-      <button class="config-button" @click="goToConfig">Config</button>
+
+     <div class="header">
+       <div class="header-left"></div>
+       <h1>Dungeonmaind</h1>
+       <div class="header-right">
+         <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
+         <button class="config-button" @click="goToConfig">Config</button>
+       </div>
     </div>
 
     <div class="centered-content">
@@ -341,6 +475,7 @@ const visiblePlayers = computed(() => {
         </ul>
       </section>
 
+      <!-- Left: main LLM -->
       <div class="content-section">
         <h2>Ask Something about the DnD-Session</h2>
         <input
@@ -357,9 +492,18 @@ const visiblePlayers = computed(() => {
         <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
-        <div v-if="modelOutput" class="output">
+        <div v-if="modelOutput" class="markdown-output">
           <h3>Model Output:</h3>
-          <pre style="white-space: pre-wrap; margin: 0">{{ modelOutput }}</pre>
+          <div v-html="modelOutputRendered"></div>
+        </div>
+        <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
+          <h3>Relevant SRD article</h3>
+          <div class="markdown-navigation">
+            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">Previous</button>
+            <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
+            <button @click="showNextMarkdown" :disabled="currentMarkdownIndex === backendMarkdown.length - 1">Next</button>
+          </div>
+          <div v-html="renderedMarkdown"></div>
         </div>
       </div>
 
@@ -394,16 +538,50 @@ const visiblePlayers = computed(() => {
         <h2>Upload Audio File</h2>
         <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
         <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
-        <div v-if="audioUploadStatus" class="output">
-          <p>{{ audioUploadStatus }}</p>
-        </div>
+        <div v-if="audioUploadStatus" class="output"><p>{{ audioUploadStatus }}</p></div>
       </div>
+    </div>
 
-      <!-- Right rail: abilities & dice -->
-      <aside class="right-rail">
-        <section class="abilities-section rail-panel">
-          <h2 v-if="!store.isLeader">Your ability scores</h2>
-          <h2 v-else>Abilities of members</h2>
+    <!-- Right: abilities, health and dice -->
+    <aside class="right-rail">
+      <section class="abilities-section rail-panel">
+        <h2 v-if="!store.isLeader">Your ability scores</h2>
+        <h2 v-else>Abilities of members</h2>
+
+        <div v-if="visiblePlayers.length" class="ability-list">
+          <div
+            v-for="p in visiblePlayers"
+            :key="p.id ?? p.name ?? JSON.stringify(p)"
+            class="ability-card"
+          >
+            <div class="ability-card__header" v-if="store.isLeader">
+              <strong>{{ p.name ?? 'Unbenannter Spieler' }}</strong>
+              <span class="ability-card__role" v-if="p.role">({{ p.role }})</span>
+            </div>
+            <div class="ability-grid">
+              <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
+                <div class="ability-label">{{ a.label }}</div>
+                <div class="ability-score">
+                  <span>{{ a.score ?? '-' }}</span>
+                  <small v-if="a.mod !== undefined" class="ability-mod">
+                    ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
+                  </small>
+                </div>
+              </div>
+            </div>
+
+            <div class="healthbar">
+              <div class="healthbar__label">HP</div>
+              <div class="healthbar__track">
+                <div
+                  class="healthbar__fill"
+                  :style="{ width: Math.min(100, Math.round(((p.hp + (p.temp_hp ?? 0)) / Math.max(1, p.max_hp)) * 100)) + '%' }"
+                  :title="`HP ${p.hp}/${p.max_hp}${p.temp_hp ? ` (+${p.temp_hp} temp)` : ''}`"
+                />
+              </div>
+              <div class="healthbar__numbers">
+                {{ p.hp }} / {{ p.max_hp }} <span v-if="p.temp_hp">(+{{ p.temp_hp }})</span>
+              </div>
 
           <div v-if="visiblePlayers.length" class="ability-list">
             <div
@@ -458,11 +636,31 @@ const visiblePlayers = computed(() => {
             <button @click="rollDice(20)" class="dice-button">W20</button>
           </div>
           <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
+              <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->
+              <div class="healthbar__controls" v-if="store.isLeader || p.id === store.currentPlayer?.id">
+                <button @click="damage(p.id, 1)">-1</button>
+                <button @click="heal(p.id, 1)">+1</button>
+              </div>
+            </div>
+          </div>
         </div>
-      </aside>
-    </div>
+        <p v-else class="output">No players found.</p>
+      </section>
+
+      <div class="dice-widget rail-panel">
+        <div class="dice-buttons">
+          <button @click="rollDice(4)" class="dice-button">W4</button>
+          <button @click="rollDice(6)" class="dice-button">W6</button>
+          <button @click="rollDice(8)" class="dice-button">W8</button>
+          <button @click="rollDice(12)" class="dice-button">W12</button>
+          <button @click="rollDice(20)" class="dice-button">W20</button>
+        </div>
+        <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
+      </div>
+    </aside>
   </div>
 </template>
+
 
 <!-- This block essential for full-page background -->
 <style>
@@ -496,10 +694,24 @@ body {
 }
 
 .header {
-  position: fixed; top: 0; left: 0; right: 0; height: 50px;
-  background-color: rgba(160,122,57,0.95);
-  display: flex; align-items: center; justify-content: center;
-  padding: 0 1rem; box-sizing: border-box; color: #e0d5b7; z-index: 1000;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  background-color: rgba(160, 122, 57, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  box-sizing: border-box;
+  color: #e0d5b7;
+  z-index: 1000;
+}
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .centered-content {
@@ -512,6 +724,8 @@ body {
   margin-top: 60px;
 }
 
+
+.rulebook-button,
 .config-button {
   position: absolute; right: 1rem;
   padding: 0.5rem 1rem;
@@ -525,12 +739,21 @@ body {
 }
 .config-button:hover { background-color: #4a575e; }
 
-.content-section { display: flex; flex-direction: column; align-items: center; }
+.rulebook-button:hover,
+.config-button:hover {
+  background-color: #4a575e;
+}
+.content-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 
 h1 {
   color: #392401; text-align: center; padding-top: 20px;
   margin: 0 0 1.5rem; font-family: 'MedievalSharp', cursive; font-weight: bolder;
 }
+
 
 h2 {
   color: #392401; text-align: center; margin: 0 0 1.5rem;
@@ -564,6 +787,19 @@ hr { width: 100%; border: none; border-top: 1px solid rgba(94,80,53,0.5); margin
   background-color: rgba(110,97,50,0.7); color: white;
   border-radius: 10px; border: 1px solid #000; box-sizing: border-box;
   font-family: 'MedievalSharp', cursive;
+  font-weight: bold;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.output p {
+  margin: 0;
+}
+
+.output h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #f1e6b4;
 }
 .output h3 { margin: 0 0 0.5rem; color: #f1e6b4; }
 .output p { margin: 0; }
@@ -643,9 +879,107 @@ hr { width: 100%; border: none; border-top: 1px solid rgba(94,80,53,0.5); margin
 .ability-stepper:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+
+
+:deep(.markdown-output) {
+  font-family: 'MedievalSharp', cursive;
+  color: #392401;
+  line-height: 1.5;
+  margin-top: 1rem;
 }
 
 @media (max-width: 900px) {
   .right-rail { position: static; width: auto; margin: 1rem; }
+:deep(.markdown-output h1) {
+  font-size: 2rem;
+  color: #1a3b1a;
+  border-bottom: 2px solid #392401;
+  padding-bottom: 0.3rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h2) {
+  font-size: 1.5rem;
+  color: #2a4b2a;
+  border-bottom: 1px solid #392401;
+  padding-bottom: 0.2rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h3),
+:deep(.markdown-output h4),
+:deep(.markdown-output h5),
+:deep(.markdown-output h6) {
+  color: #3a5b3a;
+  margin-top: 0.8rem;
+  font-weight: bold;
+}
+
+:deep(.markdown-output strong) {
+  color: #8b0000; /* dark red for emphasis */
+  font-weight: bold;
+}
+
+:deep(.markdown-output em) {
+  color: #003366; /* dark blue */
+  font-style: italic;
+}
+
+:deep(.markdown-output strong em),
+:deep(.markdown-output em strong) {
+  color: #800080; /* purple */
+  font-weight: bold;
+  font-style: italic;
+}
+
+:deep(.markdown-output table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+:deep(.markdown-output th),
+:deep(.markdown-output td) {
+  border: 1px solid #392401;
+  padding: 0.3rem 0.5rem;
+  text-align: center;
+}
+
+:deep(.markdown-output th) {
+  background-color: #f5e6b4;
+  font-weight: bold;
+}
+
+:deep(.markdown-output tr:nth-child(even)) {
+  background-color: #faf0d4;
+}
+
+:deep(.markdown-output p) {
+  margin: 0.4rem 0;
+}
+
+:deep(.markdown-output h6) {
+  font-style: italic;
+  color: #4b2e2e;
+  margin-top: 0.5rem;
+}
+
+:deep(.scrollable-panel) {
+  max-height: 400px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: rgba(110, 97, 50, 0.7);
+  box-sizing: border-box;
+}
+
+:deep(.markdown-navigation) {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
 }
 </style>

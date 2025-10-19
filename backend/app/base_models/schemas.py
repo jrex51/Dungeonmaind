@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Optional, Dict
 from uuid import UUID
 from typing import Optional
 from pydantic import BaseModel, Field
@@ -37,11 +38,28 @@ class PlayerOut(BaseModel):
     id: UUID
     name: str
     role: Role
+    max_hp: int = 10
+    hp: int = 0
+    temp_hp: int = 0
     created_at: datetime
     last_seen_at: datetime
     abilities: Abilities
     backend_url: Optional[str] = None
 
+
+class PlayerHealthPatch(BaseModel):
+    hp: Optional[int] = Field(None, ge=0)
+    max_hp: Optional[int] = Field(None, ge=1)
+    temp_hp: Optional[int] = Field(None, ge=0)
+
+class PlayerDamageBody(BaseModel):
+    damage: int = Field(..., ge=0)
+
+class PlayerHealBody(BaseModel):
+    heal: int = Field(..., ge=0)
+
+class PlayerAttributesPatch(BaseModel):
+    attributes: Dict[str, str]
 
 class GroupStateOut(BaseModel):
     group_id: UUID

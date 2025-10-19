@@ -7,7 +7,6 @@ export const useSessionStore = defineStore('session', () => {
   const currentPlayer = ref<PlayerOut | null>(hydratePlayer());
   const players = ref<PlayerOut[]>([]);
   const backendUrl = ref<string | null>(hydrateBackendUrl());
-
   const isLeader = computed(() => currentPlayer.value?.role === 'leader');
 
   // API actions
@@ -88,6 +87,7 @@ export const useSessionStore = defineStore('session', () => {
   function removePersistedPlayer() {
     try { localStorage.removeItem('player'); } catch {}
   }
+
   function persistBackendUrl(url: string) {
     try { localStorage.setItem('backendUrl', url); } catch {}
   }
@@ -97,6 +97,7 @@ export const useSessionStore = defineStore('session', () => {
       return raw ? (JSON.parse(raw) as PlayerOut) : null;
     } catch { return null; }
   }
+
   function hydrateBackendUrl(): string | null {
     try { return localStorage.getItem('backendUrl'); } catch { return null; }
   }

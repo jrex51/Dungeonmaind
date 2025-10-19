@@ -50,4 +50,12 @@ class SingleGroupStore:
             return p
 
 
+    async def get_player(self, player_id: UUID) -> Player:
+        async with self._lock:
+            return self.group.get_player(player_id)
+
+    async def save_player(self, player: Player) -> None:
+        async with self._lock:
+            self.group.players[player.id] = player
+
 store = SingleGroupStore()

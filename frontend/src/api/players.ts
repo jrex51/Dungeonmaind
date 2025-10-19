@@ -27,6 +27,9 @@ export type PlayerOut = {
   created_at: string
   last_seen_at: string
   backend_url: string
+  hp: number;
+  max_hp: number;
+  temp_hp: number;
   abilities?: AbilityScores | { [k: string]: any } | undefined
 }
 
