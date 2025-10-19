@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, render } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
@@ -12,7 +12,7 @@ const store = useSessionStore()
 /** UI state */
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
-let modelOutputRendered = ref<string>('')
+const modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
 let socket: WebSocket | null = null;
@@ -42,11 +42,9 @@ function apiBase(): string {
 }
 
 /** Navigation */
-//const backendMarkdown = ref<string>('')
-//let renderedMarkdown = ref<string>('')
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
-let renderedMarkdown = ref('')
+const renderedMarkdown = ref('')
 
 
 
@@ -78,7 +76,7 @@ onMounted(() => {
   socket = new WebSocket(url.toString());
 
   socket.onopen = async () => {
-    store.loadPlayers();        // holt die IST-Spielerliste
+    await store.loadPlayers();        // holt die IST-Spielerliste
 
     pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
       try { socket?.send('ping'); } catch {}
@@ -306,8 +304,8 @@ async function startRecording(){
 
 
 function stopRecording(){
-    mediaRecorder.value?.stop()
-    isRecording.value = false
+  mediaRecorder.value?.stop()
+  isRecording.value = false
 }
 
 
@@ -451,13 +449,13 @@ async function heal(playerId: string, amount: number) {
 <template>
   <div class="container">
 
-     <div class="header">
-       <div class="header-left"></div>
-       <h1>Dungeonmaind</h1>
-       <div class="header-right">
-         <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
-         <button class="config-button" @click="goToConfig">Config</button>
-       </div>
+    <div class="header">
+      <div class="header-left"></div>
+      <h1>Dungeonmaind</h1>
+      <div class="header-right">
+        <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
+        <button class="config-button" @click="goToConfig">Config</button>
+      </div>
     </div>
 
     <div class="centered-content">
@@ -562,10 +560,29 @@ async function heal(playerId: string, amount: number) {
               <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
                 <div class="ability-label">{{ a.label }}</div>
                 <div class="ability-score">
-                  <span>{{ a.score ?? '-' }}</span>
+                  <span>{{ a.score ?? '—' }}</span>
                   <small v-if="a.mod !== undefined" class="ability-mod">
                     ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
                   </small>
+                </div>
+
+                <!-- + / − controls: only for the current member (not leader) -->
+                <div
+                  v-if="!store.isLeader && p.id === store.currentPlayer?.id"
+                  class="ability-controls"
+                >
+                  <button
+                    class="ability-stepper"
+                    :disabled="abilityBusy[a.key]"
+                    @click="decAbility(p, a.key)"
+                    aria-label="decrease"
+                  >−</button>
+                  <button
+                    class="ability-stepper"
+                    :disabled="abilityBusy[a.key]"
+                    @click="incAbility(p, a.key)"
+                    aria-label="increase"
+                  >+</button>
                 </div>
               </div>
             </div>
@@ -583,59 +600,6 @@ async function heal(playerId: string, amount: number) {
                 {{ p.hp }} / {{ p.max_hp }} <span v-if="p.temp_hp">(+{{ p.temp_hp }})</span>
               </div>
 
-          <div v-if="visiblePlayers.length" class="ability-list">
-            <div
-              v-for="p in visiblePlayers"
-              :key="p.id ?? p.name ?? JSON.stringify(p)"
-              class="ability-card"
-            >
-              <div class="ability-card__header" v-if="store.isLeader">
-                <strong>{{ p.name ?? 'Unbenannter Spieler' }}</strong>
-                <span class="ability-card__role" v-if="p.role">({{ p.role }})</span>
-              </div>
-
-              <div class="ability-grid">
-                <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
-                  <div class="ability-label">{{ a.label }}</div>
-                  <div class="ability-score">
-                    <span>{{ a.score ?? '—' }}</span>
-                  </div>
-
-                  <!-- + / − controls: only for the current member (not leader) -->
-                  <div
-                    v-if="!store.isLeader && p.id === store.currentPlayer?.id"
-                    class="ability-controls"
-                  >
-                    <button
-                      class="ability-stepper"
-                      :disabled="abilityBusy[a.key]"
-                      @click="decAbility(p, a.key)"
-                      aria-label="decrease"
-                    >−</button>
-                    <button
-                      class="ability-stepper"
-                      :disabled="abilityBusy[a.key]"
-                      @click="incAbility(p, a.key)"
-                      aria-label="increase"
-                    >+</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <p v-else class="output">No players found.</p>
-        </section>
-
-        <div class="dice-widget rail-panel">
-          <div class="dice-buttons">
-            <button @click="rollDice(4)" class="dice-button">W4</button>
-            <button @click="rollDice(6)" class="dice-button">W6</button>
-            <button @click="rollDice(8)" class="dice-button">W8</button>
-            <button @click="rollDice(12)" class="dice-button">W12</button>
-            <button @click="rollDice(20)" class="dice-button">W20</button>
-          </div>
-          <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
               <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->
               <div class="healthbar__controls" v-if="store.isLeader || p.id === store.currentPlayer?.id">
                 <button @click="damage(p.id, 1)">-1</button>
@@ -879,8 +843,9 @@ hr { width: 100%; border: none; border-top: 1px solid rgba(94,80,53,0.5); margin
 .ability-stepper:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
 
-
+/* Markdown output (scoped deep) */
 :deep(.markdown-output) {
   font-family: 'MedievalSharp', cursive;
   color: #392401;
@@ -890,6 +855,8 @@ hr { width: 100%; border: none; border-top: 1px solid rgba(94,80,53,0.5); margin
 
 @media (max-width: 900px) {
   .right-rail { position: static; width: auto; margin: 1rem; }
+}
+
 :deep(.markdown-output h1) {
   font-size: 2rem;
   color: #1a3b1a;
