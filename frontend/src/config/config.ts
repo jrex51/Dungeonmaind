@@ -10,6 +10,7 @@ export const SERVER_CONFIG = {
     RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
     CHANGE_CONFIG: '/config/changeConfig',
+    GET_CONFIG: '/config/getConfig',
     CHECK_CONNECTION: '/health/checkConnection',
     WS_PLAYERS: '/ws/players',
     RULEBOOK_FOLDERS: '/rulebook/folders',
@@ -37,3 +38,24 @@ export const TRANSCRIPTION_MODELS = [
 
 // Set the default transcription model
 export const DEFAULT_TRANSCRIPTION_MODEL = TRANSCRIPTION_MODELS[0].value
+
+// Set the available embedding models
+export const EMBEDDING_MODELS = [
+  { value: 'all-MiniLM-L6-v2', label: 'all-MiniLM-L6-v2' },
+  { value: 'all-MiniLM-L12-v2', label: 'all-MiniLM-L12-v2' },
+  { value: 'paraphrase-multilingual-MiniLM-L12-v2', label: 'paraphrase-multilingual-MiniLM-L12-v2' },
+]
+
+// Set the default embedding model
+export const DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODELS[0].value
+
+// Set the available embedding models
+export const EMBEDDING_TopK = [
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+]
+
+// Set the default embedding model
+export const DEFAULT_EMBEDDING_TopK = EMBEDDING_MODELS[1].value

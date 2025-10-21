@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, ref, render} from 'vue'
+import {computed, type Ref, ref, render} from 'vue'
 import { onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
@@ -26,6 +26,9 @@ const mediaRecorder = ref<MediaRecorder | null >(null)
 const audioChunks = ref<Blob[]>([])
 const recordedAudioURL = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
+
+const audioRecorderInterval: Ref<number | null> = ref(null);
+const isFinalStop = ref(false)
 
 const diceResult = ref<string>('')
 
@@ -73,7 +76,25 @@ onMounted(() => {
   };
 });
 
-onUnmounted(() => socket?.close());
+onUnmounted(() => { socket?.close()
+
+  //Cleanly end recorder/mic on unmount
+  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+    isFinalStop.value = true
+    try { mediaRecorder.value.requestData(); } catch {}
+    mediaRecorder.value.stop();
+  }
+
+  if (recordedAudioURL.value) {
+        URL.revokeObjectURL(recordedAudioURL.value);
+        recordedAudioURL.value = null;
+    }
+
+  if (audioRecorderInterval.value) {
+    clearInterval(audioRecorderInterval.value!)
+    audioRecorderInterval.value = null
+  }
+})
 
 function wsUrl(baseHttpUrl: string, path: string): string {
   const u = new URL(baseHttpUrl);                 // http://192.168.1.5:8000
@@ -211,35 +232,128 @@ function onAudioFileChange(event: Event) {
   }
 }
 
-async function startRecording(){
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({audio: true})
-    micPermissionStatus.value = 'Microphone access granted.'
-    audioStream.value = stream
-    audioChunks.value = []
-    recordedAudioURL.value = null
+async function startRecording() {
+  try {
+    isFinalStop.value = false
 
-    mediaRecorder.value = new MediaRecorder(stream)
-    mediaRecorder.value.ondataavailable = (e) => e.data.size && audioChunks.value.push(e.data)
-    mediaRecorder.value.onstop = () => {
-      const audioBlob = new Blob(audioChunks.value, {type: 'audio/wav'  })
-      recordedAudioURL.value = URL.createObjectURL(audioBlob)
+    if(recordedAudioURL.value){
+      URL.revokeObjectURL(recordedAudioURL.value)
+      recordedAudioURL.value = null
+    }
+    audioChunks.value = []
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micPermissionStatus.value = 'Microphone access granted.';
+    audioStream.value = stream;
+
+    const supportedMimeTypes = [
+      'audio/ogg;codecs=opus',
+      'audio/webm;codecs=opus',
+      'audio/webm'
+    ];
+    let mimeType: string | undefined = undefined;
+    for (const type of supportedMimeTypes) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        mimeType = type;
+        break;
+      }
+    }
+    if (!mimeType) {
+      console.error('No supported audio type found.');
+      micPermissionStatus.value = 'No supported audio format.';
+      stream.getTracks().forEach(track => track.stop());
+      return;
     }
 
-    mediaRecorder.value.start()
-    isRecording.value = true
-  } catch(error){
-    console.error('Microphone access denied:', error)
-    micPermissionStatus.value = 'Microphone access required'
+    mediaRecorder.value = new MediaRecorder(stream, { mimeType });
+
+    mediaRecorder.value.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        audioChunks.value.push(e.data);
+      }
+    };
+
+    mediaRecorder.value.onstop = () => {
+      if (audioChunks.value.length > 0) {
+        const audioBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType });
+        sendAudioChunk(audioBlob);
+      }
+
+      if (isFinalStop.value) {
+        isRecording.value = false;
+
+        if (audioStream.value) {
+          audioStream.value.getTracks().forEach(track => track.stop());
+          const finalBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType })
+          recordedAudioURL.value = URL.createObjectURL(finalBlob)
+          audioChunks.value = [];
+        }
+      } else {
+        audioChunks.value = [];
+        mediaRecorder.value?.start();
+      }
+    };
+    mediaRecorder.value.start();
+    isRecording.value = true;
+
+    setTimeout(() => {
+        if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
+            mediaRecorder.value.requestData();
+        }
+    }, 250);
+
+    const spliceTime = 5 * 60 * 1000;
+    audioRecorderInterval.value = setInterval(rotateRecording, spliceTime);
+
+  } catch (error) {
+    console.error('Microphone access denied:', error);
+    micPermissionStatus.value = 'Microphone access required';
   }
 }
 
+function rotateRecording() {
+  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
 
-function stopRecording(){
-    mediaRecorder.value?.stop()
-    isRecording.value = false
+    mediaRecorder.value.requestData();
+    mediaRecorder.value.stop();
+  }
 }
 
+function stopRecording() {
+  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+    isFinalStop.value = true
+    if (audioRecorderInterval.value) {
+      clearInterval(audioRecorderInterval.value);
+      audioRecorderInterval.value  = null
+    }
+    mediaRecorder.value.requestData();
+    mediaRecorder.value.stop();
+  }
+}
+
+async function sendAudioChunk(chunk: Blob) {
+  const formData = new FormData()
+  const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg';
+  formData.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`);
+
+  try {
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) {
+      console.error('Chunk upload failed with status:', response.status)
+      return
+    }
+
+    const result = await response.json()
+    console.log('Chunk transcribed successfully:', result)
+
+  } catch (error) {
+    console.error('Error sending audio chunk:', error)
+  }
+}
 
 function playRecording(){
   if(!recordedAudioURL.value) return
@@ -254,7 +368,7 @@ function playRecording(){
 
 }
 
-async function transcribeRecording() {
+/*async function transcribeRecording() {
   if (!audioChunks.value.length){
     audioUploadStatus.value = 'No audio to transcribe !'
     return
@@ -280,7 +394,7 @@ async function transcribeRecording() {
     console.error('Transcription error:', error)
     audioUploadStatus.value = 'Transcription failed.'
   }
-}
+}*/
 
 function rollDice(sides: number) {
   const result = Math.floor(Math.random() * sides) + 1
@@ -327,7 +441,7 @@ function rollDice(sides: number) {
         />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
-            Search rulebook
+            show matching rulebook pages
         </label>
         <button @click="handleQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
@@ -368,7 +482,6 @@ function rollDice(sides: number) {
 
         <div v-if="recordedAudioURL" class="play-button">
           <button @click="playRecording" class="submit-button"> Play Recording </button>
-          <button @click="transcribeRecording" class="submit-button"> Transcribe Recording </button>
         </div>
       </div>
 

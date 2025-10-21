@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException, status
-#from fastapi.responses import JSONResponse
+from app.core.config import settings
+from fastapi import APIRouter, HTTPException
 from app.base_models.rulebook import FolderStructure, FolderContent, FileContentResponse
 from app.functions.embedding.markdown_reader import read_markdown_file
 from app.functions.embedding.embedding_model import embedding_search
@@ -11,7 +12,7 @@ from app.base_models.embedding_base_model import EmbeddResponse
 
 
 router = APIRouter()
-BASE_DIR = "./data/markdowns"
+BASE_DIR = os.path.join(settings.backend_root_path, "data", "markdowns")
 
 @router.get("/folders", response_model=FolderStructure)
 async def get_folders():
@@ -49,4 +50,3 @@ async def search_files(req: EmbeddingSearch):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No Markdowns found")
 
     return {"markdown_texts": markdown_texts}
-    #return JSONResponse(content={"markdown_texts": markdown_texts})
