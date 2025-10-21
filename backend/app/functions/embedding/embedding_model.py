@@ -53,7 +53,8 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
 
     return results
 
-def embedd_transcriptions(embedding_text: list, persist_directory=settings.chroma_db_path):
+
+def embedd_transcriptions(embedding_text: list, player_id="none", persist_directory=settings.chroma_db_path):
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(
         model_name="all-MiniLM-L6-v2"
@@ -63,8 +64,8 @@ def embedd_transcriptions(embedding_text: list, persist_directory=settings.chrom
         Document(
             page_content=text,
             metadata={"source": "transcriptions",
-                      "player_id": "none", # Update here later
-                      "session_id": "none", # Update here later
+                      "player_id": player_id,  # Update here later
+                      "session_id": "none",  # Update here later
                       "path": "none"}
         )
         for i, text in enumerate(embedding_text)
@@ -73,7 +74,7 @@ def embedd_transcriptions(embedding_text: list, persist_directory=settings.chrom
     write_to_ChromaDB(persist_directory, documents, embedding_model)
 
 
-def embedd_rulebook(embedding_text: list, txt_paths: dict, persist_directory =settings.chroma_db_path):
+def embedd_rulebook(embedding_text: list, txt_paths: dict, persist_directory=settings.chroma_db_path):
     """
     embedding_text: list of text content
     txt_paths: dict mapping index in embedding_text -> absolute txt path

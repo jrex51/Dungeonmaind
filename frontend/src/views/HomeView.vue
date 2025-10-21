@@ -30,10 +30,10 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 const diceResult = ref<string>('')
 
 //const backendMarkdown = ref<string>('')
-//let renderedMarkdown = ref<string>('')
+let renderedMarkdown = ref<string>('')
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
-let renderedMarkdown = ref('')
+//let renderedMarkdown = ref('')
 
 
 
@@ -88,33 +88,24 @@ async function onLeave() {
   router.push({ name: "login" });
 }
 
-async function handleLLMQuestionSubmit() {
+async function handleQuestionSubmit() {
   if (isLoading.value) return // prevent spamming the button
   isLoading.value = true
   modelOutput.value = ''
 
-  try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        player_id: store.currentPlayer?.id,
-        input_string: userInput.value,
-        use_rulebook: askRulebook.value
-      }),
-    })
-    if (askRulebook.value) {
+  if(askRulebook.value) {
+    try {
+      const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input_string: userInput.value,
+        }),
+      })
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
-    } else {
-      if (!response.ok || !response.body) {
-        throw new Error(`Request failed with status ${response.status}`)
-      }
-    }
 
-
-    if(askRulebook.value) {
       //const markdownJson = await response.text()
       const markdownJson = await response.json()
       console.log(markdownJson)
@@ -123,16 +114,32 @@ async function handleLLMQuestionSubmit() {
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
-        renderedMarkdown.value = marked.parse(backendMarkdown.value[0])
+        renderedMarkdown.value = marked.parse(backendMarkdown.value[0]) as string
       }
       //if (backendMarkdown.value.trim()) {
       //  renderedMarkdown.value = marked.parse(backendMarkdown.value)
       //  console.log(renderedMarkdown.value)
       //}
-    } else {
-      if(!response.body) {
+    } catch (error) {
+      console.error('Error calling Rulebook Search endpoint:', error)
+    } finally {
+      isLoading.value = false //  unlock after done
+    }
+  } else {
+    try {
+      const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player_id: store.currentPlayer?.id,
+          input_string: userInput.value,
+          use_rulebook: askRulebook.value
+        }),
+      })
+      if (!response.ok || !response.body) {
         throw new Error(`Request failed with status ${response.status}`)
       }
+
       // Removes any still shown previous rulebook searches.
       backendMarkdown.value = []
       renderedMarkdown.value = ""
@@ -144,28 +151,28 @@ async function handleLLMQuestionSubmit() {
         if (done) break
         const chunk = decoder.decode(value, {stream: true})
         modelOutput.value += chunk
-        modelOutputRendered = marked.parse(modelOutput.value)
+        modelOutputRendered.value = marked.parse(modelOutput.value) as string
       }
+    } catch (error) {
+      console.error('Error calling LLM endpoint:', error)
+      modelOutput.value = 'Error calling model, error: ' + error
+    } finally {
+      isLoading.value = false //  unlock after done
     }
-  } catch (error) {
-    console.error('Error calling LLM endpoint:', error)
-    modelOutput.value = 'Error calling model, error: ' + error
-  } finally {
-    isLoading.value = false //  unlock after done
   }
 }
 
 function showNextMarkdown() {
   if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
     currentMarkdownIndex.value++
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
   }
 }
 
 function showPrevMarkdown() {
   if (currentMarkdownIndex.value > 0) {
     currentMarkdownIndex.value--
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value])
+    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
   }
 }
 
@@ -316,13 +323,13 @@ function rollDice(sides: number) {
           type="text"
           placeholder="Type something..."
           class="input-field"
-          @keyup.enter="handleLLMQuestionSubmit"
+          @keyup.enter="handleQuestionSubmit"
         />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
             Search rulebook
         </label>
-        <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
+        <button @click="handleQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
         <div v-if="modelOutput" class="markdown-output">

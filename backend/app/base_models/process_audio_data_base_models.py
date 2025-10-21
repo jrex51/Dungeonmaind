@@ -1,5 +1,5 @@
 from typing import List
-
+from uuid import UUID
 from pydantic import BaseModel, Field
 
 class Segment(BaseModel):
@@ -20,3 +20,4 @@ class TranscriptionResponse(BaseModel):
         ...,
         description="List of transcription segments with timestamps and text"
     )
+

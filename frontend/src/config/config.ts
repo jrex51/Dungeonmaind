@@ -14,6 +14,7 @@ export const SERVER_CONFIG = {
     WS_PLAYERS: '/ws/players',
     RULEBOOK_FOLDERS: '/rulebook/folders',
     RULEBOOK_FILE: '/rulebook/file',
+    RULEBOOK_SEARCH: '/rulebook/search',
   },
 }
 
