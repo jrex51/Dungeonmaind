@@ -31,23 +31,6 @@ async def run_llm(req: LLMRequest):
     # 3) Embeddings erhalten für system prompt
     # k has to be adjusted after some testing later.
     retrieved_docs = embedding_search(req.input_string, req.use_rulebook)
-<<<<<<< HEAD
-=======
-    if req.use_rulebook:
-        md_paths = [
-            os.path.join(settings.backend_root_path, doc.metadata.get("path")[2:])
-            for doc in retrieved_docs
-        ]
-        print(settings.backend_root_path)
-        print(md_paths)
-        markdown_texts = [read_markdown_file(path) for path in md_paths]
-        print("markdown_text:", markdown_texts[0])
-        if not markdown_texts:
-            print("No markdown_texts found")
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No Markdowns found")
-
-        return JSONResponse(content={"markdown_texts": markdown_texts})
->>>>>>> origin/main-preview
 
     await chat_store.append(player.id, "user", req.input_string)
 
