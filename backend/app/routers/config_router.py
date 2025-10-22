@@ -1,8 +1,12 @@
 from fastapi import APIRouter, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from app.base_models.config_base_models import ConfigRequest, ConfigResponse
 from app.core.config import settings
 from app.core.chat_store import chat_store
 from app.domain.store import store
+
+from app.functions.process_audio_data.transcribe_audio import reload_transcription_model
+
 
 router = APIRouter()
 
@@ -28,20 +32,33 @@ async def submit_config(request: ConfigRequest):
 
         # save in config
         settings.llm_model = request.selected_LLM
-        settings.transcription_model = request.transcription_model
-        print(f"[CONFIG] Modell geändert auf: {settings.llm_model}")
-        print(f"[CONFIG] Transkriptionsmodell geändert auf: {settings.transcription_model}")
+        print(f"[CONFIG] LLM Modell geändert auf: {settings.llm_model}")
+
+        prev_trans = settings.transcription_model
+        if request.transcription_model != prev_trans:
+            settings.transcription_model = request.transcription_model
+            print(f"[CONFIG] Transkriptionsmodell geändert zu: {settings.transcription_model}. Wird neu geladen...")
+
+            try:
+                await run_in_threadpool(reload_transcription_model)
+            except RuntimeError as e:
+                settings.transcription_model = prev_trans
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                    detail=f"Failed to load transcription model: {e}")
+        else:
+            print(f"[CONFIG] Transkriptionsmodell unverändert: {settings.transcription_model}")
 
         if request.clear_chat:
             try:
                 player = store.group.get_player(request.player_id)
             except KeyError:
-                print("Player not found")
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
-            #chat_store.chat_history.clear()
             await chat_store.clear(player.id)
             print("[CHAT] Verlauf gelöscht.")
 
         return ConfigResponse(status="success")
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

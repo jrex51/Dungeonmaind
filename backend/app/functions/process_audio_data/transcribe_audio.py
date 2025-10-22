@@ -11,15 +11,21 @@ import torch
 import whisperx
 import tempfile
 import os
+import threading
 
 from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 from app.core.config import settings
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+computeType = "float16" if device == "cuda" else "int8"
+
+transcription_model = None
+alignment_models_cache = {}
+diarize_model = None
+
 # Load models once at startup.
 try:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    computeType = "float16" if device == "cuda" else "int8"
     print(f"Loading transcription and alignment models on device: {device} with compute type: {computeType}")
 
     # 1. Load the transcription model
@@ -39,13 +45,40 @@ try:
         use_auth_token="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",
         device=device
     )
-
     print("Models loaded successfully.")
+
 except Exception as e:
     print(f"Error loading models: {e}")
     transcription_model = None
     alignment_models_cache = {}
     diarize_model = None
+
+
+_reload_lock = threading.Lock()
+
+def reload_transcription_model() -> None:
+    global transcription_model
+    with _reload_lock:
+        old = transcription_model
+        try:
+            new_model = whisperx.load_model(
+                settings.transcription_model,
+                device,
+                compute_type=computeType,
+                download_root=os.getenv("WHISPERX_MODELS_DIR", None),
+            )
+            transcription_model = new_model
+            print(f"[TRANSCRIBE] Transcription Model loaded: {settings.transcription_model}")
+        except Exception as e:
+            print(f"[TRANSCRIBE] Transcription Model loading failed for '{settings.transcription_model}': {e}")
+            raise
+        finally:
+            try:
+                del old
+                if device == "cuda":
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
 
 def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
@@ -137,3 +170,4 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
     finally:
         # Clean up the temporary file
         os.remove(tempAudioPath)
+
