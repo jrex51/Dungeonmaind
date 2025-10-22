@@ -77,3 +77,9 @@ class Group:
             raise KeyError("Player not found.")
         return p
 
+    #def get_players(self) -> Dict[UUID, Player]:
+    #    p = self.players
+    #    if not p:
+    #        raise KeyError("Player not found.")
+    #    return p
+

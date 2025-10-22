@@ -81,6 +81,7 @@ const nameError = computed(() => {
 // Button nur aktiv, wenn alles ok
 const canSubmit = computed(() => role.value !== null && nameError.value === "");
 
+
 // Formular-Submit
 async function onSubmit(e: Event) {
   e.preventDefault();  // Browser-Reload verhindern
@@ -133,6 +134,11 @@ function normalizeOrigin(input: string): string {
   return new URL(withProtocol).origin;
 }
 
+async function onImport() {
+  const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.IMPORT_SESSION}`)
+}
+
+
 </script>
 
 
@@ -143,27 +149,32 @@ function normalizeOrigin(input: string): string {
     <div class="check-card">
       <label for="baseUrl">Backend-Adresse</label>
       <input
+        class = "input-field"
         id="baseUrl"
         v-model.trim="baseUrl"
         placeholder="z.B. http://localhost:8080"
         :disabled="status === 'checking'"
       />
 
-      <button @click="onCheck" :disabled="!baseUrl || status === 'checking'">
-        {{ status === 'checking' ? 'Prüfe...' : 'Verbindung prüfen' }}
+      <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
+        {{ status === 'checking' ? 'Checking...' : 'Check connection' }}
       </button>
 
       <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
-      <p v-else-if="status === 'error'">Nicht erreichbar: {{ message }}</p>
+      <p v-else-if="status === 'error'">Not available: {{ message }}</p>
     </div>
 
 
     <hr style="margin: 1rem 0" />
 
+    <div>
+      <button class="done-button" @click="onImport">Import Session</button>
+    </div>
+
     <form class="join-card" @submit="onSubmit">
       <!-- 1) Rolle auswählen-->
       <fieldset>
-        <legend>Rolle wählen</legend>
+        <legend>Choose a role</legend>
 
         <label>
           <input
@@ -185,12 +196,13 @@ function normalizeOrigin(input: string): string {
           Member
         </label>
 
-        <p v-if="touched && !role" class="error">Bitte Rolle auswählen.</p>
+        <p v-if="touched && !role" class="error">Please select a role.</p>
       </fieldset>
 
       <!-- 2) Spielernamen -->
-      <label for="playerName">Dein Name</label>
+      <label for="playerName">Your Name</label>
       <input
+        class = "input-field"
         id="playerName"
         type="text"
         v-model.trim="playerName"
@@ -203,8 +215,8 @@ function normalizeOrigin(input: string): string {
       <p v-if="serverError" class="error">{{ serverError }}</p>
 
       <!-- 3) Beitreten -->
-      <button type="submit" :disabled="!canSubmit || submitting">
-        {{ submitting ? "Beitreten ..." : "Beitreten" }}
+      <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
+        {{ submitting ? "Join ..." : "Join" }}
       </button>
     </form>
   </div>
@@ -225,17 +237,49 @@ select {
 }
 
 .done-button {
-  margin-top: 2rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  background-color: #42b983;
-  color: white;
-  border: none;
+  padding: 0.5rem 1rem;
+  background-color: rgba(53, 73, 94, 0.9);
+  border: 1px solid #4a575e;
   border-radius: 4px;
+  color: white;
   cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: normal;
+  transition: background-color 0.3s ease;
 }
 
-.done-button:hover {
-  background-color: #369f6e;
+.done-button :hover {
+  background-color: #4a575e;
+}
+
+.input-field {
+  padding: 0.75rem;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #695710;
+  border-radius: 10px;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+  background-color: #f1e6b4;
+
+  color: #4c3e06;
+  width: 90%;
+  box-sizing: border-box;
+}
+
+.login-page,
+.login-page h1,
+.login-page p,
+.login-page label,
+.login-page fieldset,
+.login-page legend,
+.login-page button {
+  font-family: 'MedievalSharp', cursive;
+}
+
+.login-page input,
+.login-page textarea,
+.login-page select {
+  font-family: inherit;
 }
 </style>

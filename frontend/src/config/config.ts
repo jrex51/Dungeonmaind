@@ -16,6 +16,8 @@ export const SERVER_CONFIG = {
     RULEBOOK_FOLDERS: '/rulebook/folders',
     RULEBOOK_FILE: '/rulebook/file',
     RULEBOOK_SEARCH: '/rulebook/search',
+    EXPORT_SESSION: '/exportImport/export',
+    IMPORT_SESSION: '/exportImport/import',
   },
 }
 

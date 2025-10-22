@@ -32,11 +32,9 @@ const isFinalStop = ref(false)
 
 const diceResult = ref<string>('')
 
-//const backendMarkdown = ref<string>('')
 let renderedMarkdown = ref<string>('')
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
-//let renderedMarkdown = ref('')
 
 
 
@@ -107,6 +105,10 @@ function wsUrl(baseHttpUrl: string, path: string): string {
 async function onLeave() {
   await store.leave();
   router.push({ name: "login" });
+}
+
+async function onExport() {
+  const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`)
 }
 
 async function handleQuestionSubmit() {
@@ -412,17 +414,18 @@ function rollDice(sides: number) {
        <div class="header-right">
          <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
          <button class="config-button" @click="goToConfig">Config</button>
+         <button class="export-button" @click="onExport">Save Session</button>
        </div>
     </div>
 
     <div class="centered-content">
       <section>
         <h2>Hello {{ store.currentPlayer?.name }}</h2>
-        <p v-if="store.isLeader">Du bist Leader.</p>
+        <p v-if="store.isLeader">You are the Leader.</p>
 
-        <button @click="onLeave">Verlassen</button>
+        <button class="leave-button" @click="onLeave">Leave</button>
 
-        <h3>Spieler</h3>
+        <h3>Player</h3>
         <ul>
           <li v-for="p in store.players" :key="p.id">
             {{ p.name }} ({{ p.role }})
@@ -576,7 +579,8 @@ body {
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
 }
 
-
+.leave-button,
+.export-button,
 .rulebook-button,
 .config-button {
   padding: 0.5rem 1rem;
