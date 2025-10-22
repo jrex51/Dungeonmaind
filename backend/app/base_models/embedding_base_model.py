@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import List
 
 
 class EmbeddRequest(BaseModel):
@@ -6,4 +7,8 @@ class EmbeddRequest(BaseModel):
 
 
 class EmbeddResponse(BaseModel):
-    output: str = Field(..., description="Text generated out of embeddings")
+    markdown_texts: List[str]
+
+
+class EmbeddingSearch(BaseModel):
+    input_string: str = Field(..., description="Search string for embedding search")

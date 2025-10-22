@@ -1,13 +1,18 @@
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+import os
 from app.base_models.llm_base_models import LLMRequest
 from app.functions.llm.custom_model import run_custom_model
+from app.functions.llm.system_prompt import get_system_prompt
 from app.core.chat_store import chat_store
 from app.domain.store import store
 from app.functions.embedding.embedding_model import embedding_search
+from app.functions.embedding.markdown_reader import read_markdown_file
+from app.core.config import settings
 
 
 router = APIRouter()
+
 
 @router.post("/run", response_class=StreamingResponse)
 async def run_llm(req: LLMRequest):
@@ -22,30 +27,31 @@ async def run_llm(req: LLMRequest):
 
     # 2) Nachricht speichern
     print("speichere nachricht")
-    await chat_store.append(player.id, "user", req.input_string)
 
     # 3) Embeddings erhalten für system prompt
     # k has to be adjusted after some testing later.
     retrieved_docs = embedding_search(req.input_string, req.use_rulebook)
-    context = "\n\n".join([doc.page_content for doc in retrieved_docs])
 
-    system_message = {
-        "role": "system",
-        "content": (
-            f"IMPORTANT: You are a LLM, which helps a group of players to play the roleplay game Dungeons and Dragons. "
-            f"The users might ask you about the rules of the game or content of past sessions. "
-            f"For this you will be provided a context, from a database. "
-            f"Your answers should always be based on this context, even if the user does not specify that the answer should be based on the context. "
-            f"Only Questions non Dungeons and Dragons related might be answered without using the provided context.\n\n"
-            f"--- Begin of context --- \n\n"
-            f"Use the following retrieved context to help answer the users question:\n\n"
-            f"{context}\n\n"
-            f"--- End of context ---"
-        )
-    }
+    await chat_store.append(player.id, "user", req.input_string)
+
+    context = ""
+    sources = [doc.metadata.get("source") for doc in retrieved_docs]
+    for doc in retrieved_docs:
+        context += "--Source-- " + doc.metadata.get("source") + "--End Source-- \n"
+        if doc.metadata.get("path") is not None:
+            full_path = doc.metadata.get("path")
+            filename = os.path.basename(full_path).replace(".md", "")
+            context += "-filename-" + filename + "-End filename- \n"
+        context += doc.page_content + "\n\n"
+
+
+    #context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+    system_message = get_system_prompt(context)
 
     # 4) Generator zum Streamen
     async def event_generator(system_prompt: str):
+        #yield json.dumps({"type": "metadata", "markdown_texts": markdown_texts}) + "\n"
+
         llm_resp = ""
         # komplette History
         history = await chat_store.history(player.id)
@@ -54,6 +60,7 @@ async def run_llm(req: LLMRequest):
         async for chunk in run_custom_model(history):
             llm_resp += chunk
             yield chunk
+            #yield json.dumps({"type": "llm_chunk", "content": chunk}) + "\n"
         # 4) Antwort speichern
         print(llm_resp)
         await chat_store.append(player.id, "assistent", llm_resp)

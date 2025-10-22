@@ -139,6 +139,7 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
 
         # 7. Embed the resulting text
         if texts and any(text.strip() for text in texts):
+            print(texts)
             embedd_transcriptions(texts)
 
         # 8. Assign speaker labels

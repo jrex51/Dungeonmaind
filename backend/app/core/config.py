@@ -38,6 +38,18 @@ class Settings(BaseSettings):
         description="Transcription model (base or medium)"
     )
 
+    embedding_model: str = Field(
+        default="all-MiniLM-L6-v2",
+        validation_alias="EMBEDDING_MODEL",
+        description="Embedding model"
+    )
+
+    embedding_top_k: int = Field(
+        default=2,
+        validation_alias="EMBEDDING_TOP_K",
+        description="Number of top_k embeddings (1-4)"
+    )
+
     backend_root_path: str = Field(
         default_factory=lambda: os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         description="Root directory of the backend"

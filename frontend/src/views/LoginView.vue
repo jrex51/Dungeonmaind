@@ -2,9 +2,8 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
-import type { Role } from "@/api/players";
+import type { Role } from "@/api/playersAPI.ts";
 import { useSessionStore } from '@/stores/session.ts'
-import { setApiBaseFromInput, toOrigin } from '@/config/apiBase.ts'
 
 const store = useSessionStore();
 const router = useRouter();
@@ -25,13 +24,12 @@ type CheckResult = {
   error?: string;
 };
 
-async function checkConnection(baseUrl: string, endpoint: string, timeoutMs = 5000): Promise<CheckResult> {
-  const url = toOrigin(baseUrl, endpoint);
+async function checkConnection(backendUrl: string, timeoutMs = 5000): Promise<CheckResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${backendUrl}${SERVER_CONFIG.ENDPOINTS.CHECK_CONNECTION}`, {
       method: "GET",
       signal: controller.signal,
       });
@@ -51,10 +49,10 @@ async function onCheck() {
   message.value = "";
   lastStatus.value = null;
 
-  const result = await checkConnection(baseUrl.value, SERVER_CONFIG.ENDPOINTS.CHECK_CONNECTION);
+  const backendUrl = normalizeOrigin(baseUrl.value)
+  const result = await checkConnection(backendUrl);
 
   if (result.ok) {
-    setApiBaseFromInput(baseUrl.value);
     status.value = "ok";
     lastStatus.value = result.status ?? null;
   } else {
@@ -86,8 +84,9 @@ const canSubmit = computed(() => role.value !== null && nameError.value === "");
 // Formular-Submit
 async function onSubmit(e: Event) {
   e.preventDefault();  // Browser-Reload verhindern
-  const result = await checkConnection(baseUrl.value, SERVER_CONFIG.ENDPOINTS.CHECK_CONNECTION);
-  if (result.ok) setApiBaseFromInput(baseUrl.value);
+  const backendUrl = normalizeOrigin(baseUrl.value)
+  const result = await checkConnection(backendUrl);
+  if (result.ok) store.setBackendUrl(backendUrl);
   touched.value = true;
 
   if (!canSubmit.value || !role.value) return;
@@ -124,6 +123,14 @@ async function onSubmit(e: Event) {
   } finally {
     submitting.value = false;
   }
+}
+
+function normalizeOrigin(input: string): string {
+  // Protokoll sicherstellen (http/https) oder protokoll-relative //host zulassen
+  const withProtocol = /^(https?:)?\/\//i.test(input) ? input : `http://${input}`;
+  // Nur die Origin verwenden (Schema + Host + Port), Pfade abschneiden
+  //    (damit "http://host:8000/health" -> "http://host:8000")
+  return new URL(withProtocol).origin;
 }
 
 </script>
