@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import {computed, ref} from "vue"
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from "marked"
 import { useRouter } from 'vue-router'
 
+
 const router = useRouter()
-const folderStructure = ref<Record<string, any>>({})
+interface FolderData {
+  files: string[]
+}
+const folderStructure = ref<Record<string, FolderData>>({})
+const visibleFolders = computed(() => {
+  // remove entries with empty keys
+  return Object.entries(folderStructure.value)
+    .filter(([folder]) => folder.trim() !== "")
+    .reduce((acc, [folder, data]) => {
+      acc[folder] = data
+      return acc
+    }, {} as Record<string, FolderData>)
+})
 const selectedFile = ref("")
 const markdownContent = ref("")
 const renderedMarkdown = ref("")
@@ -15,8 +28,6 @@ function goHome() {
   router.push('/')
 }
 async function fetchFolders() {
-  //const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
-  //folderStructure.value = await res.json()
   const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
   const data = await res.json()
   console.log("Fetched folders:", Object.keys(data))
@@ -32,7 +43,7 @@ async function fetchFile(path: string) {
   )
   const data = await res.json()
   markdownContent.value = data.content
-  renderedMarkdown.value = marked.parse(data.content)
+  renderedMarkdown.value = marked.parse(data.content) as string
 }
 
 function toggleFolder(folder: string) {
@@ -49,7 +60,7 @@ function toggleFolder(folder: string) {
     <div class="sidebar">
       <h2>System Reference Documents (SRD) v.5</h2>
       <ul>
-        <li v-for="(data, folder) in folderStructure" :key="folder" v-if="folder !== ''">
+        <li v-for="(data, folder) in visibleFolders" :key="folder">
           <div @click="toggleFolder(folder)" class="folder">
             ▶ {{ folder }}
           </div>
@@ -59,7 +70,7 @@ function toggleFolder(folder: string) {
                 class="file"
                 @click="fetchFile(folder ? folder + '/' + file : file)"
             >
-              {{ file.replace(/\.md$/, '') }}
+              {{ (file as string).replace(/\.md$/, '') }}
             </li>
           </ul>
         </li>
