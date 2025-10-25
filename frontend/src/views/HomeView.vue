@@ -417,6 +417,32 @@ async function heal(playerId: string, amount: number) {
     body: JSON.stringify({ heal: amount }),
   })
 }
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function hpPct(p: any) {
+  const max = Math.max(1, Number(p?.hp?.max ?? 0))
+  const curr = clamp(Number(p?.hp?.current ?? 0), 0, max)
+  return Math.round((curr / max) * 100)
+}
+
+function tempPct(p: any) {
+  const max = Math.max(1, Number(p?.hp?.max ?? 0))
+  const curr = clamp(Number(p?.hp?.current ?? 0), 0, max)
+  const temp = Math.max(0, Number(p?.hp?.temp ?? 0))
+  const total = Math.min(curr + temp, max)
+  return Math.max(0, Math.round((total / max) * 100) - Math.round((curr / max) * 100))
+}
+
+function hpClass(p: any) {
+  const pct = hpPct(p)
+  if (pct <= 30) return 'is-low'
+  if (pct <= 60) return 'is-mid'
+  return 'is-high'
+}
+
 </script>
 
 <template>
@@ -434,7 +460,7 @@ async function heal(playerId: string, amount: number) {
       <section>
         <h2>Hello {{ store.currentPlayer?.name }}</h2>
         <p v-if="store.isLeader">You are Leader.</p>
-        <button @click="onLeave">Leave</button>
+        <button @click="onLeave" class="submit-button" >Leave</button>
 
         <!-- Only leaders see the full player list -->
         <h3 v-if="store.isLeader">Spieler</h3>
@@ -526,8 +552,9 @@ async function heal(playerId: string, amount: number) {
     <!-- Right: abilities, health and dice -->
     <aside class="right-rail">
       <section class="abilities-section rail-panel">
-        <h2 v-if="!store.isLeader">Your ability scores</h2>
-        <h2 v-else>Abilities of members</h2>
+          <h2 class="rail-title">
+            {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
+          </h2>
 
         <div v-if="visiblePlayers.length" class="ability-list">
           <div
@@ -536,8 +563,12 @@ async function heal(playerId: string, amount: number) {
             class="ability-card"
           >
             <div class="ability-card__header" v-if="store.isLeader">
-              <strong>{{ p.name ?? 'Unbenannter Spieler' }}</strong>
-              <span class="ability-card__role" v-if="p.role">({{ p.role }})</span>
+              <div class="ability-card__name">
+                {{ p.name ?? 'Unbenannter Spieler' }}
+              </div>
+            </div>
+            <div class="section__label">
+              Abilities:
             </div>
             <div class="ability-grid">
               <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
@@ -571,45 +602,65 @@ async function heal(playerId: string, amount: number) {
               </div>
             </div>
 
-            <div class="healthbar">
-              <div class="healthbar__label">HP</div>
-              <div class="healthbar__track">
+            <div class="healthbar" :class="hpClass(p)">
+              <!-- Spalte 1: Label -->
+              <div class="section__label">Health:</div>
+
+              <!-- Spalte 2: Progressbar -->
+              <div
+                class="healthbar__track"
+                role="progressbar"
+                :aria-valuemin="0"
+                :aria-valuemax="p.hp.max"
+                :aria-valuenow="p.hp.current"
+                :aria-valuetext="`${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp})` : ''}`"
+                :title="`HP ${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp} temp)` : ''}`"
+              >
+                <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
+
                 <div
-                  class="healthbar__fill"
-                  :style="{
-                    width:
-                      Math.min(
-                        100,
-                        Math.round(
-                          ((p.hp.current + (p.hp.temp ?? 0)) / Math.max(1, p.hp.max)) * 100,
-                        ),
-                      ) + '%',
-                  }"
-                  :title="`HP ${p.hp.current}/${p.hp.max}${
-                    p.hp.temp ? ` (+${p.hp.temp} temp)` : ''
-                  }`"
-                />
+                  v-if="p.hp.temp"
+                  class="healthbar__temp"
+                  :style="{ left: hpPct(p) + '%', width: tempPct(p) + '%' }"
+                ></div>
               </div>
+
+              <!-- Spalte 3: Zahlen -->
               <div class="healthbar__numbers">
                 {{ p.hp.current }} / {{ p.hp.max }}
                 <span v-if="p.hp.temp">(+{{ p.hp.temp }})</span>
               </div>
 
-              <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->
+              <!-- Spalte 4: Buttons (rechts neben Zahlen) -->
               <div
                 class="healthbar__controls"
                 v-if="store.isLeader || p.id === store.currentPlayer?.id"
               >
-                <button @click="damage(p.id, 1)">-1</button>
-                <button @click="heal(p.id, 1)">+1</button>
+                <button
+                  class="ability-stepper"
+                  @click="damage(p.id, 1)"
+                  aria-label="take 1 damage"
+                >
+                  −
+                </button>
+                <button
+                  class="ability-stepper"
+                  @click="heal(p.id, 1)"
+                  aria-label="heal 1 hp"
+                >
+                  +
+                </button>
               </div>
             </div>
+
+
           </div>
         </div>
         <p v-else class="output">No players found.</p>
       </section>
 
       <div class="dice-widget rail-panel">
+        <h2 class="rail-title">Roll a dice</h2>
         <div class="dice-buttons">
           <button @click="rollDice(4)" class="dice-button">W4</button>
           <button @click="rollDice(6)" class="dice-button">W6</button>
@@ -827,13 +878,23 @@ hr {
 .right-rail {
   position: fixed;
   right: 15%;
-  top: 250px;
+
+  top: 60px;
+  bottom: 1px;
+
   width: 540px;
   display: flex;
   flex-direction: column;
   gap: 1rem;
   z-index: 900;
+
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.5rem;
+  box-sizing: border-box;
 }
+
+
 
 .rail-panel {
   background-color: rgba(163, 148, 95, 0.9);
@@ -844,6 +905,20 @@ hr {
   color: #392401;
   font-family: 'MedievalSharp', cursive;
 }
+
+.rail-title {
+  margin: 0 0 1rem;
+  text-align: left;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  display: block;
+  padding-bottom: 0.1rem;
+  text-align: center;
+}
+
 
 /* Dice */
 .dice-widget {
@@ -894,15 +969,23 @@ hr {
 }
 .ability-card__header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
+  flex-direction: column;
+  align-items: center;        /* zentriert horizontal */
+  justify-content: center;
+  text-align: center;
+  margin-bottom: 0.75rem;
   color: #392401;
 }
-.ability-card__role {
-  color: #e0d5b7;
-  font-size: 0.9rem;
+
+.ability-card__name {
+  font-size: 1.25rem;         /* größer, kannst auch 1.5rem nehmen wenn du möchtest */
+  font-weight: 800;           /* sehr fett */
+  line-height: 1.2;
+  font-family: 'MedievalSharp', cursive;
+  letter-spacing: 0.03em;
+  color: #392401;
 }
+
 
 .ability-grid {
   display: grid;
@@ -956,6 +1039,74 @@ hr {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Label for ability and healthbar */
+.section__label {
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #392401;
+  font-size: 1.05rem;
+}
+
+/* Healthbar */
+.healthbar {
+  border-top: 1px solid rgba(57, 36, 1, 0.4);
+  padding-top: 1rem;
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.healthbar__numbers {
+  justify-self: end;
+  font-weight: 700;
+  color: #392401;
+  font-size: 1rem;
+}
+
+.healthbar__track {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+  outline: 1px solid #695710;
+  overflow: hidden;
+}
+
+.healthbar__fill,
+.healthbar__temp {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 0;
+  width: 0;
+  transition: width 200ms ease;
+}
+
+/* Basis-HP-Farbe (ändert sich je nach Rest-Prozent) */
+.healthbar__fill {
+  background: linear-gradient(180deg, #5bb45b, #2f8f2f); /* high */
+}
+.healthbar.is-mid .healthbar__fill {
+  background: linear-gradient(180deg, #d6b34c, #b98f1e); /* mid */
+}
+.healthbar.is-low .healthbar__fill {
+  background: linear-gradient(180deg, #d6634c, #b91e1e); /* low */
+}
+.healthbar__controls {
+  display: flex;
+  gap: 0.4rem;
+  justify-self: end;
+}
+
+.healthbar__controls .ability-stepper {
+  padding: 0.2rem 0.5rem;
+  line-height: 1;
+  min-width: 2rem;
+  text-align: center;
+}
+
 
 /* Markdown output (scoped deep) */
 :deep(.markdown-output) {
