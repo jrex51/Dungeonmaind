@@ -550,125 +550,127 @@ function hpClass(p: any) {
     </div>
 
     <!-- Right: abilities, health and dice -->
-    <aside class="right-rail">
-      <section class="abilities-section rail-panel">
+    <aside :class="['right-rail', store.isLeader ? 'right-rail--leader' : 'right-rail--member']">
+      <div :class="['right-rail__inner', store.isLeader ? 'right-rail__inner--leader' : null]">
+        <section class="abilities-section rail-panel">
           <h2 class="rail-title">
             {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
           </h2>
 
-        <div v-if="visiblePlayers.length" class="ability-list">
-          <div
-            v-for="p in visiblePlayers"
-            :key="p.id ?? p.name ?? JSON.stringify(p)"
-            class="ability-card"
-          >
-            <div class="ability-card__header" v-if="store.isLeader">
-              <div class="ability-card__name">
-                {{ p.name ?? 'Unbenannter Spieler' }}
+          <div v-if="visiblePlayers.length" class="ability-list">
+            <div
+              v-for="p in visiblePlayers"
+              :key="p.id ?? p.name ?? JSON.stringify(p)"
+              class="ability-card"
+            >
+              <div class="ability-card__header" v-if="store.isLeader">
+                <div class="ability-card__name">
+                  {{ p.name ?? 'Unbenannter Spieler' }}
+                </div>
               </div>
-            </div>
-            <div class="section__label">
-              Abilities:
-            </div>
-            <div class="ability-grid">
-              <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
-                <div class="ability-label">{{ a.label }}</div>
-                <div class="ability-score">
-                  <span>{{ a.score ?? '—' }}</span>
+              <div class="section__label">
+                Abilities:
+              </div>
+              <div class="ability-grid">
+                <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
+                  <div class="ability-label">{{ a.label }}</div>
+                  <div class="ability-score">
+                    <span>{{ a.score ?? '—' }}</span>
+                  </div>
+
+                  <!-- + / − controls: only for the current member (not leader) -->
+                  <div
+                    v-if="!store.isLeader && p.id === store.currentPlayer?.id"
+                    class="ability-controls"
+                  >
+                    <button
+                      class="ability-stepper"
+                      :disabled="abilityBusy[a.key]"
+                      @click="decAbility(p, a.key)"
+                      aria-label="decrease"
+                    >
+                      −
+                    </button>
+                    <button
+                      class="ability-stepper"
+                      :disabled="abilityBusy[a.key]"
+                      @click="incAbility(p, a.key)"
+                      aria-label="increase"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="healthbar" :class="hpClass(p)">
+                <!-- Spalte 1: Label -->
+                <div class="section__label">Health:</div>
+
+                <!-- Spalte 2: Progressbar -->
+                <div
+                  class="healthbar__track"
+                  role="progressbar"
+                  :aria-valuemin="0"
+                  :aria-valuemax="p.hp.max"
+                  :aria-valuenow="p.hp.current"
+                  :aria-valuetext="`${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp})` : ''}`"
+                  :title="`HP ${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp} temp)` : ''}`"
+                >
+                  <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
+
+                  <div
+                    v-if="p.hp.temp"
+                    class="healthbar__temp"
+                    :style="{ left: hpPct(p) + '%', width: tempPct(p) + '%' }"
+                  ></div>
                 </div>
 
-                <!-- + / − controls: only for the current member (not leader) -->
+                <!-- Spalte 3: Zahlen -->
+                <div class="healthbar__numbers">
+                  {{ p.hp.current }} / {{ p.hp.max }}
+                  <span v-if="p.hp.temp">(+{{ p.hp.temp }})</span>
+                </div>
+
+                <!-- Spalte 4: Buttons (rechts neben Zahlen) -->
                 <div
-                  v-if="!store.isLeader && p.id === store.currentPlayer?.id"
-                  class="ability-controls"
+                  class="healthbar__controls"
+                  v-if="store.isLeader || p.id === store.currentPlayer?.id"
                 >
                   <button
                     class="ability-stepper"
-                    :disabled="abilityBusy[a.key]"
-                    @click="decAbility(p, a.key)"
-                    aria-label="decrease"
+                    @click="damage(p.id, 1)"
+                    aria-label="take 1 damage"
                   >
                     −
                   </button>
                   <button
                     class="ability-stepper"
-                    :disabled="abilityBusy[a.key]"
-                    @click="incAbility(p, a.key)"
-                    aria-label="increase"
+                    @click="heal(p.id, 1)"
+                    aria-label="heal 1 hp"
                   >
                     +
                   </button>
                 </div>
               </div>
+
+
             </div>
-
-            <div class="healthbar" :class="hpClass(p)">
-              <!-- Spalte 1: Label -->
-              <div class="section__label">Health:</div>
-
-              <!-- Spalte 2: Progressbar -->
-              <div
-                class="healthbar__track"
-                role="progressbar"
-                :aria-valuemin="0"
-                :aria-valuemax="p.hp.max"
-                :aria-valuenow="p.hp.current"
-                :aria-valuetext="`${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp})` : ''}`"
-                :title="`HP ${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp} temp)` : ''}`"
-              >
-                <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
-
-                <div
-                  v-if="p.hp.temp"
-                  class="healthbar__temp"
-                  :style="{ left: hpPct(p) + '%', width: tempPct(p) + '%' }"
-                ></div>
-              </div>
-
-              <!-- Spalte 3: Zahlen -->
-              <div class="healthbar__numbers">
-                {{ p.hp.current }} / {{ p.hp.max }}
-                <span v-if="p.hp.temp">(+{{ p.hp.temp }})</span>
-              </div>
-
-              <!-- Spalte 4: Buttons (rechts neben Zahlen) -->
-              <div
-                class="healthbar__controls"
-                v-if="store.isLeader || p.id === store.currentPlayer?.id"
-              >
-                <button
-                  class="ability-stepper"
-                  @click="damage(p.id, 1)"
-                  aria-label="take 1 damage"
-                >
-                  −
-                </button>
-                <button
-                  class="ability-stepper"
-                  @click="heal(p.id, 1)"
-                  aria-label="heal 1 hp"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-
           </div>
-        </div>
-        <p v-else class="output">No players found.</p>
-      </section>
+          <p v-else class="output">No players found.</p>
+        </section>
 
-      <div class="dice-widget rail-panel">
-        <h2 class="rail-title">Roll a dice</h2>
-        <div class="dice-buttons">
-          <button @click="rollDice(4)" class="dice-button">W4</button>
-          <button @click="rollDice(6)" class="dice-button">W6</button>
-          <button @click="rollDice(8)" class="dice-button">W8</button>
-          <button @click="rollDice(12)" class="dice-button">W12</button>
-          <button @click="rollDice(20)" class="dice-button">W20</button>
+        <div class="dice-widget rail-panel">
+          <h2 class="rail-title">Roll a dice</h2>
+          <div class="dice-buttons">
+            <button @click="rollDice(4)" class="dice-button">W4</button>
+            <button @click="rollDice(6)" class="dice-button">W6</button>
+            <button @click="rollDice(8)" class="dice-button">W8</button>
+            <button @click="rollDice(12)" class="dice-button">W12</button>
+            <button @click="rollDice(20)" class="dice-button">W20</button>
+          </div>
+          <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
         </div>
-        <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
       </div>
     </aside>
   </div>
@@ -876,25 +878,49 @@ hr {
 
 /* Abilities and dice on right */
 .right-rail {
-  position: fixed;
   right: 15%;
-
-  top: 60px;
-  bottom: 1px;
-
   width: 540px;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
   z-index: 900;
+  box-sizing: border-box;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  position: fixed;
+}
 
+/* Leader-Version: füllt vertikal den Bildschirmbereich und scrollt intern */
+.right-rail--leader {
+  top: 10px;
+  bottom: 5px;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 0.5rem;
-  box-sizing: border-box;
+  /* Scrollbar verstecken*/
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.right-rail--leader::-webkit-scrollbar {
+  display: none;
 }
 
+/* Player-Version: fixed*/
+.right-rail--member {
+  top: 240px;
+  bottom: auto;
+  overflow: visible;
+  padding-right: 0;
+}
 
+/* Gemeinsames Layout innen: Cards untereinander mit Abstand */
+.right-rail__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
+.right-rail__inner--leader {
+  padding-top: 110px;
+}
 
 .rail-panel {
   background-color: rgba(163, 148, 95, 0.9);
@@ -924,6 +950,7 @@ hr {
 .dice-widget {
   position: static;
   width: 100%;
+  margin-top: 3rem;
 }
 .dice-buttons {
   display: flex;
@@ -970,7 +997,7 @@ hr {
 .ability-card__header {
   display: flex;
   flex-direction: column;
-  align-items: center;        /* zentriert horizontal */
+  align-items: center;
   justify-content: center;
   text-align: center;
   margin-bottom: 0.75rem;
@@ -978,8 +1005,8 @@ hr {
 }
 
 .ability-card__name {
-  font-size: 1.25rem;         /* größer, kannst auch 1.5rem nehmen wenn du möchtest */
-  font-weight: 800;           /* sehr fett */
+  font-size: 1.25rem;
+  font-weight: 800;
   line-height: 1.2;
   font-family: 'MedievalSharp', cursive;
   letter-spacing: 0.03em;
@@ -1119,10 +1146,24 @@ hr {
 @media (max-width: 900px) {
   .right-rail {
     position: static;
+    right: auto;
+    top: auto;
+    bottom: auto;
     width: auto;
     margin: 1rem;
+    padding-right: 0;
+  }
+
+  .right-rail--leader,
+  .right-rail--member {
+    overflow: visible;
+  }
+
+  .right-rail__inner--leader {
+    padding-top: 0; /* kein künstlicher Offset */
   }
 }
+
 
 :deep(.markdown-output h1) {
   font-size: 2rem;
