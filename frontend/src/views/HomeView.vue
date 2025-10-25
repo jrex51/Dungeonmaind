@@ -605,7 +605,7 @@ function hpClass(p: any) {
 
               <div class="healthbar" :class="hpClass(p)">
                 <!-- Spalte 1: Label -->
-                <div class="section__label">Health:</div>
+                <div class="section__label">Hit Points:</div>
 
                 <!-- Spalte 2: Progressbar -->
                 <div
