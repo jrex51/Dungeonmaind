@@ -307,7 +307,7 @@ async function startRecording() {
         }
     }, 250);
 
-    const spliceTime = 1 * 60 * 1000;
+    const spliceTime = 5 * 60 * 1000;
     audioRecorderInterval.value = setInterval(rotateRecording, spliceTime);
 
   } catch (error) {
