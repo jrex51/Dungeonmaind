@@ -1,12 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
-from fastapi.concurrency import run_in_threadpool
 from app.base_models.config_base_models import ConfigRequest, ConfigChangeResponse, ConfigGetResponse
 from app.core.config import settings
 from app.core.chat_store import chat_store
 from app.domain.store import store
 from app.functions.embedding.embedding_model import delete_transcription_embeddings, reembed_chroma_entries
-
-
 from app.functions.process_audio_data.transcribe_audio import reload_transcription_model
 
 
@@ -19,7 +16,7 @@ VALID_MODELS = {
     "hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M"
 }
 
-VALID_TRANS_MODELS = {"base", "medium"}
+VALID_TRANS_MODELS = {"base", "medium", "large-v3"}
 
 VALID_EMBEDDING_MODELS = {
     "all-MiniLM-L6-v2",
@@ -45,22 +42,14 @@ async def submit_config(request: ConfigRequest):
             raise HTTPException(status_code=400, detail="Invalid embedding TopK selected.")
 
         # save in config
-        settings.llm_model = request.selected_LLM
-        print(f"[CONFIG] LLM Modell geändert auf: {settings.llm_model}")
+        if settings.llm_model != request.selected_LLM:
+            settings.llm_model = request.selected_LLM
+            print(f"[CONFIG] LLM changed to: {settings.llm_model}")
 
-        prev_trans = settings.transcription_model
-        if request.transcription_model != prev_trans:
+        if settings.transcription_model != request.transcription_model:
             settings.transcription_model = request.transcription_model
-            print(f"[CONFIG] Transkriptionsmodell geändert zu: {settings.transcription_model}. Wird neu geladen...")
-
-            try:
-                await run_in_threadpool(reload_transcription_model)
-            except RuntimeError as e:
-                settings.transcription_model = prev_trans
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                    detail=f"Failed to load transcription model: {e}")
-        else:
-            print(f"[CONFIG] Transkriptionsmodell unverändert: {settings.transcription_model}")
+            reload_transcription_model()
+            print(f"[CONFIG] Transcription model changed to: {settings.transcription_model}")
 
         if request.clear_chat:
             try:

@@ -13,7 +13,7 @@ const router = useRouter();
 type Status = "idle" | "checking" | "ok" | "error";
 
 // checkConnection
-const baseUrl = ref<string>("http://localhost:8000");
+const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
 const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);

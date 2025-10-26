@@ -3,7 +3,8 @@ import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session.ts'
 import { useConfigStore } from '@/stores/backendConfig'
-import { SERVER_CONFIG, LLM_OPTIONS, TRANSCRIPTION_MODELS, EMBEDDING_MODELS, EMBEDDING_TopK} from '@/config/config'
+import { LLM_OPTIONS, TRANSCRIPTION_MODELS, EMBEDDING_MODELS, EMBEDDING_TopK} from '@/config/config'
+import {type Payload, submitConfig} from "@/api/backendConfigAPI.ts";
 
 const router = useRouter()
 const store = useSessionStore()
@@ -21,29 +22,20 @@ function goHome() {
 
 async function submitSelection() {
   goHome()
+  const payload: Payload = {
+    player_id: store.currentPlayer?.id,
+    selected_LLM: selectedLLM.value,
+    transcription_model: selectedTranscriptionModel.value,
+    embedding_model: selectedEmbeddingModel.value,
+    embedding_top_k: selectedEmbeddingTopK.value,
+    clear_chat: clearChat.value,
+    delete_transcriptions: deleteTranscriptions.value
+  }
   try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.CHANGE_CONFIG}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ player_id: store.currentPlayer?.id,
-        selected_LLM: selectedLLM.value,
-        transcription_model: selectedTranscriptionModel.value,
-        embedding_model: selectedEmbeddingModel.value,
-        embedding_top_k: selectedEmbeddingTopK.value,
-        clear_chat: clearChat.value,
-        delete_transcriptions: deleteTranscriptions.value
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`)
-    }
-
-    console.log('Configuration successfully submitted:', selectedLLM.value)
+    await submitConfig(payload)
+    console.log('Configuration successfully submitted')
   } catch (error) {
-    console.error('Error calling LLM endpoint:', error)
+    console.error('Error calling submitConfig:', error)
   }
 }
 

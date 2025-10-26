@@ -34,6 +34,7 @@ export const DEFAULT_LLM = LLM_OPTIONS[0].value
 export const TRANSCRIPTION_MODELS = [
   { value: 'base', label: 'Base' },
   { value: 'medium', label: 'Medium' },
+  { value: 'large-v3', label: 'Large' },
 ]
 
 // Set the default transcription model

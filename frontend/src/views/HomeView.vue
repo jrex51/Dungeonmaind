@@ -44,6 +44,11 @@ function goToConfig() {
   router.push('/config')
 }
 
+function goToPlayers() {
+  router.push('/players')
+}
+
+
 function goToRulebook() {
   router.push('/rulebook')
 }
@@ -135,7 +140,7 @@ async function handleQuestionSubmit() {
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
-        renderedMarkdown.value = marked.parse(backendMarkdown.value[0]) as string
+        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string
       }
       //if (backendMarkdown.value.trim()) {
       //  renderedMarkdown.value = marked.parse(backendMarkdown.value)
@@ -302,7 +307,7 @@ async function startRecording() {
         }
     }, 250);
 
-    const spliceTime = 5 * 60 * 1000;
+    const spliceTime = 1 * 60 * 1000;
     audioRecorderInterval.value = setInterval(rotateRecording, spliceTime);
 
   } catch (error) {
@@ -411,6 +416,7 @@ function rollDice(sides: number) {
        <h1>Dungeonmaind</h1>
        <div class="header-right">
          <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
+         <button class="players-button" @click="goToPlayers">Players</button>
          <button class="config-button" @click="goToConfig">Config</button>
        </div>
     </div>
@@ -578,6 +584,7 @@ body {
 
 
 .rulebook-button,
+.players-button,
 .config-button {
   padding: 0.5rem 1rem;
   background-color: rgba(53, 73, 94, 0.9);
@@ -591,6 +598,7 @@ body {
 }
 
 .rulebook-button:hover,
+.players-button:hover,
 .config-button:hover {
   background-color: #4a575e;
 }

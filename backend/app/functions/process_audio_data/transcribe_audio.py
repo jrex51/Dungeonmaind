@@ -11,82 +11,60 @@ import torch
 import whisperx
 import tempfile
 import os
-import threading
 
 from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 from app.core.config import settings
+from whisperx.diarize import DiarizationPipeline
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-computeType = "float16" if device == "cuda" else "int8"
-
-transcription_model = None
-alignment_models_cache = {}
-diarize_model = None
-
-# Load models once at startup.
-try:
-    print(f"Loading transcription and alignment models on device: {device} with compute type: {computeType}")
-
-    # 1. Load the transcription model
-    transcription_model = whisperx.load_model(
+def load_transcription_model():
+    new_model = whisperx.load_model(
         settings.transcription_model,
         device,
-        compute_type=computeType,
-        download_root=os.getenv("WHISPERX_MODELS_DIR", None)
+        compute_type=compute_type,
+        download_root=model_dir # If None, uses default HF cache
     )
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    return new_model
 
-    # Use a dictionary to cache alignment models by language to avoid reloading
-    alignment_models_cache = {}
+def reload_transcription_model():
+    global transcription_model
+    transcription_model = load_transcription_model()
 
-    # 2. Load the diarization model
+def load_diarize_model():
     # created an HF token and then added it
-    diarize_model = whisperx.diarize.DiarizationPipeline(
+    new_model = (DiarizationPipeline(
         use_auth_token="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",
         device=device
-    )
-    print("Models loaded successfully.")
-
-except Exception as e:
-    print(f"Error loading models: {e}")
-    transcription_model = None
-    alignment_models_cache = {}
-    diarize_model = None
+    ))
+    return new_model
 
 
-_reload_lock = threading.Lock()
+model_dir = os.getenv("WHISPERX_MODELS_DIR", None)
+print("WHISPERX_MODELS_DIR:", os.getenv("WHISPERX_MODELS_DIR"))
 
-def reload_transcription_model() -> None:
-    global transcription_model
-    with _reload_lock:
-        old = transcription_model
-        try:
-            new_model = whisperx.load_model(
-                settings.transcription_model,
-                device,
-                compute_type=computeType,
-                download_root=os.getenv("WHISPERX_MODELS_DIR", None),
-            )
-            transcription_model = new_model
-            print(f"[TRANSCRIBE] Transcription Model loaded: {settings.transcription_model}")
-        except Exception as e:
-            print(f"[TRANSCRIBE] Transcription Model loading failed for '{settings.transcription_model}': {e}")
-            raise
-        finally:
-            try:
-                del old
-                if device == "cuda":
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
+if model_dir is None:
+    # Dev/local environment: auto-detect device
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+else:
+    # Docker: CPU-only setup
+    device = "cpu"
+    compute_type = "int8"
+    print("Warning: With Docker currently only CPU support is possible")
 
+print(f"Loading transcription and alignment models on device: {device} with compute type: {compute_type}")
+
+# Use a dictionary to cache alignment models by language to avoid reloading
+alignment_models_cache = {}
+
+# 1. Load models
+transcription_model = load_transcription_model()
+diarize_model = load_diarize_model()
+print("Models loaded successfully.")
 
 def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
-    # Check if models are loaded before proceeding
-    if not transcription_model or not diarize_model:
-        print("Error: Models are not loaded. Transcription aborted.")
-        return None
-
     # Robust content type parsing and saving bytes to a temporary file
     file_extension_map = {
         'ogg': 'ogg',
@@ -102,7 +80,7 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
             break
 
     print("Loading audio...")
-    # 3. Save bytes to a temporary file (required by whisperx.load_audio)
+    # 2. Save bytes to a temporary file (required by whisperx.load_audio)
     with tempfile.NamedTemporaryFile(suffix=f".{fileExtension}", delete=False) as tempAudio:
         tempAudio.write(audio_bytes)
         tempAudio.flush()
@@ -112,11 +90,11 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
         # Load audio from the temporary file
         audio = whisperx.load_audio(tempAudioPath)
 
-        # 4. Transcribe using the cached model
+        # 3. Transcribe using the cached model
         result = transcription_model.transcribe(audio, batch_size=batch_size)
         print("Transcription segments:", result["segments"])
 
-        # 5. Align whisper output to improve the word-level timestamps in your transcription.
+        # 4. Align whisper output to improve the word-level timestamps in your transcription.
         language_code = result["language"]
         if language_code not in alignment_models_cache:
             print(f"Loading alignment model for language: {language_code}...")
@@ -129,7 +107,7 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
             print(f"Using cached alignment model for language: {language_code}.")
             alignment_model, metadata = alignment_models_cache[language_code]
 
-        # 6. Perform alignment
+        # 5. Perform alignment
         print("Aligning...")
         resultA = whisperx.align(result["segments"], alignment_model, metadata, audio, device,
                                  return_char_alignments=False)
@@ -137,12 +115,12 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
 
         texts = [segment['text'] for segment in resultA["segments"]]
 
-        # 7. Embed the resulting text
+        # 6. Embed the resulting text
         if texts and any(text.strip() for text in texts):
             print(texts)
             embedd_transcriptions(texts)
 
-        # 8. Assign speaker labels
+        # 7. Assign speaker labels
         print("Assigning speakers...")
 
         # Max players is guaranteed to be available based on the user's requirement.
