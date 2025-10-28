@@ -443,6 +443,16 @@ function hpClass(p: any) {
   return 'is-high'
 }
 
+/* Setting of Maximum Hit Points */
+
+function onMaxHpChange(p: any, e: Event) {
+  const target = e.target as HTMLInputElement
+  const val = parseInt(target.value, 10)
+  if (!Number.isFinite(val) || val <= 0) return
+  //patchMaxHP(p.id, val)
+}
+
+
 </script>
 
 <template>
@@ -552,7 +562,22 @@ function hpClass(p: any) {
     <!-- Right: abilities, health and dice -->
     <aside :class="['right-rail', store.isLeader ? 'right-rail--leader' : 'right-rail--member']">
       <div :class="['right-rail__inner', store.isLeader ? 'right-rail__inner--leader' : null]">
-        <section class="abilities-section rail-panel">
+
+        <!-- dice -->
+        <div :class="['dice-widget','rail-panel',!store.isLeader ? 'dice-widget--member' : null]">
+          <h2 class="rail-title">Roll a dice</h2>
+          <div class="dice-buttons">
+            <button @click="rollDice(4)" class="dice-button">W4</button>
+            <button @click="rollDice(6)" class="dice-button">W6</button>
+            <button @click="rollDice(8)" class="dice-button">W8</button>
+            <button @click="rollDice(12)" class="dice-button">W12</button>
+            <button @click="rollDice(20)" class="dice-button">W20</button>
+          </div>
+          <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
+        </div>
+
+        <!-- player information -->
+        <section :class="['abilities-section','rail-panel',!store.isLeader ? 'abilities-section--member' : null]">
           <h2 class="rail-title">
             {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
           </h2>
@@ -577,10 +602,8 @@ function hpClass(p: any) {
                   <div class="ability-score">
                     <span>{{ a.score ?? '—' }}</span>
                   </div>
-
-                  <!-- + / − controls: only for the current member (not leader) -->
                   <div
-                    v-if="!store.isLeader && p.id === store.currentPlayer?.id"
+                    v-if="store.isLeader || p.id === store.currentPlayer?.id"
                     class="ability-controls"
                   >
                     <button
@@ -653,24 +676,24 @@ function hpClass(p: any) {
                   </button>
                 </div>
               </div>
-
+              <div class="hpmax-row">
+                <label class="section__label" :for="'hpmax-' + p.id">
+                  Maximum Hit Points:
+                </label>
+                <input
+                  :id="'hpmax-' + p.id"
+                  class="hpmax-input"
+                  type="number"
+                  min="1"
+                  :value="p.hp.max"
+                  @change="onMaxHpChange(p, $event)"
+                />
+              </div>
 
             </div>
           </div>
           <p v-else class="output">No players found.</p>
         </section>
-
-        <div class="dice-widget rail-panel">
-          <h2 class="rail-title">Roll a dice</h2>
-          <div class="dice-buttons">
-            <button @click="rollDice(4)" class="dice-button">W4</button>
-            <button @click="rollDice(6)" class="dice-button">W6</button>
-            <button @click="rollDice(8)" class="dice-button">W8</button>
-            <button @click="rollDice(12)" class="dice-button">W12</button>
-            <button @click="rollDice(20)" class="dice-button">W20</button>
-          </div>
-          <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
-        </div>
       </div>
     </aside>
   </div>
@@ -919,7 +942,7 @@ hr {
 
 /* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
 .right-rail__inner--leader {
-  padding-top: 110px;
+  padding-top: 65px;
 }
 
 .rail-panel {
@@ -952,6 +975,9 @@ hr {
   width: 100%;
   margin-top: 3rem;
 }
+.dice-widget--member {
+  margin-top: -20px;
+}
 .dice-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -981,6 +1007,9 @@ hr {
 .abilities-section {
   width: 100%;
   margin: 0;
+}
+.abilities-section--member {
+  margin-top: 2rem;
 }
 .ability-list {
   display: grid;
@@ -1132,6 +1161,32 @@ hr {
   line-height: 1;
   min-width: 2rem;
   text-align: center;
+}
+
+/* Maximum hit points setting */
+.hpmax-row {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  border-top: 1px solid rgba(57, 36, 1, 0.4);
+  padding-top: 1rem;
+}
+
+.hpmax-input {
+  width: 5rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-align: center;
+
+  border: 1px solid #695710;
+  border-radius: 6px;
+  background: #f1e6b4;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 700;
 }
 
 
