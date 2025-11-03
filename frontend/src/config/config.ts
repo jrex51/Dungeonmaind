@@ -18,6 +18,8 @@ export const SERVER_CONFIG = {
     RULEBOOK_SEARCH: '/rulebook/search',
     EXPORT_SESSION: '/exportImport/export',
     IMPORT_SESSION: '/exportImport/import',
+    GET_SESSIONS: '/exportImport/getSessions',
+
   },
 }
 

@@ -24,6 +24,11 @@ type CheckResult = {
   error?: string;
 };
 
+// For session import
+const showImportModal = ref(false)
+const sessions = ref([])
+const selectedSession = ref("")
+
 async function checkConnection(backendUrl: string, timeoutMs = 5000): Promise<CheckResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -134,8 +139,38 @@ function normalizeOrigin(input: string): string {
   return new URL(withProtocol).origin;
 }
 
+
+async function confirmImport() {
+  if (!selectedSession.value) return
+
+  try {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.IMPORT_SESSION}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_name: selectedSession.value,
+      }),
+    })
+    if (!res.ok) throw new Error("Import failed")
+
+    showImportModal.value = false
+    alert(`Session "${selectedSession.value}" imported successfully!`)
+  } catch (err) {
+    console.error(err)
+  }
+}
+
 async function onImport() {
-  const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.IMPORT_SESSION}`)
+  try {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.GET_SESSIONS}`)
+    if (!res.ok) throw new Error("Failed to fetch sessions")
+
+    const data = await res.json()
+    sessions.value = data.folders
+    showImportModal.value = true
+  } catch (err) {
+    console.error(err)
+  }
 }
 
 
@@ -169,6 +204,30 @@ async function onImport() {
 
     <div>
       <button class="done-button" @click="onImport">Import Session</button>
+    </div>
+    <div v-if="showImportModal" class="modal-overlay">
+      <div class="modal">
+        <h2>Select a session to import</h2>
+
+        <div class="session-list">
+          <div
+            v-for="(folder, index) in sessions"
+            :key="index"
+            class="session-item"
+            :class="{ selected: selectedSession === folder }"
+            @click="selectedSession = folder"
+          >
+            {{ folder }}
+          </div>
+        </div>
+
+        <div class="modal-buttons">
+          <button class="btn-cancel" @click="showImportModal = false">Cancel</button>
+          <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
+            Import
+          </button>
+        </div>
+      </div>
     </div>
 
     <form class="join-card" @submit="onSubmit">
@@ -281,5 +340,98 @@ select {
 .login-page textarea,
 .login-page select {
   font-family: inherit;
+}
+
+/* Modal base */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal {
+  background: rgba(163, 148, 95, 0.8);
+  border-radius: 12px;
+  padding: 24px;
+  width: 340px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  color: #000;
+}
+
+.modal h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+/* Session list */
+.session-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  padding: 4px;
+}
+
+.session-item {
+  padding: 8px 10px;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.session-item:hover {
+  background: #f3f4f6; /* gray-100 */
+}
+
+.session-item.selected {
+  background: #2563eb; /* blue-600 */
+  color: white;
+}
+
+/* Buttons */
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-cancel,
+.btn-save {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.btn-cancel {
+  background: #ddd;
+}
+
+.btn-cancel:hover {
+  background: #ccc;
+}
+
+.btn-save {
+  background: #4a575e;
+  color: white;
+}
+
+.btn-save:hover {
+  background: #1d4ed8;
+}
+
+.btn-save:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
 }
 </style>

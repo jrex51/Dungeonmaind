@@ -9,8 +9,6 @@ from app.base_models.embedding_base_model import EmbeddingSearch
 from app.base_models.embedding_base_model import EmbeddResponse
 
 
-
-
 router = APIRouter()
 BASE_DIR = os.path.join(settings.backend_root_path, "data", "markdowns")
 
@@ -27,7 +25,6 @@ async def get_folders():
         )
     print(folder_dict)
     return folder_dict
-
 
 
 @router.get("/file", response_model=FileContentResponse)
