@@ -146,17 +146,28 @@ async function confirmImport() {
   try {
     const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.IMPORT_SESSION}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         session_name: selectedSession.value,
       }),
     })
     if (!res.ok) throw new Error("Import failed")
+      const leader = await res.json();
 
+    if (!leader) throw new Error("No leader returned from backend");
+
+    store.setCurrentPlayer(leader);
+
+    await router.push({ name: "home" });
     showImportModal.value = false
     alert(`Session "${selectedSession.value}" imported successfully!`)
   } catch (err) {
-    console.error(err)
+    console.error(err);
+    if (err instanceof Error) {
+      alert("Import failed: " + err.message);
+    } else {
+      alert("Import failed: " + String(err));
+    }
   }
 }
 

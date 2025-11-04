@@ -10,18 +10,20 @@ from app.domain.models import Group, Role, Player, now_utc
 from app.core.config import settings
 
 
-def load_groups_from_json(file_path: str) -> None:
+# Still needs correct http error handling
+def load_groups_from_json(file_path: str) -> Player:
     """
     Loads group and player data from a JSON file into the store.
     If the file does not exist, does nothing.
     """
 
-    if not file_path.exists():
+    path = Path(file_path)
+    if not path.exists():
         print(f"No saved group data found at {file_path}")
         return
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         # Deserialize players
@@ -52,7 +54,10 @@ def load_groups_from_json(file_path: str) -> None:
     except Exception as e:
         print(f"Failed to load group data: {e}")
 
-    # Still needs the logic to set the players in game
+    leader_id = store.group.leader_id()
+    leader = store.group.get_player(leader_id) if leader_id else None
+
+    return leader
 
 
 def load_settings_from_json(file_path: str) -> None:

@@ -5,7 +5,12 @@ from typing import List
 from app.functions.export_import.export_session import export_group_to_json, export_settings_to_json, copy_chroma_db, export_chat_history_of_player, get_folder_name
 from app.functions.export_import.import_session import load_groups_from_json, load_settings_from_json, read_chat_history, replace_chroma_db
 from app.base_models.export_import_models import ExportRequest, Sessions, ImportRequest
+from app.base_models.schemas import PlayerOut
 from app.core.config import settings
+from app.domain.models import Player
+from app.core.bus import bus
+from app.domain.store import store
+
 
 
 router = APIRouter()
@@ -28,17 +33,24 @@ def export_session(req: ExportRequest) -> None:
 
 
 @router.post("/import")
-def import_session(req: ImportRequest) -> bool:
+async def import_session(req: ImportRequest) -> Player:
     folder_path = os.path.join(SAVED_SESSIONS_DIR, req.session_name)
     if not os.path.isdir(folder_path):
         raise FileNotFoundError(f"Session folder '{req.session_name}' does not exist.")
     file_path_settings = os.path.join(folder_path, "settings.json")
     load_settings_from_json(file_path_settings)
     file_path_groups = os.path.join(folder_path, "group.json")
-    #load_groups_from_json(file_path_groups) # First we need the possibility for the players to re-log in as the saved players
+    leader = load_groups_from_json(file_path_groups)
     replace_chroma_db(folder_path, DATA_DIR)
 
-    return True
+    # Maybe the publishing has to be player by player, so that actually only those players are shown, which actually newly logged in in the loaded session
+    await bus.publish({
+        "type": "session_imported",
+        "players": [p.name for p in store.group.players.values()],
+    })
+
+    #return PlayerOut.model_validate(vars(leader))
+    return leader
 
 @router.get("/getSessions")
 def get_sessions() -> None:
