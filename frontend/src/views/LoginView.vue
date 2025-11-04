@@ -18,6 +18,9 @@ const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);
 
+const networkIPs = __NETWORK_IPS__
+const selectedNetworkIP = ref(networkIPs[0] || "")
+
 type CheckResult = {
   ok: boolean;
   status?: number;
@@ -94,6 +97,7 @@ async function onSubmit(e: Event) {
   submitting.value = true;
   try {
     await store.join(playerName.value.trim(), role.value);
+    store.setLocalNetworkIP(selectedNetworkIP.value)
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
@@ -161,7 +165,7 @@ function normalizeOrigin(input: string): string {
     <hr style="margin: 1rem 0" />
 
     <form class="join-card" @submit="onSubmit">
-      <!-- 1) Rolle auswählen-->
+      <!-- 1) select role-->
       <fieldset>
         <legend>Rolle wählen</legend>
 
@@ -188,7 +192,33 @@ function normalizeOrigin(input: string): string {
         <p v-if="touched && !role" class="error">Bitte Rolle auswählen.</p>
       </fieldset>
 
-      <!-- 2) Spielernamen -->
+      <!-- 2) local network IP -->
+      <div v-if="role === 'leader'">
+        <div style="margin-top: 4px;"></div>
+        <div v-if="networkIPs.length > 1">
+        <label for="networkIP">Select your local network IP:</label>
+        <div style="margin-top: 1px;"></div>
+        <select id="networkIP" v-model="selectedNetworkIP">
+          <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+            {{ networkIP }}
+          </option>
+        </select>
+        </div>
+        <div v-else>
+          <label for="networkIP">Enter your local network IP:</label>
+          <div style="margin-top: 1px;"></div>
+          <input
+            id="networkIP"
+            type="text"
+            v-model="selectedNetworkIP"
+            placeholder="e.g. FRITZ!Box: 192.168.178.x"
+            style="width: 100%; max-width: 200px;"
+          />
+        </div>
+      </div>
+
+      <!-- 3) player name -->
+      <div style="margin-top: 4px;"></div>
       <label for="playerName">Dein Name</label>
       <input
         id="playerName"
@@ -202,11 +232,17 @@ function normalizeOrigin(input: string): string {
       <p v-if="touched && nameError" class="error">{{ nameError }}</p>
       <p v-if="serverError" class="error">{{ serverError }}</p>
 
-      <!-- 3) Beitreten -->
+      <!-- 4) join -->
       <button type="submit" :disabled="!canSubmit || submitting">
         {{ submitting ? "Beitreten ..." : "Beitreten" }}
       </button>
     </form>
+
+
+
+
+
+
   </div>
 </template>
 
@@ -219,9 +255,9 @@ function normalizeOrigin(input: string): string {
 }
 
 select {
-  margin-top: 1rem;
+
   padding: 0.5rem;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
 .done-button {

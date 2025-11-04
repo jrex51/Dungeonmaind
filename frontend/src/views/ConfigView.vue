@@ -9,6 +9,7 @@ import {type Payload, submitConfig} from "@/api/backendConfigAPI.ts";
 const router = useRouter()
 const store = useSessionStore()
 const configStore = useConfigStore()
+const isSubmitting = ref(false)
 const selectedLLM = ref(configStore.selectedLLM)
 const selectedTranscriptionModel = ref(configStore.transcriptionModel)
 const selectedEmbeddingModel = ref(configStore.embeddingModel)
@@ -21,6 +22,7 @@ function goHome() {
 }
 
 async function submitSelection() {
+  isSubmitting.value = true
   goHome()
   const payload: Payload = {
     player_id: store.currentPlayer?.id,
@@ -98,7 +100,9 @@ async function submitSelection() {
 
     <hr style="margin: 1rem 0" />
 
-    <button @click="submitSelection" class="done-button">Done</button>
+    <button @click="submitSelection" class="done-button" :disabled="isSubmitting">
+      {{ isSubmitting ? 'Submitting...' : 'Done' }}
+    </button>
   </div>
 </template>
 
@@ -155,6 +159,12 @@ select {
   border-radius: 10px;
   cursor: pointer;
 
+}
+
+.done-button:disabled {
+  background-color: #7e6f34;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .done-button:hover {

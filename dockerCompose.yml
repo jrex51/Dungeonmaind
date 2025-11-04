@@ -10,6 +10,7 @@ services:
       - backend
     environment:
       - VITE_BACKEND_URL=http://backend:8000
+      - VITE_DOCKER_MODE=true
     volumes:
       - ./frontend:/app
       - /app/node_modules

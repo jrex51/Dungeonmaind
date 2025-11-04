@@ -416,8 +416,8 @@ function rollDice(sides: number) {
        <h1>Dungeonmaind</h1>
        <div class="header-right">
          <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
-         <button class="players-button" @click="goToPlayers">Players</button>
-         <button class="config-button" @click="goToConfig">Config</button>
+         <button v-if="store.isLeader" class="players-button" @click="goToPlayers">Players</button>
+         <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button>
        </div>
     </div>
 

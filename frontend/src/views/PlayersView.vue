@@ -2,11 +2,13 @@
 import { ref, watch } from 'vue'
 import {useRouter} from "vue-router";
 import QrcodeVue from 'qrcode.vue'
+import { SERVER_CONFIG } from '@/config/config'
 
 const router = useRouter()
-const networkIPs = __NETWORK_IPS__
+const localNetworkIP = SERVER_CONFIG.LOCAL_NETWORK_IP
+
 const port = window.location.port
-const selectedNetworkIP = ref(networkIPs[0] || "")
+
 const url = ""
 
 function goHome() {
@@ -23,20 +25,10 @@ function done() {
 
 <template>
   <div class="container">
-    <label for="embeddingTopK">Select an IP of a server network connection:</label>
-    <div style="margin-top: 1rem;"></div>
-    <select id="embeddingTopK" v-model="selectedNetworkIP">
-      <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
-        {{ networkIP }}
-      </option>
-    </select>
-
-    <div style="margin-top: 1rem;"></div>
-
-    <label>http://{{ selectedNetworkIP }}:{{ port }}</label>
-    <div v-if="selectedNetworkIP" style="margin-top: 1rem;">
+    <label>http://{{ localNetworkIP }}:{{ port }}</label>
+    <div v-if="localNetworkIP" style="margin-top: 1rem;">
       <qrcode-vue
-        :value="`http://${selectedNetworkIP}:${port}`"
+        :value="`http://${localNetworkIP}:${port}`"
         :size="180"
         level="M"
       />

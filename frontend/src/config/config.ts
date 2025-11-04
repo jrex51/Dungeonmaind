@@ -1,10 +1,13 @@
 import { useSessionStore } from '@/stores/session.ts'
 // Set the server and enpdoints
 export const SERVER_CONFIG = {
-  //BASE_URL: 'http://localhost:8000',
   get BASE_URL() {
     const store = useSessionStore();
     return store.backendUrl || "http://localhost:8000"; // Fallback
+  },
+  get LOCAL_NETWORK_IP() {
+    const store = useSessionStore();
+    return store.localNetworkIP || "localhost"; // Fallback
   },
   ENDPOINTS: {
     RUN_LLM: '/llm/run',

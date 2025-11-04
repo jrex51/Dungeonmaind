@@ -22,9 +22,9 @@ function getAllNetworkIPs() {
   }
   return addresses
 }
-
+const isDockerMode = process.env.VITE_DOCKER_MODE?.toLowerCase() === "true";
 const isHostMode = process.argv.includes('--host')
-const networkIps = isHostMode ? getAllNetworkIPs() : []
+const networkIps = isDockerMode ? [] : (isHostMode ? getAllNetworkIPs() : [])
 
 // https://vite.dev/config/
 export default defineConfig({
