@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
 from app.functions.embedding.embedding_model import embedd_rulebook, read_text_files, delete_chromadb
-from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown
+from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown, export_import_session
 from contextlib import asynccontextmanager
 
 # List of available api endpoints
@@ -16,9 +16,8 @@ all_routers = [
     (health.router, "/health", ["health"]),
     (players.router, "/players", ["players"]),
     (ws_players.router, "/ws", ["ws"]),
-    #(rulebook_markdown.router, "/folders", ["folders"]),
-    #(rulebook_markdown.router, "/file", ["file"]),
     (rulebook_markdown.router, "/rulebook", ["rulebook"]),
+    (export_import_session.router, "/exportImport", ["exportImport"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen

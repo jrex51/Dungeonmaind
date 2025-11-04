@@ -16,6 +16,14 @@ const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
 let socket: WebSocket;
 
+const isLeader = computed(() => {
+  const role = store.currentPlayer?.role
+  if (!role) return false
+  return role?.toLowerCase() === 'leader'
+})
+const showNameModal = ref(false)
+const sessionName = ref("")
+
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
 
@@ -32,11 +40,9 @@ const isFinalStop = ref(false)
 
 const diceResult = ref<string>('')
 
-//const backendMarkdown = ref<string>('')
 let renderedMarkdown = ref<string>('')
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
-//let renderedMarkdown = ref('')
 
 
 
@@ -111,7 +117,21 @@ function wsUrl(baseHttpUrl: string, path: string): string {
 
 async function onLeave() {
   await store.leave();
-  router.push({ name: "login" });
+  await router.push({ name: "login" });
+}
+
+async function onExport() {
+  if (!sessionName.value.trim()) return alert("Please enter a session name.")
+  showNameModal.value = false
+  console.log(sessionName.value)
+
+  const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_name: sessionName.value,
+    }),
+  })
 }
 
 async function handleQuestionSubmit() {
@@ -132,20 +152,15 @@ async function handleQuestionSubmit() {
         throw new Error(`Request failed with status ${response.status}`)
       }
 
-      //const markdownJson = await response.text()
+      console.log(store.currentPlayer?.role)
+
       const markdownJson = await response.json()
       console.log(markdownJson)
-      //backendMarkdown.value = markdownJson.markdown_text || ""
-      //backendMarkdown.value = markdownJson
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
         renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string
       }
-      //if (backendMarkdown.value.trim()) {
-      //  renderedMarkdown.value = marked.parse(backendMarkdown.value)
-      //  console.log(renderedMarkdown.value)
-      //}
     } catch (error) {
       console.error('Error calling Rulebook Search endpoint:', error)
     } finally {
@@ -418,17 +433,36 @@ function rollDice(sides: number) {
          <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
          <button v-if="store.isLeader" class="players-button" @click="goToPlayers">Players</button>
          <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button>
+         <button class="config-button" @click="goToConfig">Config</button>
+         <button
+           v-if="isLeader"
+           class="export-button"
+           @click="showNameModal = true">Save Session</button>
+       </div>
+       <div v-if="showNameModal" class="modal-overlay">
+         <div class="modal">
+           <h2>Name your session</h2>
+           <input
+             v-model="sessionName"
+             placeholder="Enter session name"
+             class="modal-input"
+           />
+           <div class="modal-buttons">
+             <button class="btn-cancel" @click="showNameModal = false">Cancel</button>
+             <button class="btn-save" @click="onExport">Save</button>
+           </div>
+         </div>
        </div>
     </div>
 
     <div class="centered-content">
       <section>
         <h2>Hello {{ store.currentPlayer?.name }}</h2>
-        <p v-if="store.isLeader">Du bist Leader.</p>
+        <p v-if="store.isLeader">You are the Leader.</p>
 
-        <button @click="onLeave">Verlassen</button>
+        <button class="leave-button" @click="onLeave">Leave</button>
 
-        <h3>Spieler</h3>
+        <h3>Player</h3>
         <ul>
           <li v-for="p in store.players" :key="p.id">
             {{ p.name }} ({{ p.role }})
@@ -582,7 +616,8 @@ body {
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
 }
 
-
+.leave-button,
+.export-button,
 .rulebook-button,
 .players-button,
 .config-button {
@@ -751,6 +786,87 @@ hr {
   margin-top: 1rem;
   text-align: center;
   font-weight: bold;
+}
+
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+/* === Modal Window === */
+.modal {
+  background: rgba(163, 148, 95, 0.8);
+  border-radius: 12px;
+  padding: 24px;
+  width: 320px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+.modal h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  font-family: 'MedievalSharp', cursive;
+}
+
+/* === Modal Input === */
+.modal-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+  margin-bottom: 1rem;
+  outline: none;
+}
+
+.modal-input:focus {
+  border-color: #3b82f6;
+  background-color: #f1e6b4;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-cancel,
+.btn-save {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.btn-cancel {
+  background: #ddd;
+}
+
+.btn-cancel:hover {
+  background: #ccc;
+}
+
+.btn-save {
+  background: #2563eb; /* blue-600 */
+  color: white;
+}
+
+.btn-save:hover {
+  background: #1d4ed8; /* darker blue */
 }
 
 

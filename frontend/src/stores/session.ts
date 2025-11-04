@@ -21,6 +21,11 @@ export const useSessionStore = defineStore("session", () => {
     players.value = await api.listPlayers();
   }
 
+  function setCurrentPlayer(p: PlayerOut) {
+    currentPlayer.value = p;
+    persistPlayer(p);
+  }
+
   async function leave() {
     if (!currentPlayer.value) return;
     try {
@@ -87,5 +92,6 @@ export const useSessionStore = defineStore("session", () => {
     localStorage.removeItem("localNetworkIP");
   }
 
-  return { currentPlayer, players, isLeader, backendUrl, localNetworkIP, setBackendUrl, setLocalNetworkIP, join, loadPlayers, leave, clearSession }
+  return { currentPlayer, players, isLeader, backendUrl, localNetworkIP, setBackendUrl, setLocalNetworkIP, join, loadPlayers, leave, clearSession, setCurrentPlayer }
+
 })

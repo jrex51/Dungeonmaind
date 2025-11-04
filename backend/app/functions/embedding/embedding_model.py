@@ -154,7 +154,6 @@ def delete_transcription_embeddings(persist_directory=settings.chroma_db_path):
     print(f"Deleted {len(ids_to_delete)} documents with source='transcriptions'")
 
 
-# Not finished yet!
 def reembed_chroma_entries(new_model: str, persist_directory=settings.chroma_db_path):
     old_model = settings.embedding_model
 
