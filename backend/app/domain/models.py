@@ -13,26 +13,57 @@ class Role(str, Enum):
     leader = "leader"
     member = "member"
 
+class PlayerStatus(str, Enum):
+    active = "active"
+    inactive = "inactive"
+    kicked = "kicked"
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
-
-def make_join_code(length: int = 6) -> str:
-    """
-    Kurzer, menschenlesbarer Code (z.B. 'AB3FQ7') für den Gruppeneinstieg.
-    """
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 @dataclass
 class Player:
     id: UUID
     name: str
     role: Role
+    status: PlayerStatus = PlayerStatus.active
+    max_hp: int = 10
+    hp: int = 10
+    temp_hp: int = 0
+    attributes: Optional[Dict[str, int]] = None  # {"str": 10, ...}
     created_at: datetime = field(default_factory=now_utc)
     last_seen_at: datetime = field(default_factory=now_utc)
 
     def touch(self) -> None:
         self.last_seen_at = now_utc()
+
+    # Health helpers
+    def clamp(self) -> None:
+        if self.max_hp < 1: self.max_hp = 1
+        if self.hp > self.max_hp: self.hp = self.max_hp
+        if self.hp < 0: self.hp = 0
+        if self.temp_hp < 0: self.temp_hp = 0
+
+    def set_hp(self, hp: int, max_hp: Optional[int] = None, temp_hp: Optional[int] = None) -> None:
+        if max_hp is not None: self.max_hp = int(max_hp)
+        if temp_hp is not None: self.temp_hp = int(temp_hp)
+        self.hp = int(hp)
+        self.clamp()
+
+    def heal(self, amount: int) -> int:
+        before = self.hp
+        self.hp = min(self.max_hp, self.hp + max(0, int(amount)))
+        return self.hp - before
+
+    def apply_damage(self, dmg: int) -> Dict[str, int]:
+        dmg = max(0, int(dmg))
+        from_temp = min(self.temp_hp, dmg)
+        self.temp_hp -= from_temp
+        remaining = dmg - from_temp
+        before = self.hp
+        self.hp = max(0, self.hp - remaining)
+        return {"temp_absorbed": from_temp, "hp_loss": before - self.hp}
+
 
 @dataclass
 class Group:
@@ -41,35 +72,67 @@ class Group:
     # Spieler werden per ID gehalten
     players: Dict[UUID, Player] = field(default_factory=dict)
 
+    def active(self) -> Dict[UUID, Player]:
+        return {pid: p for pid, p in self.players.items() if p.status == PlayerStatus.active}
+
     def size(self) -> int:
-        return len(self.players)
+        return len(self.active())
+
+    def has_active_name(self, name: str) -> bool:
+        n = name.strip().lower()
+        return any(p.name.lower() == n for p in self.active().values())
 
     def leader_id(self) -> Optional[UUID]:
         for pid, p in self.players.items():
-            if p.role == Role.leader:
+            if p.role == Role.leader and p.status == PlayerStatus.active:
                 return pid
         return None
-
-    def has_name(self, name: str) -> bool:
-        n = name.strip()
-        return any(p.name.lower() == n.lower() for p in self.players.values())
 
     def add_player(self, name: str, role: Role) -> Player:
         """
         setzt Regeln durch: max. Größe, genau ein Leader.
         """
-        if self.size() > self.max_size:
+        if self.size() >= self.max_size:
             raise ValueError(f"Group size {self.size} > {self.max_size}")
-        if role is Role.leader and self.leader_id() is not None:
+        if role is Role.leader and any(p.role == Role.leader for p in self.active().values()):
             raise ValueError(f"Group role 'leader' already exists")
-        if self.has_name(name):
-            raise ValueError(f"Player name '{name}' already exists") # eindeutige Namen erzwingen - muss nicht zwingend da ID eindeutig ist, aber angenehmer um Verwechslungen zu vermeiden
-        player = Player(id=uuid4(), name=name, role=role)
+        if self.has_active_name(name):
+            raise ValueError(f"Player name '{name}' already exists") # eindeutige Namen erzwingen - wichtig um re-join über Namen zu ermöglichen
+        player = Player(id=uuid4(), name=name, role=role, status=PlayerStatus.active)
         self.players[player.id] = player
         return player
 
-    def remove_player(self, pid: UUID) -> None:
-        self.players.pop(pid, None)
+    def deactivate(self, pid: UUID, status: PlayerStatus = PlayerStatus.inactive) -> None:
+        p = self.players.get(pid)
+        if not p:
+            return
+
+        p.status = status
+        p.touch()
+
+        # Dedupe: unter inaktiven und kicked Einträgen nur einen player pro name
+        if status == PlayerStatus.inactive:
+            n = p.name.strip().lower()
+            to_remove = [
+                other_id for other_id, other in self.players.items()
+                if other_id != pid
+                and other.status in (PlayerStatus.inactive, PlayerStatus.kicked)
+                and other.name.strip().lower() == n
+            ]
+            for other_id in to_remove:
+                self.players.pop(other_id, None)
+
+        if p:
+            p.status = status
+            p.touch()
+
+    def reactivate(self, pid: UUID) -> Player:
+        p = self.players.get(pid)
+        if not p:
+            raise KeyError(f"Player '{pid}' does not exist")
+        p.status = PlayerStatus.active
+        p.touch()
+        return p
 
     def get_player(self, pid: UUID) -> Player:
         p = self.players.get(pid)
@@ -77,9 +140,8 @@ class Group:
             raise KeyError("Player not found.")
         return p
 
-    #def get_players(self) -> Dict[UUID, Player]:
-    #    p = self.players
-    #    if not p:
-    #        raise KeyError("Player not found.")
-    #    return p
+    # für Altcode (ruft nur noch deactivate auf)
+    def remove_player(self, pid: UUID) -> None:
+        # nicht mehr löschen sondern inaktiv setzen
+        self.deactivate(pid, status=PlayerStatus.inactive)
 

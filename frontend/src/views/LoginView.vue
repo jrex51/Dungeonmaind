@@ -2,15 +2,70 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
-import type { Role } from "@/api/playersAPI.ts";
+import type { PlayerOut, Role } from "@/api/playersAPI.ts";
 import { useSessionStore } from '@/stores/session.ts'
 
 const store = useSessionStore();
 const router = useRouter();
 
-// --- Logik für checkConnection ---
+// Logik für checkConnection
 
 type Status = "idle" | "checking" | "ok" | "error";
+
+// Typen für den Check
+type JoinCheckStatus = 'available' | 'inactive_match' | 'active_conflict';
+type JoinCheckOut = {
+  status: JoinCheckStatus;
+  candidate?: PlayerOut;
+}
+
+async function preflightAndJoin(backendUrl: string, name: string, role: Role) {
+  // 1) Preflight-Check
+  console.debug(`preflightAndJoin: versuche mit ${name} zu joinen`);
+  const checkUrl = new URL('/players/join/check', backendUrl);
+  checkUrl.searchParams.set('name', name);
+  const res = await fetch(checkUrl.toString(), { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(JSON.stringify({ detail: `Join-Check fehlgeschlagen (${res.status}` }));
+  }
+  const check: JoinCheckOut = await res.json();
+
+  if (check.status === 'available') {
+    // normaler Join
+    console.debug(`preflightAndJoin: ${name} ist verfügbar`);
+    await store.join(name, role);
+    return;
+  }
+
+  if (check.status === 'active_conflict') {
+    console.debug(`preflightAndJoin: es gibt einen aktiven Spieler mit dem namen`);
+    // Name schon bei einem aktiven Spieler belegt
+    throw new Error(JSON.stringify({ detail: `Der Name "${name}" ist bereits vergeben.` }));
+  }
+
+  if (check.status === 'inactive_match' && check.candidate) {
+    // Nutzer fragen: alten Spieler reaktivieren?
+    console.debug(`preflightAndJoin: inaktiven Spieler mit dem Namen gefunden`);
+    const reuse = window.confirm(
+      `Es gibt einen inaktiven Spieler "${check.candidate.name}". ` +
+      `Möchtest du diesen wiederverwenden (HP/Attribute bleiben erhalten)?`
+    );
+    if (reuse) {
+      // Reuse-Join
+      console.debug(`preflightAndJoin: Spieler wird reaktiviert`);
+      await store.join(name, role, check.candidate.id);
+      return;
+    } else {
+      // neuer Spieler mit gleichem Namen ist erlaubt (nur aktive Namen sind geblockt)
+      console.debug(`preflightAndJoin: Spieler wird neu angelegt`);
+      await store.join(name, role);
+      return;
+    }
+  }
+
+  // sollte nie passieren
+  await store.join(name, role);
+}
 
 // checkConnection
 const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
@@ -102,12 +157,13 @@ async function onSubmit(e: Event) {
 
   submitting.value = true;
   try {
-    await store.join(playerName.value.trim(), role.value);
+    await preflightAndJoin(backendUrl, playerName.value.trim(), role.value);
     store.setLocalNetworkIP(selectedNetworkIP.value)
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
 
+  // Fehler auslesen
   if (err?.response) {
     // Axios-Format
     const data = err.response.data;

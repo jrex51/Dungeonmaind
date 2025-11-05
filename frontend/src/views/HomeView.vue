@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from 'marked'
+import type { PlayerOut } from '@/api/players.ts'
 
 
 const router = useRouter()
@@ -14,7 +15,8 @@ const modelOutput = ref<string>('')
 let modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
-let socket: WebSocket;
+let socket: WebSocket | null = null;
+let pingTimer: number | null = null;
 
 const isLeader = computed(() => {
   const role = store.currentPlayer?.role
@@ -45,7 +47,6 @@ const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
 
 
-
 function goToConfig() {
   router.push('/config')
 }
@@ -59,35 +60,93 @@ function goToRulebook() {
   router.push('/rulebook')
 }
 
-// socket = new WebSocket(wsUrl(SERVER_CONFIG.BASE_URL, SERVER_CONFIG.ENDPOINTS.WS_PLAYERS));
-// socket.onmessage = (ev) => console.log("WS", ev.data);
 
 onMounted(() => {
-  socket = new WebSocket(wsUrl(
-    SERVER_CONFIG.BASE_URL,
-    SERVER_CONFIG.ENDPOINTS.WS_PLAYERS
-  ));
 
-  socket.onopen = () => {
-    store.loadPlayers();        // ← holt die IST-Spielerliste
+  // Guard: ohne Player -> zurück zum Login
+  const p = store.currentPlayer;
+  if (!p) {
+    router.push({ name: 'login' });
+    return;
+  }
+
+  const url = new URL(SERVER_CONFIG.ENDPOINTS.WS_PLAYERS, SERVER_CONFIG.BASE_URL);
+  url.search = new URLSearchParams({
+    player_id: p.id,
+    name: p.name,
+    role: p.role,
+  }).toString();
+
+  socket = new WebSocket(url.toString());
+
+  socket.onopen = async () => {
+    await store.loadPlayers();        // holt die IST-Spielerliste
+
+    /*
+    const selfId = store.currentPlayer?.id;
+    const stillAlive = !!store.players.find(p => p.id === selfId);
+    if (!stillAlive) {
+      console.debug(`Player ist abgemeldet/kicked/inaktiv -> zum Login`);
+      // abgemeldet/kicked/inaktiv -> zum Login
+      store.forceLogout();
+      router.push({ name: 'login' });
+    }
+    */
+
+    try { socket?.send('ping'); } catch { }
+    pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
+      try { socket?.send('ping'); } catch {}
+    }, 15000);
   };
 
   socket.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
+    console.debug(`message erhalten mit type: ${msg.type}`);
     if (msg.type === "join") {
-      // Duplizate vermeiden:
+      // Duplikate vermeiden:
       if (!store.players.some(p => p.id === msg.player.id)) {
         store.players.push(msg.player);
+      } else {
+        // falls der Join Player-Objekt neuere Felder bringt
+        store.players = store.players.map(p => p.id === msg.player.id ? msg.player : p);
       }
     } else if (msg.type === "leave") {
       store.players = store.players.filter(
         p => p.id !== msg.player_id
       );
+      try { console.debug(msg.player.name) } catch {}
+      // selbst betroffen?
+      if (store.currentPlayer?.id === msg.player_id) {
+        store.forceLogout();
+        router.push({ name: 'login' });
+        return;
+      }
+    } else if (msg.type === "health/update") {
+      store.patchPlayer(msg.player_id, {
+        hp: Number(msg.hp),
+        max_hp: Number(msg.max_hp),
+        temp_hp: Number(msg.temp_hp),
+      });
+    } else if (msg.type === "attributes/update") {
+      store.patchPlayer(msg.player_id, { attributes: msg.attributes });
     }
+  };
+
+  socket.onclose = (ev) => {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    // 4001 = vom Server gekickt
+    if (ev.code === 4001) {
+      store.forceLogout();
+      router.push({ name: 'login' });
+    }
+    socket = null;
   };
 });
 
-onUnmounted(() => { socket?.close()
+onUnmounted(() => {
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+  try { socket?.close(); } catch {}
+  socket = null;
 
   //Cleanly end recorder/mic on unmount
   if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
@@ -113,7 +172,6 @@ function wsUrl(baseHttpUrl: string, path: string): string {
   u.pathname = path.startsWith("/") ? path : `/${path}`;  // /ws/players
   return u.toString();                            // ws://192.168.1.5:8000/ws/players
 }
-
 
 async function onLeave() {
   await store.leave();
@@ -187,10 +245,11 @@ async function handleQuestionSubmit() {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
+
       while (true) {
-        const {done, value} = await reader.read()
+        const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value, {stream: true})
+        const chunk = decoder.decode(value, { stream: true })
         modelOutput.value += chunk
         modelOutputRendered.value = marked.parse(modelOutput.value) as string
       }
@@ -421,6 +480,124 @@ function rollDice(sides: number) {
   diceResult.value = `W${sides} → ${result}`
 }
 
+/* Ability Overview */
+type Dict = Record<string, unknown>
+type AbilitySpec = {
+  key: 'str'|'dex'|'con'|'int'|'wis'|'cha'
+  label: string
+  aliases: string[]
+}
+
+const ABILITIES: AbilitySpec[] = [
+  { key: 'str', label: 'STR', aliases: ['strength'] },
+  { key: 'dex', label: 'DEX', aliases: ['dexterity'] },
+  { key: 'con', label: 'CON', aliases: ['constitution'] },
+  { key: 'int', label: 'INT', aliases: ['intelligence'] },
+  { key: 'wis', label: 'WIS', aliases: ['wisdom'] },
+  { key: 'cha', label: 'CHA', aliases: ['charisma'] },
+]
+
+// Guards + helpers
+const isRecord = (v: unknown): v is Dict =>
+  v !== null && typeof v === 'object' && !Array.isArray(v)
+const toNum = (v: unknown): number | undefined => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v)
+    if (Number.isFinite(n)) return n
+  }
+  return undefined
+}
+
+// Find a property with any of the candidate names (case-insensitive)
+function findKeyCI(obj: Dict, candidates: string[]): string | undefined {
+  const map = new Map<string, string>()
+  for (const k of Object.keys(obj)) map.set(k.toLowerCase(), k)
+  for (const c of candidates) {
+    const hit = map.get(c.toLowerCase())
+    if (hit) return hit
+  }
+  return undefined
+}
+
+function pickRecordCI(obj: Dict | undefined, candidates: string[]): Dict | undefined {
+  if (!obj) return undefined
+  const key = findKeyCI(obj, candidates)
+  if (!key) return undefined
+  const v = obj[key]
+  return isRecord(v) ? v : undefined
+}
+
+function readAbilityFrom(rec: Dict | undefined, spec: AbilitySpec): number | undefined {
+  if (!rec) return undefined
+  const key = findKeyCI(rec, [spec.key, ...spec.aliases])
+  if (!key) return undefined
+  return toNum(rec[key])
+}
+
+function extractAbilities(player: unknown) {
+  const base = isRecord(player) ? player : undefined
+  const containers: Array<Dict | undefined> = [
+    pickRecordCI(base, ['abilities', 'abilityScores', 'attributes', 'attrs', 'stats']),
+    base, // top level fallback
+  ]
+  return ABILITIES.map(spec => {
+    let score: number | undefined
+    for (const c of containers) {
+      score = readAbilityFrom(c, spec)
+      if (score !== undefined) break
+    }
+    const mod = score !== undefined ? Math.floor((score - 10) / 2) : undefined
+    return { ...spec, score, mod }
+  })
+}
+
+// visible players = all if Leader, else just current
+const visiblePlayers = computed(() => {
+  const players = store.players ?? [];
+  if (store.isLeader) {
+    const selfId = store.currentPlayer?.id;
+    return players.filter((p: any) => {
+      const isSelf = selfId != null && p?.id === selfId;
+      const role = typeof p?.role === 'string' ? p.role.toLowerCase() : '';
+      const isLeaderRole = role === 'leader';
+      return !isSelf && !isLeaderRole; // nur Members übrig lassen
+    });
+  }
+  return store.currentPlayer ? [store.currentPlayer] : [];
+});
+
+
+// helper exposed to the template
+function getAbilityData(p: unknown) {
+  return extractAbilities(p)
+}
+
+
+/* Healthbar */
+async function damage(playerId: string, amount: number) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ damage: amount }),
+  });
+}
+
+async function heal(playerId: string, amount: number) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ heal: amount }),
+  })
+}
+
+async function kick(playerId: string) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/kick`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+}
+
 </script>
 
 <template>
@@ -470,6 +647,7 @@ function rollDice(sides: number) {
         </ul>
       </section>
 
+      <!-- Left: main LLM -->
       <div class="content-section">
         <h2>Ask Something about the DnD-Session</h2>
         <input
@@ -502,42 +680,87 @@ function rollDice(sides: number) {
       </div>
 
       <hr style="margin: 2rem 0" />
-      <!-- Nur Leader sieht das -->
+
+      <!-- Only Leader: ARecording/Upload -->
       <div v-if="store.isLeader" class="content-section">
-        <h2> Record Using Microphone</h2>
-        <button @click="startRecording" v-if="!isRecording" class="submit-button"> Start Recording </button>
-        <button @click="stopRecording" v-if="isRecording" class="submit-button"> Stop Recording </button>
+        <h2>Record Using Microphone</h2>
+        <button @click="startRecording" v-if="!isRecording" class="submit-button">Start Recording</button>
+        <button @click="stopRecording" v-if="isRecording" class="submit-button">Stop Recording</button>
 
-        <div v-if="isRecording" class="output">
-          <p> Recording in progress </p>
-        </div>
-
-        <div v-if="micPermissionStatus" class="output">
-          <p>{{ micPermissionStatus }} </p>
-        </div>
-
-        <div v-if="recordedAudioURL" class="output">
-          <p>Recording completed </p>
-        </div>
+        <div v-if="isRecording" class="output"><p>Recording in progress</p></div>
+        <div v-if="micPermissionStatus" class="output"><p>{{ micPermissionStatus }}</p></div>
+        <div v-if="recordedAudioURL" class="output"><p>Recording completed</p></div>
 
         <div v-if="recordedAudioURL" class="play-button">
           <button @click="playRecording" class="submit-button"> Play Recording </button>
         </div>
-      </div>
 
-    <hr style="margin: 2rem 0" />
+        <hr style="margin: 2rem 0" />
 
-      <div v-if="store.isLeader" class="content-section">
         <h2>Upload Audio File</h2>
         <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
         <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
+        <div v-if="audioUploadStatus" class="output"><p>{{ audioUploadStatus }}</p></div>
+      </div>
+    </div>
 
-        <div v-if="audioUploadStatus" class="output">
-          <p>{{ audioUploadStatus }}</p>
+    <!-- Right: abilities, health and dice -->
+    <aside class="right-rail">
+      <section class="abilities-section rail-panel">
+        <h2 v-if="!store.isLeader">Your ability scores</h2>
+        <h2 v-else>Abilities of members</h2>
+
+        <div v-if="visiblePlayers.length" class="ability-list">
+          <div
+            v-for="p in visiblePlayers"
+            :key="p.id ?? p.name ?? JSON.stringify(p)"
+            class="ability-card"
+          >
+            <div class="ability-card__header" v-if="store.isLeader">
+              <strong>{{ p.name ?? 'Unbenannter Spieler' }}</strong>
+              <span class="ability-card__role" v-if="p.role">({{ p.role }})</span>
+            </div>
+            <div class="ability-grid">
+              <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
+                <div class="ability-label">{{ a.label }}</div>
+                <div class="ability-score">
+                  <span>{{ a.score ?? '-' }}</span>
+                  <small v-if="a.mod !== undefined" class="ability-mod">
+                    ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
+                  </small>
+                </div>
+              </div>
+            </div>
+
+            <div class="healthbar">
+              <div class="healthbar__label">HP</div>
+              <div class="healthbar__track">
+                <div
+                  class="healthbar__fill"
+                  :style="{ width: Math.min(100, Math.round(((p.hp + (p.temp_hp ?? 0)) / Math.max(1, p.max_hp)) * 100)) + '%' }"
+                  :title="`HP ${p.hp}/${p.max_hp}${p.temp_hp ? ` (+${p.temp_hp} temp)` : ''}`"
+                />
+              </div>
+              <div class="healthbar__numbers">
+                {{ p.hp }} / {{ p.max_hp }} <span v-if="p.temp_hp">(+{{ p.temp_hp }})</span>
+              </div>
+
+              <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->
+              <div class="healthbar__controls" v-if="store.isLeader || p.id === store.currentPlayer?.id">
+                <button @click="damage(p.id, 1)">-1</button>
+                <button @click="heal(p.id, 1)">+1</button>
+              </div>
+              <div class="leader__contorls" v-if="store.isLeader">
+                <button v-if="store.isLeader && p.id !== store.currentPlayer?.id"
+                        @click="kick(p.id)">Kick</button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div> <!-- Close content-section before dice-widget -->
+        <p v-else class="output">No players found.</p>
+      </section>
 
-      <div class="dice-widget">
+      <div class="dice-widget rail-panel">
         <div class="dice-buttons">
           <button @click="rollDice(4)" class="dice-button">W4</button>
           <button @click="rollDice(6)" class="dice-button">W6</button>
@@ -545,13 +768,12 @@ function rollDice(sides: number) {
           <button @click="rollDice(12)" class="dice-button">W12</button>
           <button @click="rollDice(20)" class="dice-button">W20</button>
         </div>
-        <div class="dice-result" v-if="diceResult">
-          {{ diceResult }}
-        </div>
+        <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
       </div>
-    </div> <!-- Close centered-content -->
-  </div> <!-- Close container -->
+    </aside>
+  </div>
 </template>
+
 
 
 <!-- This block essential for full-page background -->
@@ -574,6 +796,7 @@ body {
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
 
+/* Left */
 .container {
   max-width: 600px;
   margin: 2rem auto;
@@ -606,14 +829,13 @@ body {
 }
 
 .centered-content {
-  background-color: rgba(163, 148, 95, 0.8);
-  padding: 2rem;
-  border-radius: 8px;
-  max-width: 600px;
-  width: 100%;
+  background-color: rgba(163,148,95,0.8);
+  padding: 2rem; border-radius: 8px;
+  max-width: 600px; width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 4px 30px rgba(0,0,0,0.4);
+  margin-top: 60px; /* unter dem Header */
 }
 
 .leave-button,
@@ -643,6 +865,7 @@ body {
   align-items: center;
 }
 
+.content-section { display: flex; flex-direction: column; align-items: center; }
 h1 {
   color: #392401;
   text-align: center;
@@ -744,48 +967,64 @@ hr {
   color: #f1e6b4;
 }
 
-.dice-widget {
+/* Abilities and dice on right */
+.right-rail {
   position: fixed;
-  right: 25%;
-  top: 43%;
-  transform: translateX(20%);
-  background-color: rgba(163, 148, 95, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 1.5rem;
-  width: 300px;
-  margin-left: 2rem;
-  z-index: 100;
-  font-family: 'MedievalSharp', cursive;
-  color: #392401;
-}
-
-.dice-buttons {
+  right: 15%;
+  top: 250px;            /* etwas unter dem Header (50px) */
+  width: 340px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: center;
+  flex-direction: column;
+  gap: 1rem;
+  z-index: 900;         /* unter dem Header */
+}
+.rail-panel {
+  background-color: rgba(163,148,95,0.9);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
 }
 
+/* Dice */
+.dice-widget { position: static; width: 100%; }
+.dice-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
 .dice-button {
-  flex: 1 0 30%;
-  padding: 0.75rem;
-  font-size: 1rem;
-  background-color: #b74d30;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+  flex: 1 0 30%; padding: 0.75rem; font-size: 1rem;
+  background-color: #b74d30; color: white; border: none; border-radius: 6px; cursor: pointer;
 }
+.dice-button:hover { background-color: #369f6e; }
+.dice-result { margin-top: 1rem; text-align: center; font-weight: bold; }
 
-.dice-button:hover {
-  background-color: #369f6e;
+/* Abilities */
+.abilities-section { width: 100%; margin: 0; }
+.ability-list { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
+.ability-card {
+  border: 1px solid #695710; border-radius: 10px;
+  padding: 0.75rem 0.9rem 1rem; background: rgba(110,97,50,0.25);
 }
+.ability-card__header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 0.5rem; color: #392401;
+}
+.ability-card__role { color: #e0d5b7; font-size: 0.9rem; }
+.ability-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5rem; }
+.ability-box {
+  text-align: center; border: 1px solid #695710; border-radius: 8px;
+  padding: 0.5rem 0.4rem; background: #f1e6b4; color: #392401;
+}
+.ability-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.03em; color: #6b5710; }
+.ability-score { font-size: 1.1rem; font-weight: 800; line-height: 1.3; }
+.ability-mod { display: block; font-size: 0.75rem; font-weight: 600; color: #4c3e06; }
 
-.dice-result {
-  margin-top: 1rem;
-  text-align: center;
-  font-weight: bold;
+@media (max-width: 900px) {
+  .right-rail {
+    position: static;
+    width: auto;
+    margin: 1rem;
+  }
 }
 
 

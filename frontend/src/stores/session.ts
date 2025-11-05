@@ -10,8 +10,8 @@ export const useSessionStore = defineStore("session", () => {
   const backendUrl = ref<string | null>(hydrateBackendUrl());
   const localNetworkIP = ref<string | null>(hydrateLocalNetworkIP());
 
-  async function join(name: string, role: Role) {
-    const p = await api.join(name, role);
+  async function join(name: string, role: Role, reuse_id?: string) {
+    const p = await api.join(name, role, reuse_id);
     currentPlayer.value = p;
     persistPlayer(p);
     return p;
@@ -49,9 +49,11 @@ export const useSessionStore = defineStore("session", () => {
   persistLocalNetworkIP(ip);
   }
 
+
   function persistPlayer(p: PlayerOut) {
     localStorage.setItem("player", JSON.stringify(p));
   }
+
   function persistBackendUrl(url: string) {
   localStorage.setItem("backendUrl", url);
   }
@@ -64,11 +66,13 @@ export const useSessionStore = defineStore("session", () => {
     if (!raw) return null;
     try { return JSON.parse(raw) as PlayerOut; } catch { return null;}
   }
+
   function hydrateBackendUrl(): string | null {
-    const raw = localStorage.getItem("backendUrl");
-    if (!raw) return null;
-    return raw;
+  const raw = localStorage.getItem("backendUrl");
+  if (!raw) return null;
+  return raw;
   }
+
   function hydrateLocalNetworkIP(): string | null {
     const raw = localStorage.getItem("localNetworkIP");
     if (!raw) return null;
@@ -92,6 +96,20 @@ export const useSessionStore = defineStore("session", () => {
     localStorage.removeItem("localNetworkIP");
   }
 
-  return { currentPlayer, players, isLeader, backendUrl, localNetworkIP, setBackendUrl, setLocalNetworkIP, join, loadPlayers, leave, clearSession, setCurrentPlayer }
+  function patchPlayer(id: string, patch: Partial<Pick<PlayerOut, 'hp'|'max_hp'|'temp_hp'|'attributes'>>) {
+    players.value = players.value.map((p): PlayerOut =>
+      p.id === id ? ({ ...p, ...patch } as PlayerOut) : p
+    );
+    if (currentPlayer.value?.id === id) {
+      currentPlayer.value = { ...(currentPlayer.value as PlayerOut), ...patch } as PlayerOut;
+    }
+  }
 
+  function forceLogout() {
+    currentPlayer.value = null;
+    players.value = [];
+    sessionStorage.removeItem('player');
+  }
+
+  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer, setBackendUrl, forceLogout, localNetworkIP, setBackendUrl, setLocalNetworkIP, clearSession, setCurrentPlayer }
 })
