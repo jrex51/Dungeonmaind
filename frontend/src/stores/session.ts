@@ -9,8 +9,8 @@ export const useSessionStore = defineStore("session", () => {
   const isLeader = computed(() => currentPlayer.value?.role === "leader");
   const backendUrl = ref<string | null>(hydrateBackendUrl());
 
-  async function join(name: string, role: Role) {
-    const p = await api.join(name, role);
+  async function join(name: string, role: Role, reuse_id?: string) {
+    const p = await api.join(name, role, reuse_id);
     currentPlayer.value = p;
     persistPlayer(p);
     return p;
@@ -70,5 +70,11 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
-  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer, setBackendUrl }
+  function forceLogout() {
+    currentPlayer.value = null;
+    players.value = [];
+    sessionStorage.removeItem('player');
+  }
+
+  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer, setBackendUrl, forceLogout }
 })

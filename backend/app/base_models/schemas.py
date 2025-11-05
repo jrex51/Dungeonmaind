@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Dict
+from typing import Optional, Dict, Literal
 from uuid import UUID
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,7 @@ class Role(str, Enum):
 class PlayerIn(BaseModel):
     name: str = Field(min_length=2, max_length=50)
     role: Role
+    reuse_id: Optional[UUID] = None
 
 class PlayerOut(BaseModel):
     id: UUID
@@ -41,3 +42,12 @@ class GroupStateOut(BaseModel):
     group_id: UUID
     size: int
     max_size: int
+
+class PlayerJoinIn(BaseModel):
+    name: str
+    role: Role
+    reuse_id: Optional[UUID] = None
+
+class JoinCheckOut(BaseModel):
+    status: Literal["available", "inactive_match", "active_conflict"]
+    candidate: Optional[PlayerOut] = None

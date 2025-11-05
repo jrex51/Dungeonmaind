@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from 'marked'
+import type { PlayerOut } from '@/api/players.ts'
 
 
 const router = useRouter()
@@ -37,7 +38,6 @@ const currentMarkdownIndex = ref(0)
 let renderedMarkdown = ref('')
 
 
-
 function goToConfig() {
   router.push('/config')
 }
@@ -66,8 +66,20 @@ onMounted(() => {
   socket = new WebSocket(url.toString());
 
   socket.onopen = async () => {
-    store.loadPlayers();        // holt die IST-Spielerliste
+    await store.loadPlayers();        // holt die IST-Spielerliste
 
+    /*
+    const selfId = store.currentPlayer?.id;
+    const stillAlive = !!store.players.find(p => p.id === selfId);
+    if (!stillAlive) {
+      console.debug(`Player ist abgemeldet/kicked/inaktiv -> zum Login`);
+      // abgemeldet/kicked/inaktiv -> zum Login
+      store.forceLogout();
+      router.push({ name: 'login' });
+    }
+    */
+
+    try { socket?.send('ping'); } catch { }
     pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
       try { socket?.send('ping'); } catch {}
     }, 15000);
@@ -75,8 +87,9 @@ onMounted(() => {
 
   socket.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
+    console.debug(`message erhalten mit type: ${msg.type}`);
     if (msg.type === "join") {
-      // Duplizate vermeiden:
+      // Duplikate vermeiden:
       if (!store.players.some(p => p.id === msg.player.id)) {
         store.players.push(msg.player);
       } else {
@@ -87,6 +100,13 @@ onMounted(() => {
       store.players = store.players.filter(
         p => p.id !== msg.player_id
       );
+      try { console.debug(msg.player.name) } catch {}
+      // selbst betroffen?
+      if (store.currentPlayer?.id === msg.player_id) {
+        store.forceLogout();
+        router.push({ name: 'login' });
+        return;
+      }
     } else if (msg.type === "health/update") {
       store.patchPlayer(msg.player_id, {
         hp: Number(msg.hp),
@@ -98,8 +118,13 @@ onMounted(() => {
     }
   };
 
-  socket.onclose = () => {
+  socket.onclose = (ev) => {
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    // 4001 = vom Server gekickt
+    if (ev.code === 4001) {
+      store.forceLogout();
+      router.push({ name: 'login' });
+    }
     socket = null;
   };
 });
@@ -414,6 +439,14 @@ async function heal(playerId: string, amount: number) {
     body: JSON.stringify({ heal: amount }),
   })
 }
+
+async function kick(playerId: string) {
+  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/kick`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+}
+
 </script>
 
 <template>
@@ -544,6 +577,10 @@ async function heal(playerId: string, amount: number) {
               <div class="healthbar__controls" v-if="store.isLeader || p.id === store.currentPlayer?.id">
                 <button @click="damage(p.id, 1)">-1</button>
                 <button @click="heal(p.id, 1)">+1</button>
+              </div>
+              <div class="leader__contorls" v-if="store.isLeader">
+                <button v-if="store.isLeader && p.id !== store.currentPlayer?.id"
+                        @click="kick(p.id)">Kick</button>
               </div>
             </div>
           </div>

@@ -1,9 +1,10 @@
-# Methode um das frontend bei Updates im Backend zu aktualisieren (vor allem, wenn sich gruppenmitglieder ändern)
-
 import asyncio, json, time
+from datetime import datetime, timezone
 from typing import Dict, Set, Optional
 from fastapi import WebSocket
 from uuid import UUID
+
+from app.domain.models import PlayerStatus
 from app.domain.store import store
 
 GRACE_SEC = 2  # Reload-Toleranz
@@ -52,16 +53,17 @@ class PresenceBus:
         async with self._lock:
             self._sockets.add(ws)
             self._ws_meta[ws] = {
-                "player_id": player_id,
+                "player_id": str(player_id),
                 "name": name,
                 "role": role,
                 "last_seen": time.time(),
             }
-            self._player_sockets.setdefault(player_id, set()).add(ws)
+            self._player_sockets.setdefault(str(player_id), set()).add(ws)
             # Falls ein Leave für diesen Spieler geplant war abbrechen
-            task = self._pending_leave.pop(player_id, None)
+            task = self._pending_leave.pop(str(player_id), None)
             if task and not task.done():
                 task.cancel()
+                #task.add_done_callback(_silence_task_exception)
 
     async def unregister(self, ws: WebSocket):
         """Socket abmelden und Leave-Event broadcasten"""
@@ -109,18 +111,20 @@ class PresenceBus:
                 self._pending_leave.pop(pid, None)  # durch await wird Exception geworfen, deswegen unterdrückt
 
         task = asyncio.create_task(delayed_leave(player_id))
+        #task.add_done_callback(_silence_task_exception)
         async with self._lock:
             # Falls es schon einen Task gibt, ersetzen
             old = self._pending_leave.get(player_id)
             if old and not old.done():
                 old.cancel()
+                #old.add_done_callback(_silence_task_exception)
             self._pending_leave[player_id] = task
 
     async def touch(self, ws: WebSocket):
         """Heartbeat vom Client - last_seen aktualisieren"""
         async with self._lock:
             if ws in self._ws_meta:
-                self._ws_meta[ws]["last_seen"] = time.time()
+                self._ws_meta[ws]["last_seen"] = datetime.now(timezone.utc)
 
     async def publish(self, event: dict):
         """An alle verbundenen Sockets senden"""
@@ -154,10 +158,28 @@ class PresenceBus:
 
     async def _backend_leave_and_publish(self, player_id: str):
         try:
-            await store.leave(UUID(player_id))
+            await store.group.deactivate(UUID(player_id), status=PlayerStatus.inactive)
         except Exception:
             # Wenn der Spieler schon weg ist, nicht hart abbrechen
             pass
         await self.publish({"type": "leave", "player_id": str(player_id)})
+
+    async def kick(self, player_id: UUID):
+        pid = str(player_id)
+        sockets = list(self._player_sockets.get(pid, set()))
+        for ws in sockets:
+            try:
+                await ws.close(code=4001, reason="kicked")
+            except Exception:
+                pass
+
+    async def _server_leave_and_publish(self, player_id: str):
+        # statt store.leave() jetzt "soft leave"
+        store.group.deactivate(UUID(player_id), status=PlayerStatus.inactive)
+        await self.publish({"type": "leave", "player_id": str(player_id)})
+
+    def _silence_task_exception(t: asyncio.Task):
+        try: _ = t.result()
+        except Exception: pass
 
 bus = PresenceBus()

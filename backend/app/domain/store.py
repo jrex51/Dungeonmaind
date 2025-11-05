@@ -1,6 +1,6 @@
 import asyncio
 from uuid import UUID
-from app.domain.models import Group, Player, Role
+from app.domain.models import Group, Player, Role, PlayerStatus
 
 
 class SingleGroupStore:
@@ -17,7 +17,7 @@ class SingleGroupStore:
 
     async def leave(self, player_id: UUID) -> None:
         async with self._lock:
-            self.group.remove_player(player_id)
+            self.group.deactivate(player_id, status=PlayerStatus.inactive)
 
     async def list_players(self) -> list[Player]:
         return list(self.group.players.values())  # bewusst kein lock auf die list, da vermutlich nicht so viele Anfragen

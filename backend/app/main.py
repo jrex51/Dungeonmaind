@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     texts, txt_paths = read_text_files()
     embedd_rulebook(texts, txt_paths)
     logging.info("Rulebook successfully embedded.")
+    print("Rulebook successfully embedded.")
 
     try:
         yield  # Server running
