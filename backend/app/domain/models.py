@@ -7,16 +7,7 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import secrets
 import string
-
-
-class Role(str, Enum):
-    leader = "leader"
-    member = "member"
-
-class PlayerStatus(str, Enum):
-    active = "active"
-    inactive = "inactive"
-    kicked = "kicked"
+from app.base_models.schemas import Role, PlayerStatus
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)

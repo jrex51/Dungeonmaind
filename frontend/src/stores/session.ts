@@ -111,5 +111,5 @@ export const useSessionStore = defineStore("session", () => {
     sessionStorage.removeItem('player');
   }
 
-  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer, setBackendUrl, forceLogout, localNetworkIP, setBackendUrl, setLocalNetworkIP, clearSession, setCurrentPlayer }
+  return { currentPlayer, players, isLeader, backendUrl, join, loadPlayers, leave, patchPlayer, setBackendUrl, forceLogout, localNetworkIP, setLocalNetworkIP, clearSession, setCurrentPlayer }
 })

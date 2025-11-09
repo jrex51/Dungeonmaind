@@ -1,10 +1,12 @@
 import { SERVER_CONFIG } from '@/config/config'
 
 export type Role = "leader" | "member";
+export type PlayerStatus = "active" | "inactive" | "kicked";
 export type PlayerOut = {
   id: string;
   name: string;
   role: Role;
+  status: PlayerStatus,
   hp: number;
   max_hp: number;
   temp_hp: number;
@@ -31,9 +33,10 @@ export async function join(name: string, role: Role, reuse_id?: string): Promise
   return res.json();
 }
 
-export async function listPlayers(): Promise<PlayerOut[]> {
-  const url = new URL("/players", SERVER_CONFIG.BASE_URL).toString();
-  const res = await fetch(url);
+export async function listPlayers(includeInactive: boolean = false): Promise<PlayerOut[]> {
+  const url = new URL("/players", SERVER_CONFIG.BASE_URL);
+  url.searchParams.set("include_inactive", String(includeInactive));
+  const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

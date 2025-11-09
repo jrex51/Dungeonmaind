@@ -2,8 +2,9 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
-import type { PlayerOut, Role } from "@/api/playersAPI.ts";
+import  { type PlayerOut, type Role } from "@/api/playersAPI.ts";
 import { useSessionStore } from '@/stores/session.ts'
+import * as api from '@/api/playersAPI.ts'
 
 const store = useSessionStore();
 const router = useRouter();
@@ -72,6 +73,7 @@ const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
 const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);
+let setConnection = ref(false);
 
 const networkIPs = __NETWORK_IPS__
 const selectedNetworkIP = ref(networkIPs[0] || "")
@@ -97,6 +99,10 @@ async function checkConnection(backendUrl: string, timeoutMs = 5000): Promise<Ch
       signal: controller.signal,
       });
     // response.ok == Status 200 (und auch 204)
+    if (response.ok) {  // (erfolgreich) getestete Adresse auch direkt setzen
+      store.setBackendUrl(backendUrl);
+      setConnection.value = true;
+    }
     return { ok: response.ok, status: response.status };
   } catch (err: unknown) {
     // AbortError unterscheidbar von echten Netzwerkfehlern
@@ -142,17 +148,22 @@ const nameError = computed(() => {
 });
 
 // Button nur aktiv, wenn alles ok
-const canSubmit = computed(() => role.value !== null && nameError.value === "");
+const canSubmit = computed(() => (role.value !== null && nameError.value === "") || selectedPlayer.value !== undefined);
 
 
 // Formular-Submit
 async function onSubmit(e: Event) {
   e.preventDefault();  // Browser-Reload verhindern
-  const backendUrl = normalizeOrigin(baseUrl.value)
+  const backendUrl = normalizeOrigin(baseUrl.value);
   const result = await checkConnection(backendUrl);
   if (result.ok) store.setBackendUrl(backendUrl);
   touched.value = true;
 
+
+  if (selectedPlayer.value !== undefined) {
+    role.value = selectedPlayer.value.role;
+    playerName.value = selectedPlayer.value.name;
+  }
   if (!canSubmit.value || !role.value) return;
 
   submitting.value = true;
@@ -244,6 +255,32 @@ async function onImport() {
   }
 }
 
+const showNewPlayerModal = ref(false);
+
+function JoinNewPlayer() {
+  // bisher passiert hier nichts, außer das das modal getriggert wird
+  showNewPlayerModal.value = true;
+}
+
+const showExistingPlayerModal = ref(false);
+const allPlayers = ref<PlayerOut[]>([]);
+const selectedPlayer = ref<PlayerOut>();
+
+async function JoinExistingPlayer() {
+  if (!setConnection) await onCheck();
+  if (setConnection) {
+    allPlayers.value = await api.listPlayers(true);
+    if (allPlayers.value.filter(p => p.status === "inactive").length === 0) {
+      window.alert(
+        `Es wurden keine inaktiven Spieler gefunden. ` +
+        `Erstelle einen neuen.`
+      );
+      return;
+    }
+    showExistingPlayerModal.value = true;
+  }
+
+}
 
 </script>
 
@@ -263,7 +300,7 @@ async function onImport() {
       />
 
       <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
-        {{ status === 'checking' ? 'Checking...' : 'Check connection' }}
+        {{ status === 'checking' ? 'Checking...' : 'Check/Set Connection' }}
       </button>
 
       <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
@@ -301,81 +338,121 @@ async function onImport() {
       </div>
     </div>
 
-    <form class="join-card" @submit="onSubmit">
-      <!-- 1) select role-->
-      <fieldset>
-        <legend>Choose a role</legend>
+    <hr style="margin: 1rem 0" />
 
-        <label>
+    <div>
+      <button class="button" @click="JoinNewPlayer">Join as new Player</button>
+      <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
+    </div>
+
+    <div v-if="showNewPlayerModal" class="modal-overlay">
+      <div class="modal">
+        <h2>Select a Role and a Name for your Player</h2>
+        <form class="join-card" @submit="onSubmit">
+          <!-- 1) select role-->
+          <fieldset>
+            <legend>Choose a role</legend>
+
+            <label>
+              <input
+                type="radio"
+                name="role"
+                :value="'leader'"
+                v-model="role"
+                />
+              Leader
+            </label>
+
+            <label>
+              <input
+                type="radio"
+                name="role"
+                :value="'member'"
+                v-model="role"
+                />
+              Member
+            </label>
+
+            <p v-if="touched && !role" class="error">Please select a role.</p>
+          </fieldset>
+
+          <!-- 2) local network IP -->
+          <div v-if="role === 'leader'">
+            <div style="margin-top: 4px;"></div>
+            <div v-if="networkIPs.length > 1">
+            <label for="networkIP">Select your local network IP:</label>
+            <div style="margin-top: 1px;"></div>
+            <select id="networkIP" v-model="selectedNetworkIP">
+              <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                {{ networkIP }}
+              </option>
+            </select>
+            </div>
+            <div v-else>
+              <label for="networkIP">Enter your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <input
+                id="networkIP"
+                type="text"
+                v-model="selectedNetworkIP"
+                placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                style="width: 100%; max-width: 200px;"
+              />
+            </div>
+          </div>
+
+          <!-- 3) player name -->
+          <div style="margin-top: 4px;"></div>
+          <!-- 2) Spielernamen -->
+          <label for="playerName">Your Name</label>
           <input
-            type="radio"
-            name="role"
-            :value="'leader'"
-            v-model="role"
-            />
-          Leader
-        </label>
-
-        <label>
-          <input
-            type="radio"
-            name="role"
-            :value="'member'"
-            v-model="role"
-            />
-          Member
-        </label>
-
-        <p v-if="touched && !role" class="error">Please select a role.</p>
-      </fieldset>
-
-      <!-- 2) local network IP -->
-      <div v-if="role === 'leader'">
-        <div style="margin-top: 4px;"></div>
-        <div v-if="networkIPs.length > 1">
-        <label for="networkIP">Select your local network IP:</label>
-        <div style="margin-top: 1px;"></div>
-        <select id="networkIP" v-model="selectedNetworkIP">
-          <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
-            {{ networkIP }}
-          </option>
-        </select>
-        </div>
-        <div v-else>
-          <label for="networkIP">Enter your local network IP:</label>
-          <div style="margin-top: 1px;"></div>
-          <input
-            id="networkIP"
+            class = "input-field"
+            id="playerName"
             type="text"
-            v-model="selectedNetworkIP"
-            placeholder="e.g. FRITZ!Box: 192.168.178.x"
-            style="width: 100%; max-width: 200px;"
-          />
+            v-model.trim="playerName"
+            maxlength="20"
+            placeholder="z.B. Alex"
+            @blur="touched = true"
+            autocomplete="name"
+            />
+          <p v-if="touched && nameError" class="error">{{ nameError }}</p>
+          <p v-if="serverError" class="error">{{ serverError }}</p>
+
+          <!-- 4) join or cancel -->
+          <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
+            {{ submitting ? "Join ..." : "Join" }}
+          </button>
+          <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
+            Cancel
+          </button>
+        </form>
+      </div>
+    </div>
+    <div v-if="showExistingPlayerModal" class="modal-overlay">
+      <div class="modal">
+        <h2>Select your player</h2>
+
+        <div class="player-list">
+          <div
+            v-for="player in allPlayers.filter(p => p.status === 'inactive')"
+            :key="player.name"
+            class="player-item"
+            :class="{ selected: selectedPlayer === player }"
+            @click="selectedPlayer = player"
+          >
+            {{ player.name }}
+          </div>
+        </div>
+
+        <div class="modal-buttons">
+          <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
+          <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
+            {{ submitting ? "Join ..." : "Join" }}
+          </button>
         </div>
       </div>
+    </div>
 
-      <!-- 3) player name -->
-      <div style="margin-top: 4px;"></div>
-      <!-- 2) Spielernamen -->
-      <label for="playerName">Your Name</label>
-      <input
-        class = "input-field"
-        id="playerName"
-        type="text"
-        v-model.trim="playerName"
-        maxlength="20"
-        placeholder="z.B. Alex"
-        @blur="touched = true"
-        autocomplete="name"
-        />
-      <p v-if="touched && nameError" class="error">{{ nameError }}</p>
-      <p v-if="serverError" class="error">{{ serverError }}</p>
-
-      <!-- 4) join -->
-      <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
-        {{ submitting ? "Join ..." : "Join" }}
-      </button>
-    </form>
   </div>
 </template>
 
@@ -393,6 +470,7 @@ select {
   font-size: 0.9rem;
 }
 
+.button,
 .done-button {
   padding: 0.5rem 1rem;
   background-color: rgba(53, 73, 94, 0.9);
@@ -405,9 +483,12 @@ select {
   transition: background-color 0.3s ease;
 }
 
+.button:hover,
 .done-button :hover {
   background-color: #4a575e;
 }
+
+
 
 .input-field {
   padding: 0.75rem;
@@ -468,6 +549,7 @@ select {
 }
 
 /* Session list */
+.player-list,
 .session-list {
   max-height: 220px;
   overflow-y: auto;
@@ -477,6 +559,7 @@ select {
   padding: 4px;
 }
 
+.player-item,
 .session-item {
   padding: 8px 10px;
   border-radius: 4px;
@@ -485,10 +568,12 @@ select {
   transition: background 0.2s ease;
 }
 
+.player-item:hover,
 .session-item:hover {
   background: #f3f4f6; /* gray-100 */
 }
 
+.player-item.selected,
 .session-item.selected {
   background: #2563eb; /* blue-600 */
   color: white;

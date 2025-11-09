@@ -23,6 +23,10 @@ def export_group_to_json(folder_path: str) -> None:
                     "id": str(p.id),
                     "name": p.name,
                     "role": p.role.value,
+                    "max_hp": p.max_hp,
+                    "hp": p.hp,
+                    "temp_hp": p.temp_hp,
+                    "attributes": p.attributes,
                     "created_at": p.created_at.isoformat(),
                     "last_seen_at": p.last_seen_at.isoformat(),
                 }

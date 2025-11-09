@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from datetime import datetime
 from uuid import UUID
 from app.domain.store import store
-from app.domain.models import Group, Role, Player, now_utc
+from app.domain.models import Group, Role, Player, now_utc, PlayerStatus
 from app.core.config import settings
 
 
@@ -33,6 +33,11 @@ def load_groups_from_json(file_path: str) -> Player:
                 id=UUID(p["id"]),
                 name=p["name"],
                 role=Role(p["role"]),
+                status=PlayerStatus.active if Role(p["role"]) == Role.leader else PlayerStatus.inactive,    # nur Leader aktiv, Rest inaktiv damit die rejoinen können
+                max_hp=p["max_hp"],
+                hp=p["hp"],
+                temp_hp=p["temp_hp"],
+                attributes=p["attributes"],
                 created_at=datetime.fromisoformat(p["created_at"]),
                 #last_seen_at=datetime.fromisoformat(p["last_seen_at"]),
                 last_seen_at=now_utc(),

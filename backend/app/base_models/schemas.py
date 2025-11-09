@@ -9,6 +9,11 @@ class Role(str, Enum):
     leader = "leader"
     member = "member"
 
+class PlayerStatus(str, Enum):
+    active = "active"
+    inactive = "inactive"
+    kicked = "kicked"
+
 class PlayerIn(BaseModel):
     name: str = Field(min_length=2, max_length=50)
     role: Role
@@ -18,9 +23,11 @@ class PlayerOut(BaseModel):
     id: UUID
     name: str
     role: Role
+    status: PlayerStatus
     max_hp: int = 10
     hp: int = 0
     temp_hp: int = 0
+    attributes: Optional[Dict[str, int]]
     created_at: datetime
     last_seen_at: datetime
 
