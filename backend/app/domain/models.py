@@ -25,6 +25,38 @@ class Player:
     created_at: datetime = field(default_factory=now_utc)
     last_seen_at: datetime = field(default_factory=now_utc)
 
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "role": self.role.value,
+            "status": self.status.value,
+            "max_hp": self.max_hp,
+            "hp": self.hp,
+            "temp_hp": self.temp_hp,
+            "attributes": self.attributes,
+            "created_at": self.created_at.isoformat(),
+            "last_seen_at": self.last_seen_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Player":
+        role = Role(data["role"])
+        return cls(
+            id=UUID(data["id"]),
+            name=data["name"],
+            role=role,
+            status=PlayerStatus.active if role == Role.leader else PlayerStatus.inactive,
+            max_hp=data.get("max_hp", 10),
+            hp=data.get("hp", 10),
+            temp_hp=data.get("temp_hp", 0),
+            attributes=data.get("attributes"),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            last_seen_at=datetime.fromisoformat(data["last_seen_at"])
+            if "last_seen_at" in data
+            else now_utc(),
+        )
+
     def touch(self) -> None:
         self.last_seen_at = now_utc()
 
