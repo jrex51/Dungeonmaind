@@ -54,5 +54,14 @@ class SingleGroupStore:
         async with self._lock:
             self.group.players[player.id] = player
 
+    async def update_player_max_hp(self, pid: UUID, max_hp: int) -> Player:
+        async with self._lock:
+            p = self.group.get_player(pid)
+            p.set_max_hp(max_hp)
+            p.touch()
+            self.group.players[p.id] = p
+            return p
+
+
 
 store = SingleGroupStore()

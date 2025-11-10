@@ -4,6 +4,13 @@ import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from 'marked'
+import {
+  type PlayerOut,
+  updateMaxHp,
+  damagePlayer,
+  healPlayer,
+  patchPlayerAbility,
+} from '../api/players.ts'
 
 const router = useRouter()
 const store = useSessionStore()
@@ -175,7 +182,9 @@ async function handleLLMQuestionSubmit() {
         renderedMarkdown.value = await marked.parse(backendMarkdown.value[0])
       }
     } else {
-      if (!response.body) throw new Error(`Request failed with status ${response.status}`)
+      if (!response.body) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
 
       // frühere Rulebook-Ausgaben leeren
       backendMarkdown.value = []
@@ -262,7 +271,9 @@ async function startRecording() {
     recordedAudioURL.value = null
 
     mediaRecorder.value = new MediaRecorder(stream)
-    mediaRecorder.value.ondataavailable = (e) => e.data.size && audioChunks.value.push(e.data)
+    mediaRecorder.value.ondataavailable = (e) => {
+      if (e.data.size) audioChunks.value.push(e.data)
+    }
     mediaRecorder.value.onstop = () => {
       const audioBlob = new Blob(audioChunks.value, { type: 'audio/wav' })
       recordedAudioURL.value = URL.createObjectURL(audioBlob)
@@ -358,18 +369,7 @@ async function patchAbility(playerId: string, key: AbilitySpec['key'], value: nu
   if (!playerId) return
   abilityBusy.value[key] = true
   try {
-    const res = await fetch(`${apiBase()}/players/${playerId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Player-Id': playerId, // Self-permission header expected by backend
-      },
-      body: JSON.stringify({ [key]: value }),
-    })
-    if (!res.ok) {
-      const msg = await res.text().catch(() => res.statusText)
-      throw new Error(msg || `HTTP ${res.status}`)
-    }
+    await patchPlayerAbility(playerId, key, value, apiBase())
   } catch (e) {
     console.error('Ability PATCH failed:', e)
   } finally {
@@ -403,19 +403,19 @@ const visiblePlayers = computed(() => {
 
 /* Healthbar */
 async function damage(playerId: string, amount: number) {
-  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ damage: amount }),
-  })
+  try {
+    await damagePlayer(playerId, amount, apiBase())
+  } catch (e) {
+    console.error('Damage failed:', e)
+  }
 }
 
 async function heal(playerId: string, amount: number) {
-  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ heal: amount }),
-  })
+  try {
+    await healPlayer(playerId, amount, apiBase())
+  } catch (e) {
+    console.error('Heal failed:', e)
+  }
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -443,16 +443,31 @@ function hpClass(p: any) {
   return 'is-high'
 }
 
-/* Setting of Maximum Hit Points */
+async function onMaxHpChange(player: PlayerOut, event: Event) {
+  const input = event.target as HTMLInputElement
+  const raw = parseInt(input.value, 10)
 
-function onMaxHpChange(p: any, e: Event) {
-  const target = e.target as HTMLInputElement
-  const val = parseInt(target.value, 10)
-  if (!Number.isFinite(val) || val <= 0) return
-  //patchMaxHP(p.id, val)
+  // Basic guard on the client; backend will enforce too
+  if (!Number.isFinite(raw) || raw < 1) {
+    input.value = String(player.hp.max)
+    return
+  }
+
+  try {
+    const updated = await updateMaxHp(player.id, raw, apiBase())
+
+    // If your app already listens to "health/update" via WebSocket/SSE
+    // and patches store.players there, you can skip this block.
+    const index = store.players.findIndex((p: PlayerOut) => p.id === updated.id)
+    if (index !== -1) {
+      store.players[index] = updated
+    }
+  } catch (err) {
+    console.error(err)
+    // revert to old value on error
+    input.value = String(player.hp.max)
+  }
 }
-
-
 </script>
 
 <template>
@@ -470,7 +485,7 @@ function onMaxHpChange(p: any, e: Event) {
       <section>
         <h2>Hello {{ store.currentPlayer?.name }}</h2>
         <p v-if="store.isLeader">You are Leader.</p>
-        <button @click="onLeave" class="submit-button" >Leave</button>
+        <button @click="onLeave" class="submit-button">Leave</button>
 
         <!-- Only leaders see the full player list -->
         <h3 v-if="store.isLeader">Spieler</h3>
@@ -506,7 +521,10 @@ function onMaxHpChange(p: any, e: Event) {
             <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">
               Previous
             </button>
-            <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
+            <span>
+              {{ currentMarkdownIndex + 1 }} /
+              {{ backendMarkdown.length }}
+            </span>
             <button
               @click="showNextMarkdown"
               :disabled="currentMarkdownIndex === backendMarkdown.length - 1"
@@ -562,9 +580,8 @@ function onMaxHpChange(p: any, e: Event) {
     <!-- Right: abilities, health and dice -->
     <aside :class="['right-rail', store.isLeader ? 'right-rail--leader' : 'right-rail--member']">
       <div :class="['right-rail__inner', store.isLeader ? 'right-rail__inner--leader' : null]">
-
         <!-- dice -->
-        <div :class="['dice-widget','rail-panel',!store.isLeader ? 'dice-widget--member' : null]">
+        <div :class="['dice-widget', 'rail-panel', !store.isLeader ? 'dice-widget--member' : null]">
           <h2 class="rail-title">Roll a dice</h2>
           <div class="dice-buttons">
             <button @click="rollDice(4)" class="dice-button">W4</button>
@@ -573,11 +590,19 @@ function onMaxHpChange(p: any, e: Event) {
             <button @click="rollDice(12)" class="dice-button">W12</button>
             <button @click="rollDice(20)" class="dice-button">W20</button>
           </div>
-          <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
+          <div class="dice-result" v-if="diceResult">
+            {{ diceResult }}
+          </div>
         </div>
 
         <!-- player information -->
-        <section :class="['abilities-section','rail-panel',!store.isLeader ? 'abilities-section--member' : null]">
+        <section
+          :class="[
+            'abilities-section',
+            'rail-panel',
+            !store.isLeader ? 'abilities-section--member' : null,
+          ]"
+        >
           <h2 class="rail-title">
             {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
           </h2>
@@ -593,12 +618,12 @@ function onMaxHpChange(p: any, e: Event) {
                   {{ p.name ?? 'Unbenannter Spieler' }}
                 </div>
               </div>
-              <div class="section__label">
-                Abilities:
-              </div>
+              <div class="section__label">Abilities:</div>
               <div class="ability-grid">
                 <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
-                  <div class="ability-label">{{ a.label }}</div>
+                  <div class="ability-label">
+                    {{ a.label }}
+                  </div>
                   <div class="ability-score">
                     <span>{{ a.score ?? '—' }}</span>
                   </div>
@@ -637,22 +662,29 @@ function onMaxHpChange(p: any, e: Event) {
                   :aria-valuemin="0"
                   :aria-valuemax="p.hp.max"
                   :aria-valuenow="p.hp.current"
-                  :aria-valuetext="`${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp})` : ''}`"
-                  :title="`HP ${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp} temp)` : ''}`"
+                  :aria-valuetext="`${p.hp.current}/${p.hp.max}${
+                    p.hp.temp ? ` (+${p.hp.temp})` : ''
+                  }`"
+                  :title="`HP ${p.hp.current}/${p.hp.max}${
+                    p.hp.temp ? ` (+${p.hp.temp} temp)` : ''
+                  }`"
                 >
                   <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
 
                   <div
                     v-if="p.hp.temp"
                     class="healthbar__temp"
-                    :style="{ left: hpPct(p) + '%', width: tempPct(p) + '%' }"
+                    :style="{
+                      left: hpPct(p) + '%',
+                      width: tempPct(p) + '%',
+                    }"
                   ></div>
                 </div>
 
                 <!-- Spalte 3: Zahlen -->
                 <div class="healthbar__numbers">
                   {{ p.hp.current }} / {{ p.hp.max }}
-                  <span v-if="p.hp.temp">(+{{ p.hp.temp }})</span>
+                  <span v-if="p.hp.temp"> (+{{ p.hp.temp }}) </span>
                 </div>
 
                 <!-- Spalte 4: Buttons (rechts neben Zahlen) -->
@@ -667,19 +699,14 @@ function onMaxHpChange(p: any, e: Event) {
                   >
                     −
                   </button>
-                  <button
-                    class="ability-stepper"
-                    @click="heal(p.id, 1)"
-                    aria-label="heal 1 hp"
-                  >
+                  <button class="ability-stepper" @click="heal(p.id, 1)" aria-label="heal 1 hp">
                     +
                   </button>
                 </div>
               </div>
+
               <div class="hpmax-row">
-                <label class="section__label" :for="'hpmax-' + p.id">
-                  Maximum Hit Points:
-                </label>
+                <label class="section__label" :for="'hpmax-' + p.id"> Maximum Hit Points: </label>
                 <input
                   :id="'hpmax-' + p.id"
                   class="hpmax-input"
@@ -689,7 +716,6 @@ function onMaxHpChange(p: any, e: Event) {
                   @change="onMaxHpChange(p, $event)"
                 />
               </div>
-
             </div>
           </div>
           <p v-else class="output">No players found.</p>
@@ -756,7 +782,7 @@ body {
 .header-right > .rulebook-button,
 .header-right > .config-button {
   padding: 0.5rem 1rem;
-  background-color: rgba(53, 73, 94, 0.9);  /* wie zuvor */
+  background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
   border-radius: 4px;
   color: #fff;
@@ -791,6 +817,7 @@ body {
 .config-button:hover {
   background-color: #4a575e;
 }
+
 .content-section {
   display: flex;
   flex-direction: column;
@@ -849,10 +876,12 @@ hr {
   transition: all 0.2s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
+
 .submit-button:hover:not(:disabled) {
   background-color: #7e6f34;
   transform: translateY(-1px);
 }
+
 .submit-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
@@ -877,9 +906,7 @@ hr {
   border: 1px solid #000;
   box-sizing: border-box;
   font-family: 'MedievalSharp', cursive;
-  font-weight: bold;
   font-weight: 400;
-  box-sizing: border-box;
 }
 
 .output p {
@@ -890,13 +917,6 @@ hr {
   margin-top: 0;
   margin-bottom: 0.5rem;
   color: #f1e6b4;
-}
-.output h3 {
-  margin: 0 0 0.5rem;
-  color: #f1e6b4;
-}
-.output p {
-  margin: 0;
 }
 
 /* Abilities and dice on right */
@@ -917,15 +937,15 @@ hr {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 0.5rem;
-  /* Scrollbar verstecken*/
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+
 .right-rail--leader::-webkit-scrollbar {
   display: none;
 }
 
-/* Player-Version: fixed*/
+/* Player-Version: fixed */
 .right-rail--member {
   top: 240px;
   bottom: auto;
@@ -957,17 +977,13 @@ hr {
 
 .rail-title {
   margin: 0 0 1rem;
-  text-align: left;
+  text-align: center;
   color: #392401;
   font-family: 'MedievalSharp', cursive;
   font-size: 1.45rem;
   font-weight: 800;
   letter-spacing: 0.03em;
-  display: block;
-  padding-bottom: 0.1rem;
-  text-align: center;
 }
-
 
 /* Dice */
 .dice-widget {
@@ -975,15 +991,18 @@ hr {
   width: 100%;
   margin-top: 3rem;
 }
+
 .dice-widget--member {
   margin-top: -20px;
 }
+
 .dice-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: center;
 }
+
 .dice-button {
   flex: 1 0 30%;
   padding: 0.75rem;
@@ -994,9 +1013,11 @@ hr {
   border-radius: 6px;
   cursor: pointer;
 }
+
 .dice-button:hover {
   background-color: #369f6e;
 }
+
 .dice-result {
   margin-top: 1rem;
   text-align: center;
@@ -1008,9 +1029,11 @@ hr {
   width: 100%;
   margin: 0;
 }
+
 .abilities-section--member {
   margin-top: 2rem;
 }
+
 .ability-list {
   display: grid;
   grid-template-columns: 1fr;
@@ -1023,6 +1046,7 @@ hr {
   padding: 0.75rem 0.9rem 1rem;
   background: rgba(110, 97, 50, 0.25);
 }
+
 .ability-card__header {
   display: flex;
   flex-direction: column;
@@ -1042,12 +1066,12 @@ hr {
   color: #392401;
 }
 
-
 .ability-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 0.5rem;
 }
+
 .ability-box {
   text-align: center;
   border: 1px solid #695710;
@@ -1056,17 +1080,20 @@ hr {
   background: #f1e6b4;
   color: #392401;
 }
+
 .ability-label {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   color: #6b5710;
 }
+
 .ability-score {
   font-size: 1.1rem;
   font-weight: 800;
   line-height: 1.3;
 }
+
 .ability-mod {
   display: block;
   font-size: 0.75rem;
@@ -1081,6 +1108,7 @@ hr {
   justify-content: center;
   margin-top: 0.4rem;
 }
+
 .ability-stepper {
   padding: 0.2rem 0.5rem;
   line-height: 1;
@@ -1091,6 +1119,7 @@ hr {
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
 }
+
 .ability-stepper:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -1134,7 +1163,8 @@ hr {
 .healthbar__fill,
 .healthbar__temp {
   position: absolute;
-  top: 0; bottom: 0;
+  top: 0;
+  bottom: 0;
   left: 0;
   width: 0;
   transition: width 200ms ease;
@@ -1144,12 +1174,15 @@ hr {
 .healthbar__fill {
   background: linear-gradient(180deg, #5bb45b, #2f8f2f); /* high */
 }
+
 .healthbar.is-mid .healthbar__fill {
   background: linear-gradient(180deg, #d6b34c, #b98f1e); /* mid */
 }
+
 .healthbar.is-low .healthbar__fill {
   background: linear-gradient(180deg, #d6634c, #b91e1e); /* low */
 }
+
 .healthbar__controls {
   display: flex;
   gap: 0.4rem;
@@ -1180,7 +1213,6 @@ hr {
   font-size: 1rem;
   line-height: 1.2;
   text-align: center;
-
   border: 1px solid #695710;
   border-radius: 6px;
   background: #f1e6b4;
@@ -1189,7 +1221,6 @@ hr {
   font-weight: 700;
 }
 
-
 /* Markdown output (scoped deep) */
 :deep(.markdown-output) {
   font-family: 'MedievalSharp', cursive;
@@ -1197,28 +1228,6 @@ hr {
   line-height: 1.5;
   margin-top: 1rem;
 }
-
-@media (max-width: 900px) {
-  .right-rail {
-    position: static;
-    right: auto;
-    top: auto;
-    bottom: auto;
-    width: auto;
-    margin: 1rem;
-    padding-right: 0;
-  }
-
-  .right-rail--leader,
-  .right-rail--member {
-    overflow: visible;
-  }
-
-  .right-rail__inner--leader {
-    padding-top: 0; /* kein künstlicher Offset */
-  }
-}
-
 
 :deep(.markdown-output h1) {
   font-size: 2rem;
@@ -1311,5 +1320,26 @@ hr {
   display: flex;
   justify-content: space-between;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .right-rail {
+    position: static;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: auto;
+    margin: 1rem;
+    padding-right: 0;
+  }
+
+  .right-rail--leader,
+  .right-rail--member {
+    overflow: visible;
+  }
+
+  .right-rail__inner--leader {
+    padding-top: 0;
+  }
 }
 </style>

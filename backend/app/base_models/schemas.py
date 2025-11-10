@@ -50,6 +50,10 @@ class HpPatch(BaseModel):
     max: Optional[int] = Field(None, ge=1)
     temp: Optional[int] = Field(None, ge=0)
 
+class MaxHpUpdate(BaseModel):
+    max: int = Field(..., ge=1)
+
+
 
 # Output models
 class PlayerOut(BaseModel):

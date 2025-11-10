@@ -9,7 +9,8 @@ from app.base_models.schemas import (
     PlayerDamageBody,
     PlayerHealBody,
     Hp,
-    Abilities
+    Abilities,
+    MaxHpUpdate
 )
 from app.domain.models import Role as DomainRole
 from app.domain.store import store
@@ -189,3 +190,29 @@ async def apply_heal(player_id: UUID, body: PlayerHealBody, request: Request):
         },
     })
     return player_to_out(p, request)
+
+@router.post("/{player_id}/health/max", response_model=PlayerOut)
+async def update_max_hp(player_id: UUID, body: MaxHpUpdate, request: Request):
+    try:
+        p = await store.update_player_max_hp(player_id, body.max)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Player not found")
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    # Notify all listeners so UIs stay in sync
+    await bus.publish({
+        "type": "health/update",
+        "player_id": str(p.id),
+        "hp": {
+            "current": p.hp.current,
+            "max": p.hp.max,
+            "temp": p.hp.temp,
+        },
+    })
+
+    return player_to_out(p, request)
+

@@ -98,6 +98,20 @@ class Player:
         self.hp.current = max(0, self.hp.current - remaining)
         return {"temp_absorbed": from_temp, "hp_loss": before - self.hp.current}
 
+    def set_max_hp(self, max_hp: int) -> None:
+        """
+        Set max HP and keep all HP values in a valid range.
+        - max_hp must be >= 1
+        - current is clamped down if above new max
+        """
+        max_hp_int = int(max_hp)
+        if max_hp_int < 1:
+            raise ValueError("max_hp must be at least 1")
+
+        self.hp.max = max_hp_int
+        self.clamp()
+
+
 
 @dataclass
 class Group:
