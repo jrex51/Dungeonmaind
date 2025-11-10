@@ -1,13 +1,149 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import * as api from '@/api/playersAPI.ts';
-import type { PlayerOut, Role, Hp, AbilityScores } from '@/api/playersAPI.ts';
+import * as api from '@/api/playersAPI';
+import type { PlayerOut, Role, Hp, AbilityScores } from '@/api/playersAPI';
 
 export const useSessionStore = defineStore('session', () => {
   /* State */
   const currentPlayer = ref<PlayerOut | null>(hydratePlayer());
   const players = ref<PlayerOut[]>([]);
   const backendUrl = ref<string | null>(hydrateBackendUrl());
+  const localNetworkIP = ref<string | null>(hydrateLocalNetworkIP());
+
+  /* Getters */
+  const isLeader = computed(() => currentPlayer.value?.role === 'leader');
+
+  /* Types for WS/patch upserts */
+  type PlayerUpsert =
+    Partial<Omit<PlayerOut, 'hp' | 'abilities'>> & {
+      hp?: Partial<Hp>;
+      abilities?: Partial<AbilityScores> | Record<string, unknown>;
+    };
+
+  /* Internal helpers */
+
+  // Deep-merge hp and abilities; shallow-merge everything else
+  function mergePlayers(base: PlayerOut, incoming: PlayerUpsert): PlayerOut {
+    return {
+      ...base,
+      ...incoming,
+      hp: incoming.hp
+        ? { ...base.hp, ...incoming.hp }
+        : base.hp,
+      abilities: incoming.abilities
+        ? {
+            ...(base.abilities ?? {}),
+            ...(incoming.abilities as Record<string, unknown>),
+          }
+        : base.abilities,
+    };
+  }
+
+  // Accept full or partial PlayerOut-like payloads (must have id when partial)
+  function upsertPlayer(p: PlayerOut | (PlayerUpsert & { id: string })) {
+    const i = players.value.findIndex(x => x.id === p.id);
+    if (i === -1) {
+      players.value.push(p as PlayerOut);
+    } else {
+      players.value[i] = mergePlayers(players.value[i], p);
+    }
+
+    if (currentPlayer.value?.id === p.id) {
+      currentPlayer.value = mergePlayers(currentPlayer.value, p);
+      persistPlayer(currentPlayer.value);
+    }
+  }
+
+  function syncCurrentFromList(list: PlayerOut[]) {
+    const id = currentPlayer.value?.id;
+    if (!id) return;
+    const fresh = list.find(p => p.id === id);
+    if (fresh) {
+      currentPlayer.value = fresh;
+      persistPlayer(fresh);
+    } else {
+      currentPlayer.value = null;
+      removePersistedPlayer();
+    }
+  }
+
+  function persistPlayer(p: PlayerOut | null) {
+    try {
+      if (p) {
+        sessionStorage.setItem('player', JSON.stringify(p));
+      } else {
+        sessionStorage.removeItem('player');
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function removePersistedPlayer() {
+    try {
+      sessionStorage.removeItem('player');
+    } catch {
+      // ignore
+    }
+  }
+
+  function persistBackendUrl(url: string) {
+    try {
+      localStorage.setItem('backendUrl', url);
+    } catch {
+      // ignore
+    }
+  }
+
+  function persistLocalNetworkIP(ip: string | null) {
+    try {
+      if (ip) {
+        localStorage.setItem('localNetworkIP', ip);
+      } else {
+        localStorage.removeItem('localNetworkIP');
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function hydratePlayer(): PlayerOut | null {
+    try {
+      const raw = sessionStorage.getItem('player');
+      return raw ? (JSON.parse(raw) as PlayerOut) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function hydrateBackendUrl(): string | null {
+    try {
+      return localStorage.getItem('backendUrl');
+    } catch {
+      return null;
+    }
+  }
+
+  function hydrateLocalNetworkIP(): string | null {
+    try {
+      const raw = localStorage.getItem('localNetworkIP');
+      return raw || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearPersist() {
+    removePersistedPlayer();
+    try {
+      localStorage.removeItem('backendUrl');
+      localStorage.removeItem('localNetworkIP');
+    } catch {
+      // ignore
+    }
+  }
+
+  /* API actions */
 
   async function join(name: string, role: Role, reuse_id?: string) {
     const p = await api.join(name, role, reuse_id);
@@ -22,17 +158,12 @@ export const useSessionStore = defineStore('session', () => {
     syncCurrentFromList(list);
   }
 
-  function setCurrentPlayer(p: PlayerOut) {
-    currentPlayer.value = p;
-    persistPlayer(p);
-  }
-
   async function leave() {
     if (!currentPlayer.value) return;
     try {
       await api.leave(currentPlayer.value.id);
     } finally {
-      clearSession()
+      clearSession();
     }
   }
 
@@ -40,18 +171,34 @@ export const useSessionStore = defineStore('session', () => {
     backendUrl.value = url;
     persistBackendUrl(url);
   }
+
   function setLocalNetworkIP(ip: string) {
-    if (ip === "") {
+    if (!ip) {
       localNetworkIP.value = null;
+      persistLocalNetworkIP(null);
     } else {
       localNetworkIP.value = ip;
+      persistLocalNetworkIP(ip);
     }
-
-  persistLocalNetworkIP(ip);
   }
 
+  /* Session / logout helpers */
+
+  function clearSession() {
+    currentPlayer.value = null;
+    players.value = [];
+    backendUrl.value = null;
+    localNetworkIP.value = null;
+    clearPersist();
+  }
+
+  // Used e.g. when WS close code 4001 (kicked)
+  function forceLogout() {
+    clearSession();
+  }
 
   /* WebSocket helpers */
+
   function applyWsJoin(p: PlayerOut) {
     upsertPlayer(p);
   }
@@ -64,94 +211,40 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  // Accept full or partial updates; if partial, we merge into existing
-  function applyWsUpdate(p: PlayerOut) {
+  // Accept full or partial updates
+  function applyWsUpdate(p: PlayerOut | (PlayerUpsert & { id: string })) {
     upsertPlayer(p);
-    if (currentPlayer.value?.id === p.id) {
-      currentPlayer.value = mergePlayers(currentPlayer.value, p);
-      persistPlayer(currentPlayer.value);
-    }
   }
 
-  // Patch helper used by granular WS events (hp/abilities)
   function patchPlayer(id: string, patch: PlayerUpsert) {
     const i = players.value.findIndex(p => p.id === id);
     if (i !== -1) {
       players.value[i] = mergePlayers(players.value[i], patch);
     }
-  function persistBackendUrl(url: string) {
-  localStorage.setItem("backendUrl", url);
-  }
-  function persistLocalNetworkIP(ip: string) {
-  localStorage.setItem("localNetworkIP", ip);
-  }
-
-  function hydratePlayer(): PlayerOut | null {
-    const raw = localStorage.getItem("player");
-    if (!raw) return null;
-    try { return JSON.parse(raw) as PlayerOut; } catch { return null;}
-  }
-
-  function hydrateBackendUrl(): string | null {
-  const raw = localStorage.getItem("backendUrl");
-  if (!raw) return null;
-  return raw;
-  }
-
-  function hydrateLocalNetworkIP(): string | null {
-    const raw = localStorage.getItem("localNetworkIP");
-    if (!raw) return null;
-    if (raw === "") {
-      return null;
-    } else {
-      return raw;
-    }
-  }
-
-  function clearSession() {
-    currentPlayer.value = null;
-    backendUrl.value = null;
-    localNetworkIP.value = null;
-    players.value = [];
-    clearPersist();
-  }
-  function clearPersist() {
-    localStorage.removeItem("player");
-    localStorage.removeItem("backendUrl");
-    localStorage.removeItem("localNetworkIP");
-  }
-
-  function patchPlayer(id: string, patch: Partial<Pick<PlayerOut, 'hp'|'max_hp'|'temp_hp'|'attributes'>>) {
-    players.value = players.value.map((p): PlayerOut =>
-      p.id === id ? ({ ...p, ...patch } as PlayerOut) : p
-    );
     if (currentPlayer.value?.id === id) {
-      currentPlayer.value = { ...(currentPlayer.value as PlayerOut), ...patch } as PlayerOut;
+      currentPlayer.value = mergePlayers(currentPlayer.value, patch);
+      persistPlayer(currentPlayer.value);
     }
   }
 
-  function forceLogout() {
-    currentPlayer.value = null;
-    players.value = [];
-    sessionStorage.removeItem('player');
-  }
-
+  /* Expose store */
   return {
+    // state
     currentPlayer,
     players,
-    isLeader,
     backendUrl,
+    localNetworkIP,
+    // getters
+    isLeader,
+    // actions
     join,
     loadPlayers,
     leave,
-    patchPlayer,
     setBackendUrl,
-    forceLogout,
-    localNetworkIP,
     setLocalNetworkIP,
     clearSession,
-    setCurrentPlayer,
-        // ws helpers
+    forceLogout,
+    // ws helpers
     applyWsJoin,
     applyWsLeave,
     applyWsUpdate,

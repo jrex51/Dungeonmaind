@@ -10,7 +10,8 @@ import {
   damagePlayer,
   healPlayer,
   patchPlayerAbility,
-} from '../api/players.ts'
+  kickPlayer,
+} from '../api/playersAPI.ts'
 
 const router = useRouter()
 const store = useSessionStore()
@@ -71,7 +72,6 @@ function goToPlayers() {
   router.push('/players')
 }
 
-
 function goToRulebook() {
   router.push('/rulebook')
 }
@@ -117,17 +117,6 @@ onMounted(() => {
       console.error('loadPlayers failed', e)
     }
 
-    /*
-    const selfId = store.currentPlayer?.id;
-    const stillAlive = !!store.players.find(p => p.id === selfId);
-    if (!stillAlive) {
-      console.debug(`Player ist abgemeldet/kicked/inaktiv -> zum Login`);
-      // abgemeldet/kicked/inaktiv -> zum Login
-      store.forceLogout();
-      router.push({ name: 'login' });
-    }
-    */
-
     try { socket?.send('ping'); } catch { }
     pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
       try { socket?.send('ping'); } catch {}
@@ -168,7 +157,7 @@ onUnmounted(() => {
   try { socket?.close(); } catch {}
   socket = null;
 
-  //Cleanly end recorder/mic on unmount
+  // Cleanly end recorder/mic on unmount
   if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
     isFinalStop.value = true
     try { mediaRecorder.value.requestData(); } catch {}
@@ -176,17 +165,15 @@ onUnmounted(() => {
   }
 
   if (recordedAudioURL.value) {
-        URL.revokeObjectURL(recordedAudioURL.value);
-        recordedAudioURL.value = null;
-    }
+    URL.revokeObjectURL(recordedAudioURL.value);
+    recordedAudioURL.value = null;
+  }
 
   if (audioRecorderInterval.value) {
     clearInterval(audioRecorderInterval.value!)
     audioRecorderInterval.value = null
   }
 })
-
-
 
 async function onExport() {
   if (!sessionName.value.trim()) return alert("Please enter a session name.")
@@ -207,7 +194,7 @@ async function handleQuestionSubmit() {
   isLoading.value = true
   modelOutput.value = ''
 
-  if(askRulebook.value) {
+  if (askRulebook.value) {
     try {
       const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
         method: 'POST',
@@ -328,7 +315,7 @@ async function startRecording() {
   try {
     isFinalStop.value = false
 
-    if(recordedAudioURL.value){
+    if (recordedAudioURL.value) {
       URL.revokeObjectURL(recordedAudioURL.value)
       recordedAudioURL.value = null
     }
@@ -389,9 +376,9 @@ async function startRecording() {
     isRecording.value = true;
 
     setTimeout(() => {
-        if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-            mediaRecorder.value.requestData();
-        }
+      if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
+        mediaRecorder.value.requestData();
+      }
     }, 250);
 
     const spliceTime = 5 * 60 * 1000;
@@ -416,7 +403,7 @@ function stopRecording() {
     isFinalStop.value = true
     if (audioRecorderInterval.value) {
       clearInterval(audioRecorderInterval.value);
-      audioRecorderInterval.value  = null
+      audioRecorderInterval.value = null
     }
     mediaRecorder.value.requestData();
     mediaRecorder.value.stop();
@@ -447,10 +434,10 @@ async function sendAudioChunk(chunk: Blob) {
   }
 }
 
-function playRecording(){
-  if(!recordedAudioURL.value) return
+function playRecording() {
+  if (!recordedAudioURL.value) return
 
-  if(!currentAudio.value) {
+  if (!currentAudio.value) {
     currentAudio.value = new Audio(recordedAudioURL.value)
   }
 
@@ -458,37 +445,6 @@ function playRecording(){
   currentAudio.value.currentTime = 0
   currentAudio.value.play()
 }
-
-/*async function transcribeRecording() {
-  if (!audioChunks.value.length){
-    audioUploadStatus.value = 'No audio to transcribe !'
-    return
-  }
-
-  const audioBlob = new Blob(audioChunks.value, { type: 'audio/wav' })
-  const formData = new FormData()
-  formData.append('audio', audioBlob, 'recording.wav')
-
-  try {
-    const response = await fetch(
-      `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,
-      {
-        method: 'POST',
-        body: formData,
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`Transcription failed with status ${response.status}`)
-    }
-
-    const result = await response.json()
-    audioUploadStatus.value = `Transcription: ${result.message || 'Success'}`
-  } catch (error) {
-    console.error('Transcription error:', error)
-    audioUploadStatus.value = 'Transcription failed.'
-  }
-}*/
 
 /** Dice */
 function rollDice(sides: number) {
@@ -611,26 +567,29 @@ async function onMaxHpChange(player: PlayerOut, event: Event) {
   try {
     const updated = await updateMaxHp(player.id, raw, apiBase())
 
-    // If your app already listens to "health/update" via WebSocket/SSE
-    // and patches store.players there, you can skip this block.
     const index = store.players.findIndex((p: PlayerOut) => p.id === updated.id)
     if (index !== -1) {
       store.players[index] = updated
     }
   } catch (err) {
     console.error(err)
-    // revert to old value on error
     input.value = String(player.hp.max)
   }
 }
 
+/** Kick using X-Player-Id for leader auth */
 async function kick(playerId: string) {
-  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/kick`, {
-    method: 'POST',
-    credentials: 'include',
-  })
+  const actorId = store.currentPlayer?.id
+  if (!actorId) {
+    console.warn('Kick attempted without current player')
+    return
+  }
+  try {
+    await kickPlayer(playerId, actorId, apiBase())
+  } catch (e) {
+    console.error('Kick failed:', e)
+  }
 }
-
 </script>
 
 <template>

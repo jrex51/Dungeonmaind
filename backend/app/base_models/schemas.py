@@ -1,30 +1,23 @@
 from datetime import datetime
-from enum import Enum
-from typing import Optional, Dict, Literal
+from typing import Optional, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+# Use the domain enums as the single source of truth
+from app.domain.models import Role, PlayerStatus
 
-# Core enums
-class Role(str, Enum):
-    leader = "leader"
-    member = "member"
 
-class PlayerStatus(str, Enum):
-    active = "active"
-    inactive = "inactive"
-    kicked = "kicked"
-
+# Input models
 class PlayerIn(BaseModel):
     name: str = Field(min_length=2, max_length=50)
     role: Role
-    reuse_id: Optional[UUID] = None
+    reuse_id: Optional[UUID] = None  # used for re-join / reuse flow
 
 
 # Abilities
 class Abilities(BaseModel):
-    # Keep "int_" to match the frontend keys exactly
+    # "int_" kept to match frontend & domain model
     str: int
     dex: int
     con: int
@@ -54,9 +47,9 @@ class HpPatch(BaseModel):
     max: Optional[int] = Field(None, ge=1)
     temp: Optional[int] = Field(None, ge=0)
 
+
 class MaxHpUpdate(BaseModel):
     max: int = Field(..., ge=1)
-
 
 
 # Output models
@@ -66,32 +59,21 @@ class PlayerOut(BaseModel):
     role: Role
     status: PlayerStatus
     hp: Hp = Field(default_factory=Hp)
-    #attributes: Optional[Dict[str, int]]
     created_at: datetime
     last_seen_at: datetime
     abilities: Optional[Abilities] = None
     backend_url: Optional[str] = None
 
 
-# Patch models
+# Optional: unified patch model (not currently used by routes)
 class PlayerPatch(BaseModel):
-    """
-    Unified player patch payload.
-
-    Supports:
-      - Nested HP patch:   { "hp": { "current": 7 } }
-      - Nested abilities:  { "abilities": { "str": 12 } }
-      - (Optional) flat ability keys for convenience:
-                           { "str": 12 }  # matches current frontend call
-    """
     name: Optional[str] = None
     role: Optional[Role] = None
 
-    # Nested patches
     hp: Optional[HpPatch] = None
     abilities: Optional[AbilitiesIn] = None
 
-    # Optional flat ability fields (kept to match current frontend PATCH body)
+    # flat ability fields
     str: Optional[int] = None
     dex: Optional[int] = None
     con: Optional[int] = None
@@ -100,7 +82,7 @@ class PlayerPatch(BaseModel):
     cha: Optional[int] = None
 
 
-# Action bodies (unchanged semantics)
+# Action bodies
 class PlayerDamageBody(BaseModel):
     damage: int = Field(..., ge=0)
 
@@ -109,17 +91,14 @@ class PlayerHealBody(BaseModel):
     heal: int = Field(..., ge=0)
 
 
-# Group
+# Group state
 class GroupStateOut(BaseModel):
     group_id: UUID
     size: int
     max_size: int
 
-class PlayerJoinIn(BaseModel):
-    name: str
-    role: Role
-    reuse_id: Optional[UUID] = None
 
+# For /players/join/check
 class JoinCheckOut(BaseModel):
     status: Literal["available", "inactive_match", "active_conflict"]
     candidate: Optional[PlayerOut] = None

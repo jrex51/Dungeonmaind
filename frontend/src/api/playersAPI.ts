@@ -1,7 +1,7 @@
 import { SERVER_CONFIG } from '@/config/config'
 
 export type Role = 'leader' | 'member'
-export type PlayerStatus = "active" | "inactive" | "kicked";
+export type PlayerStatus = 'active' | 'inactive' | 'kicked'
 
 export type AbilityScores = {
   str?: number
@@ -39,14 +39,25 @@ function base(baseUrl?: string): string {
 
 /**
  * Join the group as leader or member.
- * Optional baseUrl keeps compatibility with dynamic backend selection.
+ * Supports optional reuseId for re-joining an inactive player.
  */
-export async function join(name: string, role: Role, baseUrl?: string): Promise<PlayerOut> {
+export async function join(
+  name: string,
+  role: Role,
+  reuseId?: string,
+  baseUrl?: string,
+): Promise<PlayerOut> {
   const url = new URL('/players', base(baseUrl)).toString()
+
+  const payload: any = { name, role }
+  if (reuseId) {
+    payload.reuse_id = reuseId
+  }
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, role }),
+    body: JSON.stringify(payload),
   })
 
   if (!res.ok) {
@@ -70,11 +81,20 @@ export async function leave(playerId: string, baseUrl?: string): Promise<void> {
 }
 
 /**
- * List all players.
+ * List players.
+ * - includeInactive=false -> only active players
+ * - includeInactive=true  -> all players (used for "Join existing player" flow)
  */
-export async function listPlayers(baseUrl?: string): Promise<PlayerOut[]> {
-  const url = new URL('/players', base(baseUrl)).toString()
-  const res = await fetch(url)
+export async function listPlayers(
+  includeInactive = false,
+  baseUrl?: string,
+): Promise<PlayerOut[]> {
+  const urlObj = new URL('/players', base(baseUrl))
+  if (includeInactive) {
+    urlObj.searchParams.set('include_inactive', 'true')
+  }
+
+  const res = await fetch(urlObj.toString())
 
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`)
@@ -151,7 +171,7 @@ export async function healPlayer(
 
 /**
  * Patch a single ability score.
- * Uses X-Player-Id as in your backend for self-authorization.
+ * Uses X-Player-Id for self-authorization.
  */
 export async function patchPlayerAbility(
   playerId: string,
@@ -176,9 +196,45 @@ export async function patchPlayerAbility(
   }
 }
 
-export async function checkPlayerExists(playerId: string): Promise<{ exists: boolean }> {
-  const url = new URL(`/players/${playerId}/exists`, SERVER_CONFIG.BASE_URL).toString();
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+/**
+ * Kick a player.
+ * Requires the caller (actorId) to be an active leader.
+ * Backend checks X-Player-Id.
+ */
+export async function kickPlayer(
+  playerId: string,
+  actorId: string,
+  baseUrl?: string,
+): Promise<void> {
+  const url = new URL(`/players/${playerId}/kick`, base(baseUrl)).toString()
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Player-Id': actorId,
+    },
+    credentials: 'include',
+  })
+
+  if (!res.ok && res.status !== 204) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(msg || `Kick failed: HTTP ${res.status}`)
+  }
+}
+
+/**
+ * Check if a player exists.
+ */
+export async function checkPlayerExists(
+  playerId: string,
+  baseUrl?: string,
+): Promise<{ exists: boolean }> {
+  const url = new URL(`/players/${playerId}/exists`, base(baseUrl)).toString()
+  const res = await fetch(url)
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+
+  return res.json()
 }
