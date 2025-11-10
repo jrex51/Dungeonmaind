@@ -5,7 +5,6 @@ import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from 'marked'
-import type { PlayerOut } from '@/api/players.ts'
 
 
 const router = useRouter()
@@ -610,11 +609,7 @@ async function kick(playerId: string) {
          <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
          <button v-if="store.isLeader" class="players-button" @click="goToPlayers">Players</button>
          <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button>
-         <button class="config-button" @click="goToConfig">Config</button>
-         <button
-           v-if="isLeader"
-           class="export-button"
-           @click="showNameModal = true">Save Session</button>
+         <button v-if="store.isLeader" class="export-button" @click="showNameModal = true">Save Session</button>
        </div>
        <div v-if="showNameModal" class="modal-overlay">
          <div class="modal">

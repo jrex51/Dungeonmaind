@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
 import  { type PlayerOut, type Role } from "@/api/playersAPI.ts";
@@ -77,6 +77,7 @@ let setConnection = ref(false);
 
 const networkIPs = __NETWORK_IPS__
 const selectedNetworkIP = ref(networkIPs[0] || "")
+let lastValidIP = selectedNetworkIP.value
 
 type CheckResult = {
   ok: boolean;
@@ -88,6 +89,31 @@ type CheckResult = {
 const showImportModal = ref(false)
 const sessions = ref([])
 const selectedSession = ref("")
+
+const octet = '(?:25[0-5]|2[0-4]\\d|1?\\d{1,2})';
+const localIPRegex = new RegExp(
+  '^(' +
+    // 10.x.x.x oder teilweise
+    '1?|10(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?' +
+    '|' +
+    // 192.168.x.x oder teilweise
+    '1|19|192(?:\\.(?:1|16|168)?(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?)?' +
+    '|' +
+    // 172.16-31.x.x oder teilweise
+    '1?|17?|172(?:\\.(?:(1[6-9]|2\\d|3[0-1])|[1-3])?(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?)?' +
+  ')$'
+);
+
+
+watch(selectedNetworkIP, (newVal) => {
+  if (localIPRegex.test(newVal)) {
+
+    lastValidIP = newVal
+  } else {
+    selectedNetworkIP.value = lastValidIP
+  }
+})
+
 
 async function checkConnection(backendUrl: string, timeoutMs = 5000): Promise<CheckResult> {
   const controller = new AbortController();

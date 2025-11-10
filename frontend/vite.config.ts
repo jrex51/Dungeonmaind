@@ -15,13 +15,22 @@ function getAllNetworkIPs() {
       continue
     }
     for (const net of nets[name] ?? []) {
-      if (net.family === 'IPv4' && !net.internal) {
+      if (net.family === 'IPv4' && !net.internal && isLocalIP(net.address)) {
         addresses.push(net.address)
       }
     }
   }
   return addresses
 }
+
+function isLocalIP(ip: string) {
+  return (
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)
+  )
+}
+
 const isDockerMode = process.env.VITE_DOCKER_MODE?.toLowerCase() === "true";
 const isHostMode = process.argv.includes('--host')
 const networkIps = isDockerMode ? [] : (isHostMode ? getAllNetworkIPs() : [])
