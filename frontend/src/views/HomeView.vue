@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import {computed, type Ref, ref, render} from 'vue'
-import { onMounted, onUnmounted } from 'vue'
+import { ref, type Ref, render, computed, onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from 'marked'
-import type { PlayerOut } from '@/api/players.ts'
-
+import {
+  type PlayerOut,
+  updateMaxHp,
+  damagePlayer,
+  healPlayer,
+  patchPlayerAbility,
+} from '../api/players.ts'
 
 const router = useRouter()
 const store = useSessionStore()
+
+/** UI state */
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
-let modelOutputRendered = ref<string>('')
+const modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
 let socket: WebSocket | null = null;
@@ -26,13 +32,15 @@ const isLeader = computed(() => {
 const showNameModal = ref(false)
 const sessionName = ref("")
 
+/** Audio (file upload) */
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
 
+/** Audio (recording) */
 const micPermissionStatus = ref('')
 const isRecording = ref(false)
-const audioStream = ref<MediaStream | null> (null)
-const mediaRecorder = ref<MediaRecorder | null >(null)
+const audioStream = ref<MediaStream | null>(null)
+const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
 const recordedAudioURL = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
@@ -40,12 +48,20 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 const audioRecorderInterval: Ref<number | null> = ref(null);
 const isFinalStop = ref(false)
 
+/** Dice */
 const diceResult = ref<string>('')
 
-let renderedMarkdown = ref<string>('')
+/** Ability PATCH*/
+const abilityBusy = ref<Record<string, boolean>>({})
+
+function apiBase(): string {
+  return store.backendUrl ?? SERVER_CONFIG.BASE_URL
+}
+
+/** Navigation */
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
-
+const renderedMarkdown = ref('')
 
 function goToConfig() {
   router.push('/config')
@@ -60,27 +76,46 @@ function goToRulebook() {
   router.push('/rulebook')
 }
 
+/** Build WS URL from HTTP base + path */
+function wsUrl(baseHttpUrl: string, path: string): string {
+  const u = new URL(baseHttpUrl)
+  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+  u.pathname = path.startsWith('/') ? path : `/${path}`
+  return u.toString()
+}
 
+/** Session actions */
+async function onLeave() {
+  await store.leave()
+  await router.push({ name: 'login' })
+}
+
+/** WebSocket lifecycle */
 onMounted(() => {
-
   // Guard: ohne Player -> zurück zum Login
-  const p = store.currentPlayer;
+  const p = store.currentPlayer
   if (!p) {
-    router.push({ name: 'login' });
-    return;
+    router.push({ name: 'login' })
+    return
   }
 
-  const url = new URL(SERVER_CONFIG.ENDPOINTS.WS_PLAYERS, SERVER_CONFIG.BASE_URL);
+  // Use wsUrl() to ensure ws/wss scheme, then attach query params
+  const baseWs = wsUrl(apiBase(), SERVER_CONFIG.ENDPOINTS.WS_PLAYERS)
+  const url = new URL(baseWs)
   url.search = new URLSearchParams({
     player_id: p.id,
     name: p.name,
     role: p.role,
-  }).toString();
+  }).toString()
 
-  socket = new WebSocket(url.toString());
+  socket = new WebSocket(url.toString())
 
   socket.onopen = async () => {
-    await store.loadPlayers();        // holt die IST-Spielerliste
+    try {
+      await store.loadPlayers() // initial list
+    } catch (e) {
+      console.error('loadPlayers failed', e)
+    }
 
     /*
     const selfId = store.currentPlayer?.id;
@@ -100,37 +135,22 @@ onMounted(() => {
   };
 
   socket.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    console.debug(`message erhalten mit type: ${msg.type}`);
-    if (msg.type === "join") {
-      // Duplikate vermeiden:
-      if (!store.players.some(p => p.id === msg.player.id)) {
-        store.players.push(msg.player);
-      } else {
-        // falls der Join Player-Objekt neuere Felder bringt
-        store.players = store.players.map(p => p.id === msg.player.id ? msg.player : p);
-      }
-    } else if (msg.type === "leave") {
-      store.players = store.players.filter(
-        p => p.id !== msg.player_id
-      );
-      try { console.debug(msg.player.name) } catch {}
-      // selbst betroffen?
-      if (store.currentPlayer?.id === msg.player_id) {
-        store.forceLogout();
-        router.push({ name: 'login' });
-        return;
-      }
-    } else if (msg.type === "health/update") {
-      store.patchPlayer(msg.player_id, {
-        hp: Number(msg.hp),
-        max_hp: Number(msg.max_hp),
-        temp_hp: Number(msg.temp_hp),
-      });
-    } else if (msg.type === "attributes/update") {
-      store.patchPlayer(msg.player_id, { attributes: msg.attributes });
+    const msg = JSON.parse(ev.data)
+
+    if (msg.type === 'join') {
+      // centralized in store
+      store.applyWsJoin(msg.player)
+    } else if (msg.type === 'leave') {
+      store.applyWsLeave(msg.player_id)
+    } else if (msg.type === 'update' && msg.player?.id) {
+      // generic upsert path (expects full PlayerOut with nested hp)
+      store.applyWsUpdate(msg.player)
+    } else if (msg.type === 'health/update' && msg.hp) {
+      // backend now sends nested hp directly
+      store.patchPlayer(msg.player_id, { hp: msg.hp })
     }
-  };
+    // no attributes/abilities mapping needed anymore
+  }
 
   socket.onclose = (ev) => {
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
@@ -166,17 +186,7 @@ onUnmounted(() => {
   }
 })
 
-function wsUrl(baseHttpUrl: string, path: string): string {
-  const u = new URL(baseHttpUrl);                 // http://192.168.1.5:8000
-  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";  // → ws://…
-  u.pathname = path.startsWith("/") ? path : `/${path}`;  // /ws/players
-  return u.toString();                            // ws://192.168.1.5:8000/ws/players
-}
 
-async function onLeave() {
-  await store.leave();
-  await router.push({ name: "login" });
-}
 
 async function onExport() {
   if (!sessionName.value.trim()) return alert("Please enter a session name.")
@@ -241,7 +251,7 @@ async function handleQuestionSubmit() {
 
       // Removes any still shown previous rulebook searches.
       backendMarkdown.value = []
-      renderedMarkdown.value = ""
+      renderedMarkdown.value = ''
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
@@ -276,7 +286,7 @@ function showPrevMarkdown() {
   }
 }
 
-
+/** Audio upload */
 async function handleAudioUpload() {
   if (!selectedAudioFile.value) {
     audioUploadStatus.value = 'Please choose an audio file.'
@@ -287,10 +297,13 @@ async function handleAudioUpload() {
   formData.append('audio', selectedAudioFile.value)
 
   try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
-      method: 'POST',
-      body: formData,
-    })
+    const response = await fetch(
+      `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+    )
     if (!response.ok) {
       throw new Error(`Upload failed with status ${response.status}`)
     }
@@ -444,7 +457,6 @@ function playRecording(){
   currentAudio.value.pause()
   currentAudio.value.currentTime = 0
   currentAudio.value.play()
-
 }
 
 /*async function transcribeRecording() {
@@ -453,17 +465,20 @@ function playRecording(){
     return
   }
 
-  const audioBlob = new Blob(audioChunks.value,{type: 'audio/wav'})
+  const audioBlob = new Blob(audioChunks.value, { type: 'audio/wav' })
   const formData = new FormData()
   formData.append('audio', audioBlob, 'recording.wav')
 
   try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,{
-      method: 'POST',
-      body: formData
-    })
+    const response = await fetch(
+      `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+    )
 
-    if (!response.ok){
+    if (!response.ok) {
       throw new Error(`Transcription failed with status ${response.status}`)
     }
 
@@ -475,120 +490,138 @@ function playRecording(){
   }
 }*/
 
+/** Dice */
 function rollDice(sides: number) {
   const result = Math.floor(Math.random() * sides) + 1
   diceResult.value = `W${sides} → ${result}`
 }
 
-/* Ability Overview */
-type Dict = Record<string, unknown>
+/** Abilities */
 type AbilitySpec = {
-  key: 'str'|'dex'|'con'|'int'|'wis'|'cha'
+  key: 'str' | 'dex' | 'con' | 'int_' | 'wis' | 'cha'
   label: string
-  aliases: string[]
 }
-
 const ABILITIES: AbilitySpec[] = [
-  { key: 'str', label: 'STR', aliases: ['strength'] },
-  { key: 'dex', label: 'DEX', aliases: ['dexterity'] },
-  { key: 'con', label: 'CON', aliases: ['constitution'] },
-  { key: 'int', label: 'INT', aliases: ['intelligence'] },
-  { key: 'wis', label: 'WIS', aliases: ['wisdom'] },
-  { key: 'cha', label: 'CHA', aliases: ['charisma'] },
+  { key: 'str', label: 'STR' },
+  { key: 'dex', label: 'DEX' },
+  { key: 'con', label: 'CON' },
+  { key: 'int_', label: 'INT' },
+  { key: 'wis', label: 'WIS' },
+  { key: 'cha', label: 'CHA' },
 ]
 
-// Guards + helpers
-const isRecord = (v: unknown): v is Dict =>
-  v !== null && typeof v === 'object' && !Array.isArray(v)
-const toNum = (v: unknown): number | undefined => {
-  if (typeof v === 'number' && Number.isFinite(v)) return v
-  if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v)
-    if (Number.isFinite(n)) return n
-  }
-  return undefined
-}
-
-// Find a property with any of the candidate names (case-insensitive)
-function findKeyCI(obj: Dict, candidates: string[]): string | undefined {
-  const map = new Map<string, string>()
-  for (const k of Object.keys(obj)) map.set(k.toLowerCase(), k)
-  for (const c of candidates) {
-    const hit = map.get(c.toLowerCase())
-    if (hit) return hit
-  }
-  return undefined
-}
-
-function pickRecordCI(obj: Dict | undefined, candidates: string[]): Dict | undefined {
-  if (!obj) return undefined
-  const key = findKeyCI(obj, candidates)
-  if (!key) return undefined
-  const v = obj[key]
-  return isRecord(v) ? v : undefined
-}
-
-function readAbilityFrom(rec: Dict | undefined, spec: AbilitySpec): number | undefined {
-  if (!rec) return undefined
-  const key = findKeyCI(rec, [spec.key, ...spec.aliases])
-  if (!key) return undefined
-  return toNum(rec[key])
-}
-
-function extractAbilities(player: unknown) {
-  const base = isRecord(player) ? player : undefined
-  const containers: Array<Dict | undefined> = [
-    pickRecordCI(base, ['abilities', 'abilityScores', 'attributes', 'attrs', 'stats']),
-    base, // top level fallback
-  ]
-  return ABILITIES.map(spec => {
-    let score: number | undefined
-    for (const c of containers) {
-      score = readAbilityFrom(c, spec)
-      if (score !== undefined) break
-    }
+function getAbilityData(p: any) {
+  const ability = p?.abilities ?? {}
+  return ABILITIES.map((spec) => {
+    const score = typeof ability[spec.key] === 'number' ? ability[spec.key] : undefined
     const mod = score !== undefined ? Math.floor((score - 10) / 2) : undefined
     return { ...spec, score, mod }
   })
 }
 
-// visible players = all if Leader, else just current
-const visiblePlayers = computed(() => {
-  const players = store.players ?? [];
-  if (store.isLeader) {
-    const selfId = store.currentPlayer?.id;
-    return players.filter((p: any) => {
-      const isSelf = selfId != null && p?.id === selfId;
-      const role = typeof p?.role === 'string' ? p.role.toLowerCase() : '';
-      const isLeaderRole = role === 'leader';
-      return !isSelf && !isLeaderRole; // nur Members übrig lassen
-    });
+/** Ability change */
+async function patchAbility(playerId: string, key: AbilitySpec['key'], value: number) {
+  if (!playerId) return
+  abilityBusy.value[key] = true
+  try {
+    await patchPlayerAbility(playerId, key, value, apiBase())
+  } catch (e) {
+    console.error('Ability PATCH failed:', e)
+  } finally {
+    abilityBusy.value[key] = false
   }
-  return store.currentPlayer ? [store.currentPlayer] : [];
-});
-
-
-// helper exposed to the template
-function getAbilityData(p: unknown) {
-  return extractAbilities(p)
 }
 
+function incAbility(p: any, key: AbilitySpec['key']) {
+  const current = Number(p?.abilities?.[key] ?? 0)
+  patchAbility(p.id, key, current + 1)
+}
+function decAbility(p: any, key: AbilitySpec['key']) {
+  const current = Number(p?.abilities?.[key] ?? 0)
+  patchAbility(p.id, key, current - 1)
+}
+
+/** Visible players (for abilities): leader sees members (not self/other leaders); member sees self */
+const visiblePlayers = computed(() => {
+  const players = store.players ?? []
+  if (store.isLeader) {
+    const selfId = store.currentPlayer?.id
+    return players.filter((p: any) => {
+      const isSelf = selfId != null && p?.id === selfId
+      const role = typeof p?.role === 'string' ? p.role.toLowerCase() : ''
+      const isLeaderRole = role === 'leader'
+      return !isSelf && !isLeaderRole
+    })
+  }
+  return store.currentPlayer ? [store.currentPlayer] : []
+})
 
 /* Healthbar */
 async function damage(playerId: string, amount: number) {
-  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/damage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ damage: amount }),
-  });
+  try {
+    await damagePlayer(playerId, amount, apiBase())
+  } catch (e) {
+    console.error('Damage failed:', e)
+  }
 }
 
 async function heal(playerId: string, amount: number) {
-  await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.PLAYERS}/${playerId}/heal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ heal: amount }),
-  })
+  try {
+    await healPlayer(playerId, amount, apiBase())
+  } catch (e) {
+    console.error('Heal failed:', e)
+  }
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function hpPct(p: any) {
+  const max = Math.max(1, Number(p?.hp?.max ?? 0))
+  const curr = clamp(Number(p?.hp?.current ?? 0), 0, max)
+  return Math.round((curr / max) * 100)
+}
+
+function tempPct(p: any) {
+  const max = Math.max(1, Number(p?.hp?.max ?? 0))
+  const curr = clamp(Number(p?.hp?.current ?? 0), 0, max)
+  const temp = Math.max(0, Number(p?.hp?.temp ?? 0))
+  const total = Math.min(curr + temp, max)
+  return Math.max(0, Math.round((total / max) * 100) - Math.round((curr / max) * 100))
+}
+
+function hpClass(p: any) {
+  const pct = hpPct(p)
+  if (pct <= 30) return 'is-low'
+  if (pct <= 60) return 'is-mid'
+  return 'is-high'
+}
+
+async function onMaxHpChange(player: PlayerOut, event: Event) {
+  const input = event.target as HTMLInputElement
+  const raw = parseInt(input.value, 10)
+
+  // Basic guard on the client; backend will enforce too
+  if (!Number.isFinite(raw) || raw < 1) {
+    input.value = String(player.hp.max)
+    return
+  }
+
+  try {
+    const updated = await updateMaxHp(player.id, raw, apiBase())
+
+    // If your app already listens to "health/update" via WebSocket/SSE
+    // and patches store.players there, you can skip this block.
+    const index = store.players.findIndex((p: PlayerOut) => p.id === updated.id)
+    if (index !== -1) {
+      store.players[index] = updated
+    }
+  } catch (err) {
+    console.error(err)
+    // revert to old value on error
+    input.value = String(player.hp.max)
+  }
 }
 
 async function kick(playerId: string) {
@@ -602,7 +635,6 @@ async function kick(playerId: string) {
 
 <template>
   <div class="container">
-
      <div class="header">
        <div class="header-left"></div>
        <h1>Dungeonmaind</h1>
@@ -637,7 +669,7 @@ async function kick(playerId: string) {
         <h2>Hello {{ store.currentPlayer?.name }}</h2>
         <p v-if="store.isLeader">You are the Leader.</p>
 
-        <button class="leave-button" @click="onLeave">Leave</button>
+        <button class="submit-button" @click="onLeave">Leave</button>
 
         <h3>Player</h3>
         <ul>
@@ -671,9 +703,19 @@ async function kick(playerId: string) {
         <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
           <h3>Relevant SRD article</h3>
           <div class="markdown-navigation">
-            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">Previous</button>
-            <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
-            <button @click="showNextMarkdown" :disabled="currentMarkdownIndex === backendMarkdown.length - 1">Next</button>
+            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">
+              Previous
+            </button>
+            <span>
+              {{ currentMarkdownIndex + 1 }} /
+              {{ backendMarkdown.length }}
+            </span>
+            <button
+              @click="showNextMarkdown"
+              :disabled="currentMarkdownIndex === backendMarkdown.length - 1"
+            >
+              Next
+            </button>
           </div>
           <div v-html="renderedMarkdown"></div>
         </div>
@@ -681,15 +723,25 @@ async function kick(playerId: string) {
 
       <hr style="margin: 2rem 0" />
 
-      <!-- Only Leader: ARecording/Upload -->
+      <!-- Leader-only: recording -->
       <div v-if="store.isLeader" class="content-section">
         <h2>Record Using Microphone</h2>
-        <button @click="startRecording" v-if="!isRecording" class="submit-button">Start Recording</button>
-        <button @click="stopRecording" v-if="isRecording" class="submit-button">Stop Recording</button>
+        <button @click="startRecording" v-if="!isRecording" class="submit-button">
+          Start Recording
+        </button>
+        <button @click="stopRecording" v-if="isRecording" class="submit-button">
+          Stop Recording
+        </button>
 
-        <div v-if="isRecording" class="output"><p>Recording in progress</p></div>
-        <div v-if="micPermissionStatus" class="output"><p>{{ micPermissionStatus }}</p></div>
-        <div v-if="recordedAudioURL" class="output"><p>Recording completed</p></div>
+        <div v-if="isRecording" class="output">
+          <p>Recording in progress</p>
+        </div>
+        <div v-if="micPermissionStatus" class="output">
+          <p>{{ micPermissionStatus }}</p>
+        </div>
+        <div v-if="recordedAudioURL" class="output">
+          <p>Recording completed</p>
+        </div>
 
         <div v-if="recordedAudioURL" class="play-button">
           <button @click="playRecording" class="submit-button"> Play Recording </button>
@@ -697,58 +749,156 @@ async function kick(playerId: string) {
 
         <hr style="margin: 2rem 0" />
 
-        <h2>Upload Audio File</h2>
-        <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
-        <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
-        <div v-if="audioUploadStatus" class="output"><p>{{ audioUploadStatus }}</p></div>
+        <!-- Leader-only: upload -->
+        <div v-if="store.isLeader" class="content-section">
+          <h2>Upload Audio File</h2>
+          <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
+          <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
+          <div v-if="audioUploadStatus" class="output">
+            <p>{{ audioUploadStatus }}</p>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- Right: abilities, health and dice -->
-    <aside class="right-rail">
-      <section class="abilities-section rail-panel">
-        <h2 v-if="!store.isLeader">Your ability scores</h2>
-        <h2 v-else>Abilities of members</h2>
+    <aside :class="['right-rail', store.isLeader ? 'right-rail--leader' : 'right-rail--member']">
+      <div :class="['right-rail__inner', store.isLeader ? 'right-rail__inner--leader' : null]">
+        <!-- dice -->
+        <div :class="['dice-widget', 'rail-panel', !store.isLeader ? 'dice-widget--member' : null]">
+          <h2 class="rail-title">Roll a dice</h2>
+          <div class="dice-buttons">
+            <button @click="rollDice(4)" class="dice-button">W4</button>
+            <button @click="rollDice(6)" class="dice-button">W6</button>
+            <button @click="rollDice(8)" class="dice-button">W8</button>
+            <button @click="rollDice(12)" class="dice-button">W12</button>
+            <button @click="rollDice(20)" class="dice-button">W20</button>
+          </div>
+          <div class="dice-result" v-if="diceResult">
+            {{ diceResult }}
+          </div>
+        </div>
 
-        <div v-if="visiblePlayers.length" class="ability-list">
-          <div
-            v-for="p in visiblePlayers"
-            :key="p.id ?? p.name ?? JSON.stringify(p)"
-            class="ability-card"
-          >
-            <div class="ability-card__header" v-if="store.isLeader">
-              <strong>{{ p.name ?? 'Unbenannter Spieler' }}</strong>
-              <span class="ability-card__role" v-if="p.role">({{ p.role }})</span>
-            </div>
-            <div class="ability-grid">
-              <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
-                <div class="ability-label">{{ a.label }}</div>
-                <div class="ability-score">
-                  <span>{{ a.score ?? '-' }}</span>
-                  <small v-if="a.mod !== undefined" class="ability-mod">
-                    ({{ a.mod >= 0 ? '+' + a.mod : a.mod }})
-                  </small>
+        <!-- player information -->
+        <section
+          :class="[
+            'abilities-section',
+            'rail-panel',
+            !store.isLeader ? 'abilities-section--member' : null,
+          ]"
+        >
+          <h2 class="rail-title">
+            {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
+          </h2>
+
+          <div v-if="visiblePlayers.length" class="ability-list">
+            <div
+              v-for="p in visiblePlayers"
+              :key="p.id ?? p.name ?? JSON.stringify(p)"
+              class="ability-card"
+            >
+              <div class="ability-card__header" v-if="store.isLeader">
+                <div class="ability-card__name">
+                  {{ p.name ?? 'Unbenannter Spieler' }}
                 </div>
               </div>
-            </div>
+              <div class="section__label">Abilities:</div>
+              <div class="ability-grid">
+                <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
+                  <div class="ability-label">
+                    {{ a.label }}
+                  </div>
+                  <div class="ability-score">
+                    <span>{{ a.score ?? '—' }}</span>
+                  </div>
+                  <div
+                    v-if="store.isLeader || p.id === store.currentPlayer?.id"
+                    class="ability-controls"
+                  >
+                    <button
+                      class="ability-stepper"
+                      :disabled="abilityBusy[a.key]"
+                      @click="decAbility(p, a.key)"
+                      aria-label="decrease"
+                    >
+                      −
+                    </button>
+                    <button
+                      class="ability-stepper"
+                      :disabled="abilityBusy[a.key]"
+                      @click="incAbility(p, a.key)"
+                      aria-label="increase"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-            <div class="healthbar">
-              <div class="healthbar__label">HP</div>
-              <div class="healthbar__track">
+              <div class="healthbar" :class="hpClass(p)">
+                <!-- Spalte 1: Label -->
+                <div class="section__label">Hit Points:</div>
+
+                <!-- Spalte 2: Progressbar -->
                 <div
-                  class="healthbar__fill"
-                  :style="{ width: Math.min(100, Math.round(((p.hp + (p.temp_hp ?? 0)) / Math.max(1, p.max_hp)) * 100)) + '%' }"
-                  :title="`HP ${p.hp}/${p.max_hp}${p.temp_hp ? ` (+${p.temp_hp} temp)` : ''}`"
-                />
-              </div>
-              <div class="healthbar__numbers">
-                {{ p.hp }} / {{ p.max_hp }} <span v-if="p.temp_hp">(+{{ p.temp_hp }})</span>
+                  class="healthbar__track"
+                  role="progressbar"
+                  :aria-valuemin="0"
+                  :aria-valuemax="p.hp.max"
+                  :aria-valuenow="p.hp.current"
+                  :aria-valuetext="`${p.hp.current}/${p.hp.max}${
+                    p.hp.temp ? ` (+${p.hp.temp})` : ''
+                  }`"
+                  :title="`HP ${p.hp.current}/${p.hp.max}${
+                    p.hp.temp ? ` (+${p.hp.temp} temp)` : ''
+                  }`"
+                >
+                  <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
+
+                  <div
+                    v-if="p.hp.temp"
+                    class="healthbar__temp"
+                    :style="{
+                      left: hpPct(p) + '%',
+                      width: tempPct(p) + '%',
+                    }"
+                  ></div>
+                </div>
+
+                <!-- Spalte 3: Zahlen -->
+                <div class="healthbar__numbers">
+                  {{ p.hp.current }} / {{ p.hp.max }}
+                  <span v-if="p.hp.temp"> (+{{ p.hp.temp }}) </span>
+                </div>
+
+                <!-- Spalte 4: Buttons (rechts neben Zahlen) -->
+                <div
+                  class="healthbar__controls"
+                  v-if="store.isLeader || p.id === store.currentPlayer?.id"
+                >
+                  <button
+                    class="ability-stepper"
+                    @click="damage(p.id, 1)"
+                    aria-label="take 1 damage"
+                  >
+                    −
+                  </button>
+                  <button class="ability-stepper" @click="heal(p.id, 1)" aria-label="heal 1 hp">
+                    +
+                  </button>
+                </div>
               </div>
 
-              <!-- Controls: Leader kann alle editieren, Member nur sich selbst -->
-              <div class="healthbar__controls" v-if="store.isLeader || p.id === store.currentPlayer?.id">
-                <button @click="damage(p.id, 1)">-1</button>
-                <button @click="heal(p.id, 1)">+1</button>
+              <div class="hpmax-row">
+                <label class="section__label" :for="'hpmax-' + p.id"> Maximum Hit Points: </label>
+                <input
+                  :id="'hpmax-' + p.id"
+                  class="hpmax-input"
+                  type="number"
+                  min="1"
+                  :value="p.hp.max"
+                  @change="onMaxHpChange(p, $event)"
+                />
               </div>
               <div class="leader__contorls" v-if="store.isLeader">
                 <button v-if="store.isLeader && p.id !== store.currentPlayer?.id"
@@ -756,25 +906,12 @@ async function kick(playerId: string) {
               </div>
             </div>
           </div>
-        </div>
-        <p v-else class="output">No players found.</p>
-      </section>
-
-      <div class="dice-widget rail-panel">
-        <div class="dice-buttons">
-          <button @click="rollDice(4)" class="dice-button">W4</button>
-          <button @click="rollDice(6)" class="dice-button">W6</button>
-          <button @click="rollDice(8)" class="dice-button">W8</button>
-          <button @click="rollDice(12)" class="dice-button">W12</button>
-          <button @click="rollDice(20)" class="dice-button">W20</button>
-        </div>
-        <div class="dice-result" v-if="diceResult">{{ diceResult }}</div>
+          <p v-else class="output">No players found.</p>
+        </section>
       </div>
     </aside>
   </div>
 </template>
-
-
 
 <!-- This block essential for full-page background -->
 <style>
@@ -804,7 +941,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  max-height: 90vh; /* limits height to viewport height minus some margin */
+  max-height: 90vh;
 }
 
 .header {
@@ -825,6 +962,7 @@ body {
 
 .header-right {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
@@ -847,11 +985,32 @@ body {
   background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
   border-radius: 4px;
-  color: white;
+  color: #fff;
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
   font-weight: normal;
   transition: background-color 0.3s ease;
+}
+
+.header-right > .rulebook-button:hover,
+.header-right > .config-button:hover {
+  background-color: #4a575e;
+}
+
+.centered-content {
+  background-color: rgba(163, 148, 95, 0.8);
+  padding: 2rem;
+  border-radius: 8px;
+  max-width: 600px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  margin-top: 60px;
+}
+
+.config-button:hover {
+  background-color: #4a575e;
 }
 
 .rulebook-button:hover,
@@ -859,30 +1018,27 @@ body {
 .config-button:hover {
   background-color: #4a575e;
 }
+
 .content-section {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.content-section { display: flex; flex-direction: column; align-items: center; }
 h1 {
   color: #392401;
   text-align: center;
   padding-top: 20px;
-  margin-top: 0;
-  margin-bottom: 1.5rem;
+  margin: 0 0 1.5rem;
   font-family: 'MedievalSharp', cursive;
   font-weight: bolder;
 }
 
-
 h2 {
   color: #392401;
   text-align: center;
-  margin-top: 0;
+  margin: 0 0 1.5rem;
   font-size: x-large;
-  margin-bottom: 1.5rem;
   font-family: 'MedievalSharp', cursive;
   font-weight: bolder;
 }
@@ -903,7 +1059,6 @@ hr {
   font-family: 'MedievalSharp', cursive;
   font-weight: bolder;
   background-color: #f1e6b4;
-
   color: #4c3e06;
   width: 90%;
   box-sizing: border-box;
@@ -919,9 +1074,8 @@ hr {
   cursor: pointer;
   margin-bottom: 1rem;
   font-family: 'MedievalSharp', cursive;
-  font-weight: normal;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .submit-button:hover:not(:disabled) {
@@ -950,11 +1104,10 @@ hr {
   background-color: rgba(110, 97, 50, 0.7);
   color: white;
   border-radius: 10px;
-  border: 1px solid #000000;
-  font-family: 'MedievalSharp', cursive;
-  font-weight: bold;
-  font-weight: 400;
+  border: 1px solid #000;
   box-sizing: border-box;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 400;
 }
 
 .output p {
@@ -969,55 +1122,306 @@ hr {
 
 /* Abilities and dice on right */
 .right-rail {
-  position: fixed;
   right: 15%;
-  top: 250px;            /* etwas unter dem Header (50px) */
-  width: 340px;
+  width: 540px;
+  z-index: 900;
+  box-sizing: border-box;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  position: fixed;
+}
+
+/* Leader-Version: füllt vertikal den Bildschirmbereich und scrollt intern */
+.right-rail--leader {
+  top: 10px;
+  bottom: 5px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.5rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.right-rail--leader::-webkit-scrollbar {
+  display: none;
+}
+
+/* Player-Version: fixed */
+.right-rail--member {
+  top: 240px;
+  bottom: auto;
+  overflow: visible;
+  padding-right: 0;
+}
+
+/* Gemeinsames Layout innen: Cards untereinander mit Abstand */
+.right-rail__inner {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  z-index: 900;         /* unter dem Header */
 }
+
+/* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
+.right-rail__inner--leader {
+  padding-top: 65px;
+}
+
 .rail-panel {
-  background-color: rgba(163,148,95,0.9);
-  border: 1px solid rgba(255,255,255,0.2);
+  background-color: rgba(163, 148, 95, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   padding: 1rem;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   color: #392401;
   font-family: 'MedievalSharp', cursive;
 }
 
-/* Dice */
-.dice-widget { position: static; width: 100%; }
-.dice-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
-.dice-button {
-  flex: 1 0 30%; padding: 0.75rem; font-size: 1rem;
-  background-color: #b74d30; color: white; border: none; border-radius: 6px; cursor: pointer;
+.rail-title {
+  margin: 0 0 1rem;
+  text-align: center;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
 }
-.dice-button:hover { background-color: #369f6e; }
-.dice-result { margin-top: 1rem; text-align: center; font-weight: bold; }
+
+/* Dice */
+.dice-widget {
+  position: static;
+  width: 100%;
+  margin-top: 3rem;
+}
+
+.dice-widget--member {
+  margin-top: -20px;
+}
+
+.dice-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.dice-button {
+  flex: 1 0 30%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  background-color: #b74d30;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dice-button:hover {
+  background-color: #369f6e;
+}
+
+.dice-result {
+  margin-top: 1rem;
+  text-align: center;
+  font-weight: bold;
+}
 
 /* Abilities */
-.abilities-section { width: 100%; margin: 0; }
-.ability-list { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
+.abilities-section {
+  width: 100%;
+  margin: 0;
+}
+
+.abilities-section--member {
+  margin-top: 2rem;
+}
+
+.ability-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
 .ability-card {
-  border: 1px solid #695710; border-radius: 10px;
-  padding: 0.75rem 0.9rem 1rem; background: rgba(110,97,50,0.25);
+  border: 1px solid #695710;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem 1rem;
+  background: rgba(110, 97, 50, 0.25);
 }
+
 .ability-card__header {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: 0.5rem; color: #392401;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  margin-bottom: 0.75rem;
+  color: #392401;
 }
-.ability-card__role { color: #e0d5b7; font-size: 0.9rem; }
-.ability-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5rem; }
+
+.ability-card__name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.2;
+  font-family: 'MedievalSharp', cursive;
+  letter-spacing: 0.03em;
+  color: #392401;
+}
+
+.ability-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+}
+
 .ability-box {
-  text-align: center; border: 1px solid #695710; border-radius: 8px;
-  padding: 0.5rem 0.4rem; background: #f1e6b4; color: #392401;
+  text-align: center;
+  border: 1px solid #695710;
+  border-radius: 8px;
+  padding: 0.5rem 0.4rem;
+  background: #f1e6b4;
+  color: #392401;
 }
-.ability-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.03em; color: #6b5710; }
-.ability-score { font-size: 1.1rem; font-weight: 800; line-height: 1.3; }
-.ability-mod { display: block; font-size: 0.75rem; font-weight: 600; color: #4c3e06; }
+
+.ability-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #6b5710;
+}
+
+.ability-score {
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.ability-mod {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4c3e06;
+}
+
+/* + / − controls */
+.ability-controls {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+.ability-stepper {
+  padding: 0.2rem 0.5rem;
+  line-height: 1;
+  border: 1px solid #695710;
+  border-radius: 6px;
+  background: #b74d30;
+  color: #fff;
+  cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+}
+
+.ability-stepper:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Label for ability and healthbar */
+.section__label {
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #392401;
+  font-size: 1.05rem;
+}
+
+/* Healthbar */
+.healthbar {
+  border-top: 1px solid rgba(57, 36, 1, 0.4);
+  padding-top: 1rem;
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.healthbar__numbers {
+  justify-self: end;
+  font-weight: 700;
+  color: #392401;
+  font-size: 1rem;
+}
+
+.healthbar__track {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+  outline: 1px solid #695710;
+  overflow: hidden;
+}
+
+.healthbar__fill,
+.healthbar__temp {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  transition: width 200ms ease;
+}
+
+/* Basis-HP-Farbe (ändert sich je nach Rest-Prozent) */
+.healthbar__fill {
+  background: linear-gradient(180deg, #5bb45b, #2f8f2f); /* high */
+}
+
+.healthbar.is-mid .healthbar__fill {
+  background: linear-gradient(180deg, #d6b34c, #b98f1e); /* mid */
+}
+
+.healthbar.is-low .healthbar__fill {
+  background: linear-gradient(180deg, #d6634c, #b91e1e); /* low */
+}
+
+.healthbar__controls {
+  display: flex;
+  gap: 0.4rem;
+  justify-self: end;
+}
+
+.healthbar__controls .ability-stepper {
+  padding: 0.2rem 0.5rem;
+  line-height: 1;
+  min-width: 2rem;
+  text-align: center;
+}
+
+/* Maximum hit points setting */
+.hpmax-row {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  border-top: 1px solid rgba(57, 36, 1, 0.4);
+  padding-top: 1rem;
+}
+
+.hpmax-input {
+  width: 5rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-align: center;
+  border: 1px solid #695710;
+  border-radius: 6px;
+  background: #f1e6b4;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 700;
+}
+
 
 @media (max-width: 900px) {
   .right-rail {
@@ -1207,5 +1611,26 @@ hr {
   display: flex;
   justify-content: space-between;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .right-rail {
+    position: static;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: auto;
+    margin: 1rem;
+    padding-right: 0;
+  }
+
+  .right-rail--leader,
+  .right-rail--member {
+    overflow: visible;
+  }
+
+  .right-rail__inner--leader {
+    padding-top: 0;
+  }
 }
 </style>

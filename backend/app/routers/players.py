@@ -1,58 +1,73 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Request, Header
 from uuid import UUID
-from app.base_models.schemas import PlayerIn, PlayerOut, GroupStateOut, PlayerHealthPatch, PlayerDamageBody, \
-    PlayerHealBody, JoinCheckOut
+from app.base_models.schemas import (
+    PlayerIn,
+    PlayerOut,
+    GroupStateOut,
+    AbilitiesIn,
+    HpPatch,
+    PlayerDamageBody,
+    PlayerHealBody, JoinCheckOut,
+    Hp,
+    Abilities,
+    MaxHpUpdate
+)
 from app.domain.models import Role, PlayerStatus, Player
 from app.domain.store import store
 from app.core.bus import bus
 
 router = APIRouter()
 
-# Helpers
 
-def player_out(p: Player) -> dict:
-    # dict nur für WS-Events
-    return {
-        "id": str(p.id),
-        "name": p.name,
-        "role": p.role.value if isinstance(p.role, Role) else str(p.role),
-        "hp": p.hp,
-        "max_hp": p.max_hp,
-        "temp_hp": p.temp_hp,
-        "attributes": p.attributes,
-        "status": p.status.value if isinstance(p.status, PlayerStatus) else str(p.status),
-        "created_at": p.created_at.isoformat(),
-        "last_seen_at": p.last_seen_at.isoformat(),
-    }
+def player_to_out(player, request: Request | None = None) -> PlayerOut:
+    """
+    Konvertiert Domain-Player -> PlayerOut (mit verschachteltem hp und abilities)
+    """
+    backend_url = str(request.base_url).rstrip("/") if request is not None else ""
+
+    abilities_model = None
+    if getattr(player, "abilities", None) is not None:
+        a = player.abilities
+        abilities_model = Abilities(
+            str=int(getattr(a, "str")),
+            dex=int(getattr(a, "dex")),
+            con=int(getattr(a, "con")),
+            int_=int(getattr(a, "int_")),
+            wis=int(getattr(a, "wis")),
+            cha=int(getattr(a, "cha")),
+        )
+
+    hp_model = Hp(
+        current=int(player.hp.current),
+        max=int(player.hp.max),
+        temp=int(player.hp.temp),
+    )
+
+    return PlayerOut(
+        id=player.id,
+        name=player.name,
+        role=player.role.value if hasattr(player.role, "value") else str(player.role),
+        created_at=player.created_at,
+        last_seen_at=player.last_seen_at,
+        backend_url=backend_url,
+        hp=hp_model,
+        status = player.status.value if isinstance(player.status, PlayerStatus) else str(player.status),
+        abilities=abilities_model,
+    )
 
 
-def require_leader(actor_id: UUID | None = Query(None)):
-    if actor_id:
-        try:
-            p = store.group.get_player(actor_id)
-            if p.role == Role.leader and p.status == PlayerStatus.active:
-                return p
-        except Exception:
-            pass
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Leader permissions required")
-
-    lid = store.group.leader_id()
-    if lid:
-        return store.group.get_player(lid)
-
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Leader not found")
-
-# APIs
 
 @router.get("/state", response_model=GroupStateOut)
 async def group_state():
     g = store.group
     return GroupStateOut(group_id=g.id, size=g.size(), max_size=g.max_size())
 
+
 @router.get("", response_model=list[PlayerOut])
-async def list_players(include_inactive: bool = False):
-    players = (store.group.players.values() if include_inactive else store.group.active().values())
-    return [PlayerOut(**p.__dict__) for p in players]
+async def list_players(request: Request):
+    players = await store.list_players()
+    return [player_to_out(p, request) for p in players]
+
 
 @router.get("/join/check", response_model=JoinCheckOut)
 async def join_check(name: str):
@@ -68,37 +83,64 @@ async def join_check(name: str):
     return JoinCheckOut(status="available")
 
 @router.post("", response_model=PlayerOut, status_code=status.HTTP_201_CREATED)
-async def join(payload: PlayerIn):
-    # Re-Join
+async def join(payload: PlayerIn, request: Request):
+    # Re-Join mit reuse_id
     if payload.reuse_id:
-        print("reuse_id wurde übergeben")
         try:
-            p = store.group.reactivate(payload.reuse_id)
+            player = store.group.reactivate(payload.reuse_id)
         except KeyError:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Player to reuse not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Player to reuse not found",
+            )
+
+        # Leader-Kollision prüfen
         if payload.role == Role.leader:
             current_leader_id = store.group.leader_id()
-            if current_leader_id is not None and current_leader_id != p.id:
-                raise HTTPException(409, detail=f"Leader role already taken")
+            if current_leader_id is not None and current_leader_id != player.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Leader role already taken",
+                )
 
-        p.role = payload.role
-        store.group.reactivate(p.id)
-        await bus.publish({ "type": "join", "player": player_out(p) })
-        return PlayerOut(**p.__dict__)
+        # Rolle aktualisieren & erneut aktiv setzen
+        player.role = payload.role
+        store.group.reactivate(player.id)
 
+        out = player_to_out(player, request)
 
-    # neu anlegen (prüft nur aktive auf Kollision)
+        await bus.publish({
+            "type": "join",
+            "player": out.model_dump(),
+        })
+
+        return out
+
+    # Neuer Spieler über das neue store.join-Interface
     try:
-        p = store.group.add_player(payload.name, payload.role)
-        await bus.publish({"type":"join","player": player_out(p)})
-        return PlayerOut(**p.__dict__)
+        # Annahme: store.join akzeptiert (name, payload.role)
+        player = await store.join(payload.name, payload.role)
     except ValueError as e:
-        # Regelverletzung: 400 (oder 409, falls Name/Leader schon vergeben)
         detail = str(e)
-        print(detail)
-        print(detail.__contains__("Group role"))
-        code = status.HTTP_409_CONFLICT if "group size" in detail.lower() or "group role" in detail.lower() or "player name" in detail.lower() else status.HTTP_400_BAD_REQUEST
-        raise HTTPException(code, detail=detail)
+        lowered = detail.lower()
+
+        conflict = (
+            "group size" in lowered
+            or "group role" in lowered
+            or "player name" in lowered
+        )
+        code = status.HTTP_409_CONFLICT if conflict else status.HTTP_400_BAD_REQUEST
+
+        raise HTTPException(status_code=code, detail=detail)
+
+    out = player_to_out(player, request)
+
+    await bus.publish({
+        "type": "join",
+        "player": out.model_dump(),
+    })
+
+    return out
 
 @router.delete("/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def leave(player_id: UUID):
@@ -130,44 +172,120 @@ async def player_exists(player_id: UUID):
 
 
 
+@router.patch("/{player_id}", response_model=PlayerOut)
+async def update_player(
+    player_id: UUID,
+    payload: AbilitiesIn,
+    request: Request,
+    x_player_id: str | None = Header(default=None, alias="X-Player-Id"),
+):
+    # Simple Self-Permission: nur der eigene Spieler darf sich ändern
+    if not x_player_id or x_player_id != str(player_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the player can update their own abilities.",
+        )
+
+    # Änderungen extrahieren (nur gesetzte Felder)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        # Nichts zu tun, gib aktuellen Stand zurück
+        p = await store.get_player(player_id)
+        return player_to_out(p, request)
+
+    try:
+        p = await store.update_player_abilities(player_id, changes)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    out = player_to_out(p, request)
+    # WS-Live-Update an alle (vollständiger Player)
+    await bus.publish({"type": "update", "player": out.model_dump()})
+    return out
+
+
 # Health APIs
 
 @router.patch("/{player_id}/health", response_model=PlayerOut)
-async def patch_health(player_id: UUID, patch: PlayerHealthPatch):
+async def patch_health(player_id: UUID, patch: HpPatch, request: Request):
     p = await store.get_player(player_id)
-    if patch.max_hp is not None or patch.hp is not None or patch.temp_hp is not None:
-        p.set_hp(hp = patch.hp if patch.hp is not None else p.hp,
-                 max_hp = patch.max_hp if patch.max_hp is not None else p.max_hp,
-                 temp_hp = patch.temp_hp if patch.temp_hp is not None else p.temp_hp)
+
+    if patch.current is not None:
+        p.hp.current = int(patch.current)
+    if patch.max is not None:
+        p.hp.max = int(patch.max)
+    if patch.temp is not None:
+        p.hp.temp = int(patch.temp)
+    p.clamp()
     await store.save_player(p)
-    await bus.publish({"type": "health/update", "player_id": str(p.id), "hp": p.hp, "max_hp": p.max_hp, "temp_hp": p.temp_hp})
-    return PlayerOut(**p.__dict__)
+
+    await bus.publish({
+        "type": "health/update",
+        "player_id": str(p.id),
+        "hp": {
+            "current": p.hp.current,
+            "max": p.hp.max,
+            "temp": p.hp.temp,
+        },
+    })
+    return player_to_out(p, request)
+
 
 @router.post("/{player_id}/damage", response_model=PlayerOut)
-async def apply_damage(player_id: UUID, body: PlayerDamageBody):
+async def apply_damage(player_id: UUID, body: PlayerDamageBody, request: Request):
     p = await store.get_player(player_id)
     p.apply_damage(body.damage)
     await store.save_player(p)
-    await bus.publish({"type": "health/update", "player_id": str(p.id), "hp": p.hp, "max_hp": p.max_hp, "temp_hp": p.temp_hp})
-    return PlayerOut(**p.__dict__)
+    await bus.publish({
+        "type": "health/update",
+        "player_id": str(p.id),
+        "hp": {
+            "current": p.hp.current,
+            "max": p.hp.max,
+            "temp": p.hp.temp,
+        },
+    })
+    return player_to_out(p, request)
+
 
 @router.post("/{player_id}/heal", response_model=PlayerOut)
-async def apply_heal(player_id: UUID, body: PlayerHealBody):
+async def apply_heal(player_id: UUID, body: PlayerHealBody, request: Request):
     p = await store.get_player(player_id)
     p.heal(body.heal)
     await store.save_player(p)
-    await bus.publish({"type": "health/update", "player_id": str(p.id), "hp": p.hp, "max_hp": p.max_hp, "temp_hp": p.temp_hp})
-    return PlayerOut(**p.__dict__)
+    await bus.publish({
+        "type": "health/update",
+        "player_id": str(p.id),
+        "hp": {
+            "current": p.hp.current,
+            "max": p.hp.max,
+            "temp": p.hp.temp,
+        },
+    })
+    return player_to_out(p, request)
 
+@router.post("/{player_id}/health/max", response_model=PlayerOut)
+async def update_max_hp(player_id: UUID, body: MaxHpUpdate, request: Request):
+    try:
+        p = await store.update_player_max_hp(player_id, body.max)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Player not found")
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
 
-# Attributes APIs
+    # Notify all listeners so UIs stay in sync
+    await bus.publish({
+        "type": "health/update",
+        "player_id": str(p.id),
+        "hp": {
+            "current": p.hp.current,
+            "max": p.hp.max,
+            "temp": p.hp.temp,
+        },
+    })
 
-@router.patch("/{player_id}/attributes", response_model=PlayerOut)
-async def patch_attributes(player_id: UUID, patch: PlayerHealthPatch):
-    p = await store.get_player(player_id)
-    # normalize keys to lower-case dnd style
-    p.attributes = {k.lower(): int(v) for k, v in patch.attributes.items()}
-    await store.save_player(p)
-    await bus.publish({"type": "attributes/update", "player_id": str(p.id), "attributes": patch.attributes})
-    return PlayerOut(**p.__dict__)
+    return player_to_out(p, request)
 

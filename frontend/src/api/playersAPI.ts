@@ -1,50 +1,179 @@
 import { SERVER_CONFIG } from '@/config/config'
 
-export type Role = "leader" | "member";
+export type Role = 'leader' | 'member'
 export type PlayerStatus = "active" | "inactive" | "kicked";
-export type PlayerOut = {
-  id: string;
-  name: string;
-  role: Role;
-  status: PlayerStatus,
-  hp: number;
-  max_hp: number;
-  temp_hp: number;
-  attributes?: Record<string, number> | null;
-  created_at: string;
-  last_seen_at: string;
-  backend_url: string;
+
+export type AbilityScores = {
+  str?: number
+  dex?: number
+  con?: number
+  int_?: number
+  wis?: number
+  cha?: number
+} & Record<string, number | string | undefined>
+
+export type Hp = {
+  current: number
+  max: number
+  temp: number
 }
 
-export async function join(name: string, role: Role, reuse_id?: string): Promise<PlayerOut> {
-  const url = new URL("/players", SERVER_CONFIG.BASE_URL).toString();
-  const body: any = { name, role };
-  if (reuse_id) body.reuse_id = reuse_id; console.debug(`api/players.ts: reuse_id=${reuse_id} angegeben`);
+/** Server + client mirror */
+export type PlayerOut = {
+  id: string
+  name: string
+  role: Role
+  created_at: string
+  last_seen_at: string
+  backend_url: string
+  status: PlayerStatus
+  hp: Hp
+  abilities?: AbilityScores | { [k: string]: any } | undefined
+}
+
+export type AbilityKey = 'str' | 'dex' | 'con' | 'int_' | 'wis' | 'cha'
+
+function base(baseUrl?: string): string {
+  return baseUrl ?? SERVER_CONFIG.BASE_URL
+}
+
+/**
+ * Join the group as leader or member.
+ * Optional baseUrl keeps compatibility with dynamic backend selection.
+ */
+export async function join(name: string, role: Role, baseUrl?: string): Promise<PlayerOut> {
+  const url = new URL('/players', base(baseUrl)).toString()
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, role }),
+  })
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+
+  return (await res.json()) as PlayerOut
+}
+
+/**
+ * Leave the group.
+ */
+export async function leave(playerId: string, baseUrl?: string): Promise<void> {
+  const url = new URL(`/players/${playerId}`, base(baseUrl)).toString()
+  const res = await fetch(url, { method: 'DELETE' })
+
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+}
+
+/**
+ * List all players.
+ */
+export async function listPlayers(baseUrl?: string): Promise<PlayerOut[]> {
+  const url = new URL('/players', base(baseUrl)).toString()
+  const res = await fetch(url)
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+
+  return (await res.json()) as PlayerOut[]
+}
+
+/**
+ * Update a player's max HP.
+ * Returns the updated player.
+ */
+export async function updateMaxHp(
+  playerId: string,
+  newMax: number,
+  baseUrl?: string,
+): Promise<PlayerOut> {
+  const url = new URL(`/players/${playerId}/health/max`, base(baseUrl)).toString()
 
   const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max: newMax }),
+  })
+
   if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new Error(msg ||`HTTP ${res.status}`);
+    throw new Error(`Failed to update max HP: HTTP ${res.status}`)
   }
-  return res.json();
+
+  return (await res.json()) as PlayerOut
 }
 
-export async function listPlayers(includeInactive: boolean = false): Promise<PlayerOut[]> {
-  const url = new URL("/players", SERVER_CONFIG.BASE_URL);
-  url.searchParams.set("include_inactive", String(includeInactive));
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+/**
+ * Apply damage to a player.
+ */
+export async function damagePlayer(
+  playerId: string,
+  amount: number,
+  baseUrl?: string,
+): Promise<void> {
+  const url = new URL(`/players/${playerId}/damage`, base(baseUrl)).toString()
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ damage: amount }),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Failed to apply damage: HTTP ${res.status}`)
+  }
 }
 
-export async function leave(playerId: string): Promise<void> {
-  const url = new URL(`/players/${playerId}`, SERVER_CONFIG.BASE_URL).toString();
-  const res = await fetch(url, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) throw new Error('HTTP ${res.status}');
+/**
+ * Heal a player.
+ */
+export async function healPlayer(
+  playerId: string,
+  amount: number,
+  baseUrl?: string,
+): Promise<void> {
+  const url = new URL(`/players/${playerId}/heal`, base(baseUrl)).toString()
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ heal: amount }),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Failed to heal: HTTP ${res.status}`)
+  }
+}
+
+/**
+ * Patch a single ability score.
+ * Uses X-Player-Id as in your backend for self-authorization.
+ */
+export async function patchPlayerAbility(
+  playerId: string,
+  key: AbilityKey,
+  value: number,
+  baseUrl?: string,
+): Promise<void> {
+  const url = new URL(`/players/${playerId}`, base(baseUrl)).toString()
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Player-Id': playerId,
+    },
+    body: JSON.stringify({ [key]: value }),
+  })
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(msg || `Ability PATCH failed: HTTP ${res.status}`)
+  }
 }
 
 export async function checkPlayerExists(playerId: string): Promise<{ exists: boolean }> {

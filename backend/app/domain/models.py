@@ -9,8 +9,36 @@ import secrets
 import string
 from app.base_models.schemas import Role, PlayerStatus
 
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def make_join_code(length: int = 6) -> str:
+    """
+    Kurzer, menschenlesbarer Code (z.B. 'AB3FQ7') für den Gruppeneinstieg.
+    """
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@dataclass
+class Abilities:
+    # stabile numerische Defaults, damit das Frontend keine "—" zeigt
+    str: int = 10
+    dex: int = 10
+    con: int = 10
+    int_: int = 10
+    wis: int = 10
+    cha: int = 10
+
+
+@dataclass
+class Hp:
+    current: int = 10
+    max: int = 10
+    temp: int = 0
+
 
 @dataclass
 class Player:
@@ -18,12 +46,42 @@ class Player:
     name: str
     role: Role
     status: PlayerStatus = PlayerStatus.active
-    max_hp: int = 10
-    hp: int = 10
-    temp_hp: int = 0
-    attributes: Optional[Dict[str, int]] = None  # {"str": 10, ...}
+    hp: Hp = field(default_factory=Hp)  # nested HP object to mirror frontend
     created_at: datetime = field(default_factory=now_utc)
     last_seen_at: datetime = field(default_factory=now_utc)
+    abilities: Abilities = field(default_factory=Abilities)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "role": self.role.value,
+            "status": self.status.value,
+            "max_hp": self.max_hp,
+            "hp": self.hp,
+            "temp_hp": self.temp_hp,
+            "attributes": self.attributes,
+            "created_at": self.created_at.isoformat(),
+            "last_seen_at": self.last_seen_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Player":
+        role = Role(data["role"])
+        return cls(
+            id=UUID(data["id"]),
+            name=data["name"],
+            role=role,
+            status=PlayerStatus.active if role == Role.leader else PlayerStatus.inactive,
+            max_hp=data.get("max_hp", 10),
+            hp=data.get("hp", 10),
+            temp_hp=data.get("temp_hp", 0),
+            attributes=data.get("attributes"),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            last_seen_at=datetime.fromisoformat(data["last_seen_at"])
+            if "last_seen_at" in data
+            else now_utc(),
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -62,30 +120,51 @@ class Player:
 
     # Health helpers
     def clamp(self) -> None:
-        if self.max_hp < 1: self.max_hp = 1
-        if self.hp > self.max_hp: self.hp = self.max_hp
-        if self.hp < 0: self.hp = 0
-        if self.temp_hp < 0: self.temp_hp = 0
+        if self.hp.max < 1:
+            self.hp.max = 1
+        if self.hp.current > self.hp.max:
+            self.hp.current = self.hp.max
+        if self.hp.current < 0:
+            self.hp.current = 0
+        if self.hp.temp < 0:
+            self.hp.temp = 0
 
     def set_hp(self, hp: int, max_hp: Optional[int] = None, temp_hp: Optional[int] = None) -> None:
-        if max_hp is not None: self.max_hp = int(max_hp)
-        if temp_hp is not None: self.temp_hp = int(temp_hp)
-        self.hp = int(hp)
+        # Keep parameter names for backwards-compat at call sites
+        if max_hp is not None:
+            self.hp.max = int(max_hp)
+        if temp_hp is not None:
+            self.hp.temp = int(temp_hp)
+        self.hp.current = int(hp)
         self.clamp()
 
     def heal(self, amount: int) -> int:
-        before = self.hp
-        self.hp = min(self.max_hp, self.hp + max(0, int(amount)))
-        return self.hp - before
+        before = self.hp.current
+        self.hp.current = min(self.hp.max, self.hp.current + max(0, int(amount)))
+        return self.hp.current - before
 
     def apply_damage(self, dmg: int) -> Dict[str, int]:
         dmg = max(0, int(dmg))
-        from_temp = min(self.temp_hp, dmg)
-        self.temp_hp -= from_temp
+        from_temp = min(self.hp.temp, dmg)
+        self.hp.temp -= from_temp
         remaining = dmg - from_temp
-        before = self.hp
-        self.hp = max(0, self.hp - remaining)
-        return {"temp_absorbed": from_temp, "hp_loss": before - self.hp}
+        before = self.hp.current
+        self.hp.current = max(0, self.hp.current - remaining)
+        return {"temp_absorbed": from_temp, "hp_loss": before - self.hp.current}
+
+    def set_max_hp(self, max_hp: int) -> None:
+        """
+        Set max HP and keep all HP values in a valid range.
+        - max_hp must be >= 1
+        - current is clamped down if above new max
+        """
+        max_hp_int = int(max_hp)
+        if max_hp_int < 1:
+            raise ValueError("max_hp must be at least 1")
+
+        self.hp.max = max_hp_int
+        self.clamp()
+
 
 
 @dataclass

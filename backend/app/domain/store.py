@@ -1,5 +1,6 @@
 import asyncio
 from uuid import UUID
+from typing import Mapping, Optional
 from app.domain.models import Group, Player, Role, PlayerStatus
 
 
@@ -7,6 +8,7 @@ class SingleGroupStore:
     """
     Thread-/Task-sicherer Zugriff auf die Gruppe
     """
+
     def __init__(self) -> None:
         self.group = Group()
         self._lock = asyncio.Lock()
@@ -20,14 +22,46 @@ class SingleGroupStore:
             self.group.deactivate(player_id, status=PlayerStatus.inactive)
 
     async def list_players(self) -> list[Player]:
-        return list(self.group.players.values())  # bewusst kein lock auf die list, da vermutlich nicht so viele Anfragen
+        # bewusst kein lock auf die list, da vermutlich nicht so viele Anfragen
+        return list(self.group.players.values())
 
     async def get_player(self, player_id: UUID) -> Player:
         async with self._lock:
             return self.group.get_player(player_id)
 
+    # Abilities Update für einen Spieler
+    async def update_player_abilities(
+        self,
+        player_id: UUID,
+        changes: Mapping[str, Optional[int]],
+    ) -> Player:
+        """
+        Aktualisiert die übergebenen Ability-Felder (str/dex/con/int_/wis/cha).
+        'changes' enthält nur die Keys, die geändert werden sollen.
+        """
+        async with self._lock:
+            p = self.group.get_player(player_id)  # KeyError falls unbekannt
+            for k, v in changes.items():
+                if v is None:
+                    continue
+                # nur bekannte Ability-Felder setzen
+                if hasattr(p.abilities, k):
+                    setattr(p.abilities, k, int(v))
+            p.touch()
+            return p
+
     async def save_player(self, player: Player) -> None:
         async with self._lock:
             self.group.players[player.id] = player
+
+    async def update_player_max_hp(self, pid: UUID, max_hp: int) -> Player:
+        async with self._lock:
+            p = self.group.get_player(pid)
+            p.set_max_hp(max_hp)
+            p.touch()
+            self.group.players[p.id] = p
+            return p
+
+
 
 store = SingleGroupStore()
