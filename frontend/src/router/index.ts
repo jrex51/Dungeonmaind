@@ -44,27 +44,27 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to, from) => {
-  const sessionStore = useSessionStore();
-  const isAuthenticated = !!sessionStore.currentPlayer;
+router.beforeEach(async (to) => {
+  const store = useSessionStore();
 
   if (to.meta.requiresAuth) {
-    if (!isAuthenticated) {
-      return { name: "login" };
-    }
+    if (!store.currentPlayer) return { name: "login" };
 
     try {
-      const res = await checkPlayerExists(sessionStore.currentPlayer!.id);
+      const res = await checkPlayerExists(store.currentPlayer.id);
       if (!res.exists) {
-        sessionStore.clearSession();
+        store.clearSession();
         return { name: "login" };
       }
     } catch (err) {
-      // Treat API error as session invalidation
-      console.error("Error validating player session:", err);
-      sessionStore.clearSession();
+      console.error("Fehler beim Prüfen des Players:", err);
+      store.clearSession();
       return { name: "login" };
     }
+  }
+
+  if (to.meta.requiresAuth && !store.currentPlayer) {
+    return { name: "login" };
   }
 
   if (to.name === "login" && isAuthenticated) {

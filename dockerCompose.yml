@@ -10,6 +10,7 @@ services:
       - backend
     environment:
       - VITE_BACKEND_URL=http://backend:8000
+      - VITE_DOCKER_MODE=true
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -26,10 +27,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - OLLAMA_URL=http://ollama:11434
-      - CHROMA_DB_PATH=/app/data/chroma_db
+      #- CHROMA_DB_PATH=/app/data/chroma_db
     volumes:
       - ./backend:/app
-      - ./backend/data/chroma_db:/app/data/chroma_db
+      #- ./backend/data/chroma_db:/app/data/chroma_db
     command: >
       uvicorn app.main:app
       --host 0.0.0.0

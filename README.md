@@ -86,4 +86,9 @@ Use the web interface to ask questions like:
 ```
 The LLM will answer based on the stored transcriptions.
 
+Docker
+
+docker compose -f dockerCompose.yml up -d
+docker compose -f dockerCompose.yml down
+
 
