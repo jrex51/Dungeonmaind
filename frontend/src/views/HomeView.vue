@@ -1,40 +1,43 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onWatcherCleanup } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
+import { marked } from 'marked'
+import { useRecorderStore } from '@/stores/recorder.ts'
 
 const router = useRouter()
 const store = useSessionStore()
+const recorder = useRecorderStore()
+
 const userInput = ref<string>('')
 const modelOutput = ref<string>('')
+let modelOutputRendered = ref<string>('')
 const isLoading = ref<boolean>(false)
 const askRulebook = ref<boolean>(false)
-let socket: WebSocket;
+
+let socket: WebSocket
 
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
 
-const micPermissionStatus = ref('')
-const isRecording = ref(false)
-const audioStream = ref<MediaStream | null> (null)
-const mediaRecorder = ref<MediaRecorder | null >(null)
-const audioChunks = ref<Blob[]>([])
-const recordedAudioURL = ref<string | null>(null)
-const currentAudio = ref<HTMLAudioElement | null>(null)
-
-const audioRecorderInterval: Ref<number | null> = ref(null);
-const isFinalStop = ref(false)
-
 const diceResult = ref<string>('')
 
-function goToConfig() {
-  router.push('/config')
-}
+// Rulebook markdown
+let renderedMarkdown = ref<string>('')
+const backendMarkdown = ref<string[]>([])
+const currentMarkdownIndex = ref(0)
 
-// socket = new WebSocket(wsUrl(SERVER_CONFIG.BASE_URL, SERVER_CONFIG.ENDPOINTS.WS_PLAYERS));
-// socket.onmessage = (ev) => console.log("WS", ev.data);
+function goToConfig() { router.push('/config') }
+function goToPlayers() { router.push('/players') }
+function goToRulebook() { router.push('/rulebook') }
+
+function wsUrl(baseHttpUrl: string, path: string): string {
+const u = new URL(baseHttpUrl)
+u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+u.pathname = path.startsWith('/') ? path : `/${path}`
+return u.toString()
+}
 
 onMounted(() => {
   socket = new WebSocket(wsUrl(
@@ -42,294 +45,149 @@ onMounted(() => {
     SERVER_CONFIG.ENDPOINTS.WS_PLAYERS
   ));
 
-  socket.onopen = () => {
-    store.loadPlayers();        // ← holt die IST-Spielerliste
-  };
+socket.onopen = () => {
+store.loadPlayers()
+}
 
-  socket.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === "join") {
-      // Duplizate vermeiden:
-      if (!store.players.some(p => p.id === msg.player.id)) {
-        store.players.push(msg.player);
-      }
-    } else if (msg.type === "leave") {
-      store.players = store.players.filter(
-        p => p.id !== msg.player_id
-      );
-    }
-  };
-});
-
-onUnmounted(() => { socket?.close()
-  
-  //Cleanly end recorder/mic on unmount
-  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
-    isFinalStop.value = true
-    try { mediaRecorder.value.requestData(); } catch {}
-    mediaRecorder.value.stop();
-  }
-
-  if (recordedAudioURL.value) {
-        URL.revokeObjectURL(recordedAudioURL.value);
-        recordedAudioURL.value = null;
-    }
-
-  if (audioRecorderInterval.value) {
-    clearInterval(audioRecorderInterval.value!)
-    audioRecorderInterval.value = null
-  }
+socket.onmessage = (ev) => {
+const msg = JSON.parse(ev.data)
+if (msg.type === 'join') {
+if (!store.players.some(p => p.id === msg.player.id)) {
+store.players.push(msg.player)
+}
+} else if (msg.type === 'leave') {
+store.players = store.players.filter(p => p.id !== msg.player_id)
+}
+}
 })
 
-function wsUrl(baseHttpUrl: string, path: string): string {
-  const u = new URL(baseHttpUrl);                 // http://192.168.1.5:8000
-  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";  // → ws://…
-  u.pathname = path.startsWith("/") ? path : `/${path}`;  // /ws/players
-  return u.toString();                            // ws://192.168.1.5:8000/ws/players
+onUnmounted(() => {
+socket?.close()
+})
+
+async function handleQuestionSubmit() {
+if (isLoading.value) return
+isLoading.value = true
+modelOutput.value = ''
+
+if (askRulebook.value) {
+try {
+const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ input_string: userInput.value }),
+})
+if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+
+const markdownJson = await response.json()
+backendMarkdown.value = markdownJson.markdown_texts || []
+if (backendMarkdown.value.length > 0) {
+currentMarkdownIndex.value = 0
+renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string
+}
+} catch (error) {
+console.error('Error calling Rulebook Search endpoint:', error)
+} finally {
+isLoading.value = false
+}
+} else {
+try {
+const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+player_id: store.currentPlayer?.id,
+input_string: userInput.value,
+use_rulebook: askRulebook.value
+}),
+})
+if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`)
+
+backendMarkdown.value = []
+renderedMarkdown.value = ''
+
+const reader = response.body.getReader()
+const decoder = new TextDecoder('utf-8')
+while (true) {
+const { done, value } = await reader.read()
+if (done) break
+const chunk = decoder.decode(value, { stream: true })
+modelOutput.value += chunk
+modelOutputRendered.value = marked.parse(modelOutput.value) as string
+}
+} catch (error) {
+console.error('Error calling LLM endpoint:', error)
+modelOutput.value = 'Error calling model, error: ' + error
+} finally {
+isLoading.value = false
+}
+}
+}
+
+function showNextMarkdown() {
+if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
+currentMarkdownIndex.value++
+renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
+}
+}
+
+function showPrevMarkdown() {
+if (currentMarkdownIndex.value > 0) {
+currentMarkdownIndex.value--
+renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
+}
+}
+
+async function handleAudioUpload() {
+if (!selectedAudioFile.value) {
+audioUploadStatus.value = 'Please choose an audio file.'
+return
+}
+
+const formData = new FormData()
+formData.append('audio', selectedAudioFile.value)
+
+try {
+const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
+method: 'POST',
+body: formData,
+})
+if (!response.ok) throw new Error(`Upload failed with status ${response.status}`)
+const result = await response.json()
+audioUploadStatus.value = `Upload successful: ${result.message || 'Audio file received'}`
+} catch (error) {
+console.error('An error occurred while uploading your audio file:', error)
+audioUploadStatus.value = 'Upload error'
+}
+}
+
+function onAudioFileChange(event: Event) {
+const target = event.target as HTMLInputElement
+selectedAudioFile.value = (target?.files && target.files.length > 0) ? target.files[0] : null
 }
 
 
 async function onLeave() {
+  recorder.stopRecording() //stop recording when leaving session
   await store.leave();
   router.push({ name: "login" });
 }
 
-async function handleLLMQuestionSubmit() {
-  if (isLoading.value) return // prevent spamming the button
-  isLoading.value = true
-  modelOutput.value = ''
-
-  try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        player_id: store.currentPlayer?.id,
-        input_string: userInput.value,
-        use_rulebook: askRulebook.value
-      }),
-    })
-    if (!response.ok || !response.body) {
-      throw new Error(`Request failed with status ${response.status}`)
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    while (true) {
-      const {done, value} = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, {stream: true})
-      modelOutput.value += chunk
-    }
-  } catch (error) {
-    console.error('Error calling LLM endpoint:', error)
-    modelOutput.value = 'Error calling model, error: ' + error
-  } finally {
-    isLoading.value = false //  unlock after done
-  }
-}
-
-async function handleAudioUpload() {
-  if (!selectedAudioFile.value) {
-    audioUploadStatus.value = 'Please choose an audio file.'
-    return
-  }
-
-  const formData = new FormData()
-  formData.append('audio', selectedAudioFile.value)
-
-  try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
-      method: 'POST',
-      body: formData,
-    })
-    if (!response.ok) {
-      throw new Error(`Upload failed with status ${response.status}`)
-    }
-    const result = await response.json()
-    audioUploadStatus.value = `Upload successfull: ${result.message || 'Audio file received'}`
-  } catch (error) {
-    console.error('An error occured while uploading your audio file:', error)
-    audioUploadStatus.value = 'Upload error'
-  }
-}
-
-function onAudioFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  if (target?.files && target.files.length > 0) {
-    selectedAudioFile.value = target.files[0]
-  } else {
-    selectedAudioFile.value = null
-  }
-}
-
 async function startRecording() {
-  try {
-    isFinalStop.value = false
-
-    if(recordedAudioURL.value){
-      URL.revokeObjectURL(recordedAudioURL.value)
-      recordedAudioURL.value = null
-    }
-    audioChunks.value = []
-    
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micPermissionStatus.value = 'Microphone access granted.';
-    audioStream.value = stream;
-
-    const supportedMimeTypes = [
-      'audio/ogg;codecs=opus',
-      'audio/webm;codecs=opus',
-      'audio/webm'
-    ];
-    let mimeType: string | undefined = undefined;
-    for (const type of supportedMimeTypes) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        mimeType = type;
-        break;
-      }
-    }
-    if (!mimeType) {
-      console.error('No supported audio type found.');
-      micPermissionStatus.value = 'No supported audio format.';
-      stream.getTracks().forEach(track => track.stop());
-      return;
-    }
-
-    mediaRecorder.value = new MediaRecorder(stream, { mimeType });
-
-    mediaRecorder.value.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        audioChunks.value.push(e.data);
-      }
-    };
-    
-    mediaRecorder.value.onstop = () => {
-      if (audioChunks.value.length > 0) {
-        const audioBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType });
-        sendAudioChunk(audioBlob);
-      }
-
-      if (isFinalStop.value) {
-        isRecording.value = false;
-
-        if (audioStream.value) {
-          audioStream.value.getTracks().forEach(track => track.stop());
-          const finalBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType })
-          recordedAudioURL.value = URL.createObjectURL(finalBlob)
-          audioChunks.value = []; 
-        }
-      } else {
-        audioChunks.value = [];
-        mediaRecorder.value?.start();
-      }
-    };
-    mediaRecorder.value.start();
-    isRecording.value = true;
-
-    setTimeout(() => {
-        if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-            mediaRecorder.value.requestData();
-        }
-    }, 250);
-
-    const spliceTime = 5 * 60 * 1000; 
-    audioRecorderInterval.value = setInterval(rotateRecording, spliceTime); 
-
-  } catch (error) {
-    console.error('Microphone access denied:', error);
-    micPermissionStatus.value = 'Microphone access required';
-  }
+  await recorder.startRecording()
 }
 
-function rotateRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-  
-    mediaRecorder.value.requestData();
-    mediaRecorder.value.stop();
-  }
+function stopRecording() { 
+  recorder.stopRecording() 
 }
 
-function stopRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
-    isFinalStop.value = true
-    if (audioRecorderInterval.value) {
-      clearInterval(audioRecorderInterval.value);
-      audioRecorderInterval.value  = null
-    }
-    mediaRecorder.value.requestData();
-    mediaRecorder.value.stop();
-  }
+function playRecording() { 
+  recorder.playRecording() 
 }
-
-async function sendAudioChunk(chunk: Blob) {
-  const formData = new FormData()
-  const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg';
-  formData.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`);
-  
-  try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
-      method: 'POST',
-      body: formData
-    })
-    
-    if (!response.ok) {
-      console.error('Chunk upload failed with status:', response.status)
-      return
-    }
-    
-    const result = await response.json()
-    console.log('Chunk transcribed successfully:', result)
-    
-  } catch (error) {
-    console.error('Error sending audio chunk:', error)
-  }
-}
-
-function playRecording(){
-  if(!recordedAudioURL.value) return
-
-  if(!currentAudio.value) {
-    currentAudio.value = new Audio(recordedAudioURL.value)
-  }
-
-  currentAudio.value.pause()
-  currentAudio.value.currentTime = 0
-  currentAudio.value.play()
-
-}
-
-/*async function transcribeRecording() {
-  if (!audioChunks.value.length){
-    audioUploadStatus.value = 'No audio to transcribe !'
-    return
-  }
-
-  const audioBlob = new Blob(audioChunks.value,{type: 'audio/wav'})
-  const formData = new FormData()
-  formData.append('audio', audioBlob, 'recording.wav')
-
-  try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,{
-      method: 'POST',
-      body: formData
-    })
-
-    if (!response.ok){
-      throw new Error(`Transcription failed with status ${response.status}`)
-    }
-
-    const result = await response.json()
-    audioUploadStatus.value = `Transcription: ${result.message || 'Success'}`
-  } catch (error) {
-    console.error('Transcription error:', error)
-    audioUploadStatus.value = 'Transcription failed.'
-  }
-}*/
 
 function rollDice(sides: number) {
-  const result = Math.floor(Math.random() * sides) + 1
-  diceResult.value = `W${sides} → ${result}`
+const result = Math.floor(Math.random() * sides) + 1
+diceResult.value = `W${sides} → ${result}`
 }
 
 </script>
@@ -340,7 +198,11 @@ function rollDice(sides: number) {
      <div class="header">
        <div class="header-left"></div>
        <h1>Dungeonmaind</h1>
-       <button class="config-button" @click="goToConfig">Config</button>
+       <div class="header-right">
+         <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
+         <button class="players-button" @click="goToPlayers">Players</button>
+         <button class="config-button" @click="goToConfig">Config</button>
+       </div>
     </div>
 
     <div class="centered-content">
@@ -365,44 +227,57 @@ function rollDice(sides: number) {
           type="text"
           placeholder="Type something..."
           class="input-field"
-          @keyup.enter="handleLLMQuestionSubmit"
+          @keyup.enter="handleQuestionSubmit"
         />
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" v-model="askRulebook" />
-            Ask rulebook
+            show matching rulebook pages
         </label>
-        <button @click="handleLLMQuestionSubmit" class="submit-button" :disabled="isLoading">
+        <button @click="handleQuestionSubmit" class="submit-button" :disabled="isLoading">
           {{ isLoading ? 'Loading...' : 'Submit' }}
         </button>
-        <div v-if="modelOutput" class="output">
+        <div v-if="modelOutput" class="markdown-output">
           <h3>Model Output:</h3>
-          <p>{{ modelOutput }}</p>
+          <div v-html="modelOutputRendered"></div>
+        </div>
+        <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
+          <h3>Relevant SRD article</h3>
+          <div class="markdown-navigation">
+            <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">Previous</button>
+            <span>{{ currentMarkdownIndex + 1 }} / {{ backendMarkdown.length }}</span>
+            <button @click="showNextMarkdown" :disabled="currentMarkdownIndex === backendMarkdown.length - 1">Next</button>
+          </div>
+          <div v-html="renderedMarkdown"></div>
         </div>
       </div>
 
       <hr style="margin: 2rem 0" />
-      <!-- Nur Leader sieht das -->
-      <div v-if="store.isLeader" class="content-section">
+            <div v-if="store.isLeader" class="content-section">
         <h2> Record Using Microphone</h2>
-        <button @click="startRecording" v-if="!isRecording" class="submit-button"> Start Recording </button>
-        <button @click="stopRecording" v-if="isRecording" class="submit-button"> Stop Recording </button>
-
-        <div v-if="isRecording" class="output">
-          <p> Recording in progress </p>
+        
+        <div class="recording-controls">
+          <button @click="startRecording" v-if="!recorder.isRecording" class="submit-button"> Start Recording </button>
+          <button @click="stopRecording" v-if="recorder.isRecording" class="submit-button"> Stop Recording  </button> 
         </div>
 
-        <div v-if="micPermissionStatus" class="output">
-          <p>{{ micPermissionStatus }} </p>
+        <div v-if="recorder.micPermissionStatus" class="output">
+          <p>{{ recorder.micPermissionStatus }}</p>
         </div>
 
-        <div v-if="recordedAudioURL" class="output">
-          <p>Recording completed </p>
+        <div v-if="recorder.isRecording" class="recording-timer output">
+          <p> Recording: {{ recorder.formattedRecordingTime }}</p>
         </div>
-
-        <div v-if="recordedAudioURL" class="play-button">
-          <button @click="playRecording" class="submit-button"> Play Recording </button>
+        
+        
+        <div v-if="recorder.recordedAudioURL" class="output">
+          <p>Recording completed. Duration: {{ recorder.formattedRecordingTime }}</p>
+        </div>
+        
+        <div v-if="recorder.recordedAudioURL" class="play-button">
+          <button @click="playRecording" class="submit-button">Play Recording</button>
         </div>
       </div>
+
 
     <hr style="margin: 2rem 0" />
 
@@ -414,9 +289,7 @@ function rollDice(sides: number) {
         <div v-if="audioUploadStatus" class="output">
           <p>{{ audioUploadStatus }}</p>
         </div>
-      </div> <!-- Close content-section before dice-widget -->
-
-      <div class="dice-widget">
+      </div>       <div class="dice-widget">
         <div class="dice-buttons">
           <button @click="rollDice(4)" class="dice-button">W4</button>
           <button @click="rollDice(6)" class="dice-button">W6</button>
@@ -428,12 +301,9 @@ function rollDice(sides: number) {
           {{ diceResult }}
         </div>
       </div>
-    </div> <!-- Close centered-content -->
-  </div> <!-- Close container -->
-</template>
+    </div>   </div> </template>
 
 
-<!-- This block essential for full-page background -->
 <style>
 html,
 body {
@@ -472,11 +342,16 @@ body {
   background-color: rgba(160, 122, 57, 0.95);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   padding: 0 1rem;
   box-sizing: border-box;
   color: #e0d5b7;
   z-index: 1000;
+}
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .centered-content {
@@ -490,9 +365,10 @@ body {
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
 }
 
+
+.rulebook-button,
+.players-button,
 .config-button {
-  position: absolute;
-  right: 1rem;
   padding: 0.5rem 1rem;
   background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
@@ -501,14 +377,14 @@ body {
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
   font-weight: normal;
-  z-index: 1001;
   transition: background-color 0.3s ease;
 }
 
+.rulebook-button:hover,
+.players-button:hover,
 .config-button:hover {
   background-color: #4a575e;
 }
-
 .content-section {
   display: flex;
   flex-direction: column;
@@ -601,8 +477,7 @@ hr {
   border-radius: 10px;
   border: 1px solid #000000;
   font-family: 'MedievalSharp', cursive;
-  font-weight: bold;
-  font-weight: 400;
+  font-size: 1.1em;
   box-sizing: border-box;
 }
 
@@ -616,12 +491,31 @@ hr {
   color: #f1e6b4;
 }
 
+.recording-timer {
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: rgba(183, 77, 48, 0.6);
+  color: white;
+  border-radius: 10px;
+  border: 1px solid #000000;
+  font-family: 'MedievalSharp', cursive;
+  font-size: 1.1em;
+  box-sizing: border-box;
+}
+
+.recording-controls {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
 .dice-widget {
   position: fixed;
   right: 25%;
   top: 43%;
   transform: translateX(20%);
-  background-color: rgba(163, 148, 95, 0.9);
+  background-color: rgba(163, 148, 95, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   padding: 1.5rem;
@@ -642,12 +536,13 @@ hr {
 .dice-button {
   flex: 1 0 30%;
   padding: 0.75rem;
-  font-size: 1rem;
+  font-size: 1.15rem;
   background-color: #b74d30;
   color: white;
-  border: none;
+  border: 1px solid #8e7513;
   border-radius: 6px;
   cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
 }
 
 .dice-button:hover {
@@ -658,5 +553,106 @@ hr {
   margin-top: 1rem;
   text-align: center;
   font-weight: bold;
+}
+
+
+:deep(.markdown-output) {
+  font-family: 'MedievalSharp', cursive;
+  color: #392401;
+  line-height: 1.5;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h1) {
+  font-size: 2rem;
+  color: #1a3b1a;
+  border-bottom: 2px solid #392401;
+  padding-bottom: 0.3rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h2) {
+  font-size: 1.5rem;
+  color: #2a4b2a;
+  border-bottom: 1px solid #392401;
+  padding-bottom: 0.2rem;
+  margin-top: 1rem;
+}
+
+:deep(.markdown-output h3),
+:deep(.markdown-output h4),
+:deep(.markdown-output h5),
+:deep(.markdown-output h6) {
+  color: #3a5b3a;
+  margin-top: 0.8rem;
+  font-weight: bold;
+}
+
+:deep(.markdown-output strong) {
+  color: #8b0000; /* dark red for emphasis */
+  font-weight: bold;
+}
+
+:deep(.markdown-output em) {
+  color: #003366; /* dark blue */
+  font-style: italic;
+}
+
+:deep(.markdown-output strong em),
+:deep(.markdown-output em strong) {
+  color: #800080; /* purple */
+  font-weight: bold;
+  font-style: italic;
+}
+
+:deep(.markdown-output table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+:deep(.markdown-output th),
+:deep(.markdown-output td) {
+  border: 1px solid #392401;
+  padding: 0.3rem 0.5rem;
+  text-align: center;
+}
+
+:deep(.markdown-output th) {
+  background-color: #f5e6b4;
+  font-weight: bold;
+}
+
+:deep(.markdown-output tr:nth-child(even)) {
+  background-color: #faf0d4;
+}
+
+:deep(.markdown-output p) {
+  margin: 0.4rem 0;
+}
+
+:deep(.markdown-output h6) {
+  font-style: italic;
+  color: #4b2e2e;
+  margin-top: 0.5rem;
+}
+
+:deep(.scrollable-panel) {
+  max-height: 400px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: rgba(110, 97, 50, 0.7);
+  box-sizing: border-box;
+}
+
+:deep(.markdown-navigation) {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
 }
 </style>
