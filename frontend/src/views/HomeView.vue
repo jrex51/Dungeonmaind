@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, type Ref, render, computed, onMounted, onUnmounted } from 'vue'
-import {type PlayerOut, updateMaxHp, damagePlayer, healPlayer, patchPlayerAbility, kickPlayer} from '../api/playersAPI.ts'
+import { ref, type Ref, computed, onMounted, onUnmounted } from 'vue'
+import { type PlayerOut, updateMaxHp, damagePlayer, healPlayer, patchPlayerAbility, kickPlayer } from '../api/playersAPI.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from 'marked'
+import { useRecorderStore } from '@/stores/recorder.ts'
 
 const router = useRouter()
 const store = useSessionStore()
+const recorder = useRecorderStore()
 
 /** UI state */
 const userInput = ref<string>('')
@@ -25,43 +27,31 @@ const sessionName = ref("")
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
 
-/** Audio (recording) */
-const micPermissionStatus = ref('')
-const isRecording = ref(false)
-const audioStream = ref<MediaStream | null>(null)
-const mediaRecorder = ref<MediaRecorder | null>(null)
-const audioChunks = ref<Blob[]>([])
-const recordedAudioURL = ref<string | null>(null)
-const currentAudio = ref<HTMLAudioElement | null>(null)
-
-const audioRecorderInterval: Ref<number | null> = ref(null);
-const isFinalStop = ref(false)
-
 /** Dice */
 const diceResult = ref<string>('')
 
 /** Ability PATCH*/
 const abilityBusy = ref<Record<string, boolean>>({})
 
-function apiBase(): string {
-  return store.backendUrl ?? SERVER_CONFIG.BASE_URL
-}
-
-/** Navigation */
+// Rulebook markdown
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
 const renderedMarkdown = ref('')
 
-function goToConfig() {
-  router.push('/config')
+function apiBase(): string {
+  return store.backendUrl ?? SERVER_CONFIG.BASE_URL
 }
 
-function goToPlayers() {
-  router.push('/players')
+function goToConfig() { 
+  router.push('/config') 
 }
 
-function goToRulebook() {
-  router.push('/rulebook')
+function goToPlayers() { 
+  router.push('/players') 
+}
+
+function goToRulebook() { 
+  router.push('/rulebook') 
 }
 
 /** Build WS URL from HTTP base + path */
@@ -70,12 +60,6 @@ function wsUrl(baseHttpUrl: string, path: string): string {
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
   u.pathname = path.startsWith('/') ? path : `/${path}`
   return u.toString()
-}
-
-/** Session actions */
-async function onLeave() {
-  await store.leave()
-  await router.push({ name: 'login' })
 }
 
 /** WebSocket lifecycle */
@@ -144,24 +128,14 @@ onUnmounted(() => {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
   try { socket?.close(); } catch {}
   socket = null;
-
-  // Cleanly end recorder/mic on unmount
-  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
-    isFinalStop.value = true
-    try { mediaRecorder.value.requestData(); } catch {}
-    mediaRecorder.value.stop();
-  }
-
-  if (recordedAudioURL.value) {
-    URL.revokeObjectURL(recordedAudioURL.value);
-    recordedAudioURL.value = null;
-  }
-
-  if (audioRecorderInterval.value) {
-    clearInterval(audioRecorderInterval.value!)
-    audioRecorderInterval.value = null
-  }
 })
+
+/** Session actions */
+async function onLeave() {
+  recorder.stopRecording() //stop recording when leaving session
+  await store.leave()
+  await router.push({ name: 'login' })
+}
 
 async function onExport() {
   if (!sessionName.value.trim()) return alert("Please enter a session name.")
@@ -178,7 +152,7 @@ async function onExport() {
 }
 
 async function handleQuestionSubmit() {
-  if (isLoading.value) return // prevent spamming the button
+  if (isLoading.value) return  // prevent spamming the button
   isLoading.value = true
   modelOutput.value = ''
 
@@ -187,18 +161,11 @@ async function handleQuestionSubmit() {
       const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input_string: userInput.value,
-        }),
+        body: JSON.stringify({ input_string: userInput.value }),
       })
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`)
-      }
-
-      console.log(store.currentPlayer?.role)
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
 
       const markdownJson = await response.json()
-      console.log(markdownJson)
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
@@ -220,17 +187,14 @@ async function handleQuestionSubmit() {
           use_rulebook: askRulebook.value
         }),
       })
-      if (!response.ok || !response.body) {
-        throw new Error(`Request failed with status ${response.status}`)
-      }
+      if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`)
 
-      // Removes any still shown previous rulebook searches.
+       // Removes any still shown previous rulebook searches.
       backendMarkdown.value = []
       renderedMarkdown.value = ''
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -242,7 +206,7 @@ async function handleQuestionSubmit() {
       console.error('Error calling LLM endpoint:', error)
       modelOutput.value = 'Error calling model, error: ' + error
     } finally {
-      isLoading.value = false //  unlock after done
+      isLoading.value = false  //  unlock after done
     }
   }
 }
@@ -283,163 +247,29 @@ async function handleAudioUpload() {
       throw new Error(`Upload failed with status ${response.status}`)
     }
     const result = await response.json()
-    audioUploadStatus.value = `Upload successfull: ${result.message || 'Audio file received'}`
+    audioUploadStatus.value = `Upload successful: ${result.message || 'Audio file received'}`
   } catch (error) {
-    console.error('An error occured while uploading your audio file:', error)
+    console.error('An error occurred while uploading your audio file:', error)
     audioUploadStatus.value = 'Upload error'
   }
 }
 
 function onAudioFileChange(event: Event) {
   const target = event.target as HTMLInputElement
-  if (target?.files && target.files.length > 0) {
-    selectedAudioFile.value = target.files[0]
-  } else {
-    selectedAudioFile.value = null
-  }
+  selectedAudioFile.value = (target?.files && target.files.length > 0) ? target.files[0] : null
 }
 
 async function startRecording() {
-  try {
-    isFinalStop.value = false
-
-    if (recordedAudioURL.value) {
-      URL.revokeObjectURL(recordedAudioURL.value)
-      recordedAudioURL.value = null
-    }
-    audioChunks.value = []
-
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micPermissionStatus.value = 'Microphone access granted.';
-    audioStream.value = stream;
-
-    const supportedMimeTypes = [
-      'audio/ogg;codecs=opus',
-      'audio/webm;codecs=opus',
-      'audio/webm'
-    ];
-    let mimeType: string | undefined = undefined;
-    for (const type of supportedMimeTypes) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        mimeType = type;
-        break;
-      }
-    }
-    if (!mimeType) {
-      console.error('No supported audio type found.');
-      micPermissionStatus.value = 'No supported audio format.';
-      stream.getTracks().forEach(track => track.stop());
-      return;
-    }
-
-    mediaRecorder.value = new MediaRecorder(stream, { mimeType });
-
-    mediaRecorder.value.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        audioChunks.value.push(e.data);
-      }
-    };
-
-    mediaRecorder.value.onstop = () => {
-      if (audioChunks.value.length > 0) {
-        const audioBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType });
-        sendAudioChunk(audioBlob);
-      }
-
-      if (isFinalStop.value) {
-        isRecording.value = false;
-
-        if (audioStream.value) {
-          audioStream.value.getTracks().forEach(track => track.stop());
-          const finalBlob = new Blob(audioChunks.value, { type: mediaRecorder.value?.mimeType })
-          recordedAudioURL.value = URL.createObjectURL(finalBlob)
-          audioChunks.value = [];
-        }
-      } else {
-        audioChunks.value = [];
-        mediaRecorder.value?.start();
-      }
-    };
-    mediaRecorder.value.start();
-    isRecording.value = true;
-
-    setTimeout(() => {
-      if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-        mediaRecorder.value.requestData();
-      }
-    }, 250);
-
-    const spliceTime = 5 * 60 * 1000;
-    audioRecorderInterval.value = setInterval(rotateRecording, spliceTime);
-
-  } catch (error) {
-    console.error('Microphone access denied:', error);
-    micPermissionStatus.value = 'Microphone access required';
-  }
+  await recorder.startRecording()
 }
 
-function rotateRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
-
-    mediaRecorder.value.requestData();
-    mediaRecorder.value.stop();
-  }
+function stopRecording() { 
+  recorder.stopRecording() 
 }
 
-function stopRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
-    isFinalStop.value = true
-    if (audioRecorderInterval.value) {
-      clearInterval(audioRecorderInterval.value);
-      audioRecorderInterval.value = null
-    }
-    mediaRecorder.value.requestData();
-    mediaRecorder.value.stop();
-  }
+function playRecording() { 
+  recorder.playRecording() 
 }
-
-async function sendAudioChunk(chunk: Blob) {
-  const formData = new FormData()
-  const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg';
-  formData.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`);
-
-  try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`, {
-      method: 'POST',
-      body: formData
-    })
-
-    if (!response.ok) {
-      console.error('Chunk upload failed with status:', response.status)
-      return
-    }
-
-    const result = await response.json()
-    console.log('Chunk transcribed successfully:', result)
-
-  } catch (error) {
-    console.error('Error sending audio chunk:', error)
-  }
-}
-
-function playRecording() {
-  if (!recordedAudioURL.value) return
-
-  if (!currentAudio.value) {
-    currentAudio.value = new Audio(recordedAudioURL.value)
-  }
-
-  currentAudio.value.pause()
-  currentAudio.value.currentTime = 0
-  currentAudio.value.play()
-}
-
-/** Dice */
-function rollDice(sides: number) {
-  const result = Math.floor(Math.random() * sides) + 1
-  diceResult.value = `W${sides} → ${result}`
-}
-
 /** Abilities */
 type AbilitySpec = {
   key: 'str' | 'dex' | 'con' | 'int_' | 'wis' | 'cha'
@@ -480,6 +310,7 @@ function incAbility(p: any, key: AbilitySpec['key']) {
   const current = Number(p?.abilities?.[key] ?? 0)
   patchAbility(p.id, key, current + 1)
 }
+
 function decAbility(p: any, key: AbilitySpec['key']) {
   const current = Number(p?.abilities?.[key] ?? 0)
   patchAbility(p.id, key, current - 1)
@@ -578,6 +409,12 @@ async function kick(playerId: string) {
     console.error('Kick failed:', e)
   }
 }
+
+/** Dice */
+function rollDice(sides: number) {
+  const result = Math.floor(Math.random() * sides) + 1
+  diceResult.value = `W${sides} → ${result}`
+}
 </script>
 
 <template>
@@ -614,7 +451,7 @@ async function kick(playerId: string) {
 
         <button class="submit-button" @click="onLeave">Leave</button>
 
-        <h3>Player</h3>
+        <h3>Players</h3>
         <ul>
           <li v-for="p in store.players" :key="p.id">
             {{ p.name }} ({{ p.role }})
@@ -669,37 +506,43 @@ async function kick(playerId: string) {
       <!-- Leader-only: recording -->
       <div v-if="store.isLeader" class="content-section">
         <h2>Record Using Microphone</h2>
-        <button @click="startRecording" v-if="!isRecording" class="submit-button">
-          Start Recording
-        </button>
-        <button @click="stopRecording" v-if="isRecording" class="submit-button">
-          Stop Recording
-        </button>
-
-        <div v-if="isRecording" class="output">
-          <p>Recording in progress</p>
-        </div>
-        <div v-if="micPermissionStatus" class="output">
-          <p>{{ micPermissionStatus }}</p>
-        </div>
-        <div v-if="recordedAudioURL" class="output">
-          <p>Recording completed</p>
+        
+        <div class="recording-controls">
+          <button @click="startRecording" v-if="!recorder.isRecording" class="submit-button"> 
+            Start Recording 
+          </button>
+          <button @click="stopRecording" v-if="recorder.isRecording" class="submit-button">
+            Stop Recording  
+          </button> 
         </div>
 
-        <div v-if="recordedAudioURL" class="play-button">
-          <button @click="playRecording" class="submit-button"> Play Recording </button>
+        <div v-if="recorder.micPermissionStatus" class="output">
+          <p>{{ recorder.micPermissionStatus }}</p>
         </div>
 
-        <hr style="margin: 2rem 0" />
+        <div v-if="recorder.isRecording" class="recording-timer output">
+          <p> Recording: {{ recorder.formattedRecordingTime }}</p>
+        </div>
+        
+        <div v-if="recorder.recordedAudioURL" class="output">
+          <p>Recording completed. Duration: {{ recorder.formattedRecordingTime }}</p>
+        </div>
+        
+        <div v-if="recorder.recordedAudioURL" class="play-button">
+          <button @click="playRecording" class="submit-button">Play Recording</button>
+        </div>
+      </div>
 
-        <!-- Leader-only: upload -->
-        <div v-if="store.isLeader" class="content-section">
-          <h2>Upload Audio File</h2>
-          <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
-          <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
-          <div v-if="audioUploadStatus" class="output">
-            <p>{{ audioUploadStatus }}</p>
-          </div>
+      <hr style="margin: 2rem 0" />
+
+      <!-- Leader-only: upload -->
+      <div v-if="store.isLeader" class="content-section">
+        <h2>Upload Audio File</h2>
+        <input type="file" accept="audio/*" @change="onAudioFileChange" class="input-field" />
+        <button @click="handleAudioUpload" class="submit-button">Upload Audio</button>
+
+        <div v-if="audioUploadStatus" class="output">
+          <p>{{ audioUploadStatus }}</p>
         </div>
       </div>
     </div>
@@ -742,7 +585,7 @@ async function kick(playerId: string) {
             >
               <div class="ability-card__header" v-if="store.isLeader">
                 <div class="ability-card__name">
-                  {{ p.name ?? 'Unbenannter Spieler' }}
+                  {{ p.name ?? 'Unnamed Player' }}
                 </div>
               </div>
               <div class="section__label">Abilities:</div>
@@ -779,10 +622,10 @@ async function kick(playerId: string) {
               </div>
 
               <div class="healthbar" :class="hpClass(p)">
-                <!-- Spalte 1: Label -->
+                <!-- Column 1: Label -->
                 <div class="section__label">Hit Points:</div>
 
-                <!-- Spalte 2: Progressbar -->
+                <!-- Column 2: Progressbar -->
                 <div
                   class="healthbar__track"
                   role="progressbar"
@@ -808,13 +651,13 @@ async function kick(playerId: string) {
                   ></div>
                 </div>
 
-                <!-- Spalte 3: Zahlen -->
+                <!-- Column 3: Numbers -->
                 <div class="healthbar__numbers">
                   {{ p.hp.current }} / {{ p.hp.max }}
                   <span v-if="p.hp.temp"> (+{{ p.hp.temp }}) </span>
                 </div>
 
-                <!-- Spalte 4: Buttons (rechts neben Zahlen) -->
+                <!-- Column 4: Buttons -->
                 <div
                   class="healthbar__controls"
                   v-if="store.isLeader || p.id === store.currentPlayer?.id"
@@ -843,7 +686,7 @@ async function kick(playerId: string) {
                   @change="onMaxHpChange(p, $event)"
                 />
               </div>
-              <div class="leader__contorls" v-if="store.isLeader">
+              <div class="leader__controls" v-if="store.isLeader">
                 <button v-if="store.isLeader && p.id !== store.currentPlayer?.id"
                         @click="kick(p.id)">Kick</button>
               </div>
@@ -856,7 +699,6 @@ async function kick(playerId: string) {
   </div>
 </template>
 
-<!-- This block essential for full-page background -->
 <style>
 html,
 body {
@@ -876,7 +718,7 @@ body {
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
 
-/* Left */
+/* Main container */
 .container {
   max-width: 600px;
   margin: 2rem auto;
@@ -885,8 +727,10 @@ body {
   flex-direction: column;
   align-items: stretch;
   max-height: 90vh;
+  position: relative;
 }
 
+/* Header */
 .header {
   position: fixed;
   top: 0;
@@ -909,21 +753,10 @@ body {
   gap: 0.5rem;
 }
 
-.centered-content {
-  background-color: rgba(163,148,95,0.8);
-  padding: 2rem; border-radius: 8px;
-  max-width: 600px; width: 100%;
-  box-sizing: border-box;
-  border: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 4px 30px rgba(0,0,0,0.4);
-  margin-top: 60px; /* unter dem Header */
-}
-
-.leave-button,
-.export-button,
 .rulebook-button,
 .players-button,
-.config-button {
+.config-button,
+.export-button {
   padding: 0.5rem 1rem;
   background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
@@ -935,11 +768,14 @@ body {
   transition: background-color 0.3s ease;
 }
 
-.header-right > .rulebook-button:hover,
-.header-right > .config-button:hover {
+.rulebook-button:hover,
+.players-button:hover,
+.config-button:hover,
+.export-button:hover {
   background-color: #4a575e;
 }
 
+/* Centered content */
 .centered-content {
   background-color: rgba(163, 148, 95, 0.8);
   padding: 2rem;
@@ -950,16 +786,6 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
   margin-top: 60px;
-}
-
-.config-button:hover {
-  background-color: #4a575e;
-}
-
-.rulebook-button:hover,
-.players-button:hover,
-.config-button:hover {
-  background-color: #4a575e;
 }
 
 .content-section {
@@ -1031,6 +857,27 @@ hr {
   cursor: not-allowed;
 }
 
+/* Recording specific styles */
+.recording-controls {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.recording-timer {
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: rgba(183, 77, 48, 0.6);
+  color: white;
+  border-radius: 10px;
+  border: 1px solid #000000;
+  font-family: 'MedievalSharp', cursive;
+  font-size: 1.1em;
+  box-sizing: border-box;
+  text-align: center;
+}
+
 .play-button {
   display: flex;
   justify-content: center;
@@ -1063,15 +910,15 @@ hr {
   color: #f1e6b4;
 }
 
-/* Abilities and dice on right */
+/* Right rail layout */
 .right-rail {
+  position: fixed;
   right: 15%;
   width: 540px;
   z-index: 900;
   box-sizing: border-box;
   color: #392401;
   font-family: 'MedievalSharp', cursive;
-  position: fixed;
 }
 
 /* Leader-Version: füllt vertikal den Bildschirmbereich und scrollt intern */
@@ -1150,12 +997,13 @@ hr {
 .dice-button {
   flex: 1 0 30%;
   padding: 0.75rem;
-  font-size: 1rem;
+  font-size: 1.15rem;
   background-color: #b74d30;
   color: white;
-  border: none;
+  border: 1px solid #8e7513;
   border-radius: 6px;
   cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
 }
 
 .dice-button:hover {
@@ -1236,13 +1084,6 @@ hr {
   font-size: 1.1rem;
   font-weight: 800;
   line-height: 1.3;
-}
-
-.ability-mod {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #4c3e06;
 }
 
 /* + / − controls */
@@ -1365,16 +1206,7 @@ hr {
   font-weight: 700;
 }
 
-
-@media (max-width: 900px) {
-  .right-rail {
-    position: static;
-    width: auto;
-    margin: 1rem;
-  }
-}
-
-
+/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1385,7 +1217,6 @@ hr {
   z-index: 9999;
 }
 
-/* === Modal Window === */
 .modal {
   background: rgba(163, 148, 95, 0.8);
   border-radius: 12px;
@@ -1402,7 +1233,6 @@ hr {
   font-family: 'MedievalSharp', cursive;
 }
 
-/* === Modal Input === */
 .modal-input {
   width: 100%;
   padding: 8px 10px;
@@ -1447,15 +1277,15 @@ hr {
 }
 
 .btn-save {
-  background: #2563eb; /* blue-600 */
+  background: #2563eb;
   color: white;
 }
 
 .btn-save:hover {
-  background: #1d4ed8; /* darker blue */
+  background: #1d4ed8;
 }
 
-
+/* Markdown styles */
 :deep(.markdown-output) {
   font-family: 'MedievalSharp', cursive;
   color: #392401;
@@ -1489,18 +1319,18 @@ hr {
 }
 
 :deep(.markdown-output strong) {
-  color: #8b0000; /* dark red for emphasis */
+  color: #8b0000;
   font-weight: bold;
 }
 
 :deep(.markdown-output em) {
-  color: #003366; /* dark blue */
+  color: #003366;
   font-style: italic;
 }
 
 :deep(.markdown-output strong em),
 :deep(.markdown-output em strong) {
-  color: #800080; /* purple */
+  color: #800080;
   font-weight: bold;
   font-style: italic;
 }
@@ -1556,6 +1386,7 @@ hr {
   margin-top: 0.5rem;
 }
 
+/* Responsive design */
 @media (max-width: 900px) {
   .right-rail {
     position: static;
@@ -1574,6 +1405,11 @@ hr {
 
   .right-rail__inner--leader {
     padding-top: 0;
+  }
+
+  .container {
+    max-width: 100%;
+    margin: 1rem;
   }
 }
 </style>

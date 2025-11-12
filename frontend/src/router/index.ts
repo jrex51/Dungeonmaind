@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useConfigStore } from "@/stores/backendConfig.ts"
+import { useRecorderStore } from '@/stores/recorder'
 import { checkPlayerExists } from "@/api/playersAPI.ts";
 import { fetchConfig } from "@/api/backendConfigAPI.ts";
 
@@ -23,9 +24,6 @@ const router = createRouter({
     {
       path: '/about',
       name: 'about',
-      // route level code-splitting
-      // this generates a separate chunk (About.[hash].js) for this route
-      // which is lazy-loaded when the route is visited.
       component: () => import('../views/AboutView.vue'),
     },
     {
@@ -68,18 +66,19 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth && !store.currentPlayer) {
     return { name: "login" };
   }
-  if (to.name === "login" && store.currentPlayer) {
+
+  if (to.name === "login" && isAuthenticated) {
     return { name: "home" };
   }
 
   if (to.name === "config") {
     try {
-     const config = await fetchConfig();
-     const configStore = useConfigStore();
-     configStore.setConfig(config);
-   } catch (error) {
-     console.error("Error loading config:", error);
-   }
+      const config = await fetchConfig();
+      const configStore = useConfigStore();
+      configStore.setConfig(config);
+    } catch (error) {
+      console.error("Error loading config:", error);
+    }
   }
 });
 
