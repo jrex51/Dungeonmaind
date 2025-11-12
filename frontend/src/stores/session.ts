@@ -79,13 +79,6 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  function removePersistedPlayer() {
-    try {
-      sessionStorage.removeItem('player');
-    } catch {
-      // ignore
-    }
-  }
 
   function persistBackendUrl(url: string) {
     try {
@@ -127,9 +120,17 @@ export const useSessionStore = defineStore('session', () => {
   function hydrateLocalNetworkIP(): string | null {
     try {
       const raw = localStorage.getItem('localNetworkIP');
-      return raw || null;
+      return raw ? raw : null;
     } catch {
       return null;
+    }
+  }
+
+  function removePersistedPlayer() {
+    try {
+      sessionStorage.removeItem('player');
+    } catch {
+      // ignore
     }
   }
 
@@ -165,6 +166,11 @@ export const useSessionStore = defineStore('session', () => {
     } finally {
       clearSession();
     }
+  }
+
+  function setCurrentPlayer(p: PlayerOut) {
+    currentPlayer.value = p;
+    persistPlayer(p);
   }
 
   function setBackendUrl(url: string) {
@@ -240,6 +246,7 @@ export const useSessionStore = defineStore('session', () => {
     join,
     loadPlayers,
     leave,
+    setCurrentPlayer,
     setBackendUrl,
     setLocalNetworkIP,
     clearSession,

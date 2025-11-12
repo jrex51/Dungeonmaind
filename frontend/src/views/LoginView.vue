@@ -78,6 +78,7 @@ let setConnection = ref(false);
 const networkIPs = __NETWORK_IPS__
 const selectedNetworkIP = ref(networkIPs[0] || "")
 let lastValidIP = selectedNetworkIP.value
+let isValidIP = true
 
 type CheckResult = {
   ok: boolean;
@@ -107,10 +108,10 @@ const localIPRegex = new RegExp(
 
 watch(selectedNetworkIP, (newVal) => {
   if (localIPRegex.test(newVal)) {
-
     lastValidIP = newVal
+    isValidIP = true
   } else {
-    selectedNetworkIP.value = lastValidIP
+    isValidIP = false
   }
 })
 
@@ -195,7 +196,7 @@ async function onSubmit(e: Event) {
   submitting.value = true;
   try {
     await preflightAndJoin(backendUrl, playerName.value.trim(), role.value);
-    store.setLocalNetworkIP(selectedNetworkIP.value)
+    store.setLocalNetworkIP(lastValidIP)
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
@@ -425,6 +426,7 @@ async function JoinExistingPlayer() {
                 style="width: 100%; max-width: 200px;"
               />
             </div>
+            <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
           </div>
 
           <!-- 3) player name -->
