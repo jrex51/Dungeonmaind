@@ -1,19 +1,29 @@
 import { useSessionStore } from '@/stores/session.ts'
 // Set the server and enpdoints
 export const SERVER_CONFIG = {
-  //BASE_URL: 'http://localhost:8000',
   get BASE_URL() {
     const store = useSessionStore();
     return store.backendUrl || "http://localhost:8000"; // Fallback
+  },
+  get LOCAL_NETWORK_IP() {
+    const store = useSessionStore();
+    return store.localNetworkIP || "localhost"; // Fallback
   },
   ENDPOINTS: {
     RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
     CHANGE_CONFIG: '/config/changeConfig',
+    GET_CONFIG: '/config/getConfig',
     CHECK_CONNECTION: '/health/checkConnection',
+    PLAYERS: '/players',
     WS_PLAYERS: '/ws/players',
     RULEBOOK_FOLDERS: '/rulebook/folders',
     RULEBOOK_FILE: '/rulebook/file',
+    RULEBOOK_SEARCH: '/rulebook/search',
+    EXPORT_SESSION: '/exportImport/export',
+    IMPORT_SESSION: '/exportImport/import',
+    GET_SESSIONS: '/exportImport/getSessions',
+
   },
 }
 
@@ -32,6 +42,7 @@ export const DEFAULT_LLM = LLM_OPTIONS[0].value
 export const TRANSCRIPTION_MODELS = [
   { value: 'base', label: 'Base' },
   { value: 'medium', label: 'Medium' },
+  { value: 'large-v3', label: 'Large' },
 ]
 
 // Set the default transcription model
@@ -46,3 +57,14 @@ export const EMBEDDING_MODELS = [
 
 // Set the default embedding model
 export const DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODELS[0].value
+
+// Set the available embedding models
+export const EMBEDDING_TopK = [
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+]
+
+// Set the default embedding model
+export const DEFAULT_EMBEDDING_TopK = EMBEDDING_MODELS[1].value

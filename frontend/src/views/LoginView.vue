@@ -1,28 +1,120 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
-import type { Role } from "@/api/players";
+import  { type PlayerOut, type Role } from "@/api/playersAPI.ts";
 import { useSessionStore } from '@/stores/session.ts'
+import * as api from '@/api/playersAPI.ts'
 
 const store = useSessionStore();
 const router = useRouter();
 
-// --- Logik für checkConnection ---
+// Logik für checkConnection
 
 type Status = "idle" | "checking" | "ok" | "error";
 
+// Typen für den Check
+type JoinCheckStatus = 'available' | 'inactive_match' | 'active_conflict';
+type JoinCheckOut = {
+  status: JoinCheckStatus;
+  candidate?: PlayerOut;
+}
+
+async function preflightAndJoin(backendUrl: string, name: string, role: Role) {
+  // 1) Preflight-Check
+  console.debug(`preflightAndJoin: versuche mit ${name} zu joinen`);
+  const checkUrl = new URL('/players/join/check', backendUrl);
+  checkUrl.searchParams.set('name', name);
+  const res = await fetch(checkUrl.toString(), { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(JSON.stringify({ detail: `Join-Check fehlgeschlagen (${res.status}` }));
+  }
+  const check: JoinCheckOut = await res.json();
+
+  if (check.status === 'available') {
+    // normaler Join
+    console.debug(`preflightAndJoin: ${name} ist verfügbar`);
+    await store.join(name, role);
+    return;
+  }
+
+  if (check.status === 'active_conflict') {
+    console.debug(`preflightAndJoin: es gibt einen aktiven Spieler mit dem namen`);
+    // Name schon bei einem aktiven Spieler belegt
+    throw new Error(JSON.stringify({ detail: `Der Name "${name}" ist bereits vergeben.` }));
+  }
+
+  if (check.status === 'inactive_match' && check.candidate) {
+    // Nutzer fragen: alten Spieler reaktivieren?
+    console.debug(`preflightAndJoin: inaktiven Spieler mit dem Namen gefunden`);
+    const reuse = window.confirm(
+      `Es gibt einen inaktiven Spieler "${check.candidate.name}". ` +
+      `Möchtest du diesen wiederverwenden (HP/Attribute bleiben erhalten)?`
+    );
+    if (reuse) {
+      // Reuse-Join
+      console.debug(`preflightAndJoin: Spieler wird reaktiviert`);
+      await store.join(name, role, check.candidate.id);
+      return;
+    } else {
+      // neuer Spieler mit gleichem Namen ist erlaubt (nur aktive Namen sind geblockt)
+      console.debug(`preflightAndJoin: Spieler wird neu angelegt`);
+      await store.join(name, role);
+      return;
+    }
+  }
+
+  // sollte nie passieren
+  await store.join(name, role);
+}
+
 // checkConnection
-const baseUrl = ref<string>("http://localhost:8000");
+const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
 const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);
+let setConnection = ref(false);
+
+const networkIPs = __NETWORK_IPS__
+const selectedNetworkIP = ref(networkIPs[0] || "")
+let lastValidIP = selectedNetworkIP.value
+let isValidIP = true
 
 type CheckResult = {
   ok: boolean;
   status?: number;
   error?: string;
 };
+
+// For session import
+const showImportModal = ref(false)
+const sessions = ref([])
+const selectedSession = ref("")
+
+const octet = '(?:25[0-5]|2[0-4]\\d|1?\\d{1,2})';
+const localIPRegex = new RegExp(
+  '^(' +
+    // 10.x.x.x oder teilweise
+    '1?|10(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?' +
+    '|' +
+    // 192.168.x.x oder teilweise
+    '1|19|192(?:\\.(?:1|16|168)?(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?)?' +
+    '|' +
+    // 172.16-31.x.x oder teilweise
+    '1?|17?|172(?:\\.(?:(1[6-9]|2\\d|3[0-1])|[1-3])?(?:\\.(?:' + octet + ')?)?(?:\\.(?:' + octet + ')?)?)?' +
+  ')$'
+);
+
+
+watch(selectedNetworkIP, (newVal) => {
+  if (localIPRegex.test(newVal)) {
+    lastValidIP = newVal
+    isValidIP = true
+  } else {
+    isValidIP = false
+  }
+})
+
 
 async function checkConnection(backendUrl: string, timeoutMs = 5000): Promise<CheckResult> {
   const controller = new AbortController();
@@ -34,6 +126,10 @@ async function checkConnection(backendUrl: string, timeoutMs = 5000): Promise<Ch
       signal: controller.signal,
       });
     // response.ok == Status 200 (und auch 204)
+    if (response.ok) {  // (erfolgreich) getestete Adresse auch direkt setzen
+      store.setBackendUrl(backendUrl);
+      setConnection.value = true;
+    }
     return { ok: response.ok, status: response.status };
   } catch (err: unknown) {
     // AbortError unterscheidbar von echten Netzwerkfehlern
@@ -79,25 +175,33 @@ const nameError = computed(() => {
 });
 
 // Button nur aktiv, wenn alles ok
-const canSubmit = computed(() => role.value !== null && nameError.value === "");
+const canSubmit = computed(() => (role.value !== null && nameError.value === "") || selectedPlayer.value !== undefined);
+
 
 // Formular-Submit
 async function onSubmit(e: Event) {
   e.preventDefault();  // Browser-Reload verhindern
-  const backendUrl = normalizeOrigin(baseUrl.value)
+  const backendUrl = normalizeOrigin(baseUrl.value);
   const result = await checkConnection(backendUrl);
   if (result.ok) store.setBackendUrl(backendUrl);
   touched.value = true;
 
+
+  if (selectedPlayer.value !== undefined) {
+    role.value = selectedPlayer.value.role;
+    playerName.value = selectedPlayer.value.name;
+  }
   if (!canSubmit.value || !role.value) return;
 
   submitting.value = true;
   try {
-    await store.join(playerName.value.trim(), role.value);
+    await preflightAndJoin(backendUrl, playerName.value.trim(), role.value);
+    store.setLocalNetworkIP(lastValidIP)
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
 
+  // Fehler auslesen
   if (err?.response) {
     // Axios-Format
     const data = err.response.data;
@@ -133,6 +237,78 @@ function normalizeOrigin(input: string): string {
   return new URL(withProtocol).origin;
 }
 
+
+async function confirmImport() {
+  if (!selectedSession.value) return
+
+  try {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.IMPORT_SESSION}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        session_name: selectedSession.value,
+      }),
+    })
+    if (!res.ok) throw new Error("Import failed")
+      const leader = await res.json();
+
+    if (!leader) throw new Error("No leader returned from backend");
+
+    store.setCurrentPlayer(leader);
+
+    await router.push({ name: "home" });
+    showImportModal.value = false
+    alert(`Session "${selectedSession.value}" imported successfully!`)
+  } catch (err) {
+    console.error(err);
+    if (err instanceof Error) {
+      alert("Import failed: " + err.message);
+    } else {
+      alert("Import failed: " + String(err));
+    }
+  }
+}
+
+async function onImport() {
+  try {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.GET_SESSIONS}`)
+    if (!res.ok) throw new Error("Failed to fetch sessions")
+
+    const data = await res.json()
+    sessions.value = data.folders
+    showImportModal.value = true
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+const showNewPlayerModal = ref(false);
+
+function JoinNewPlayer() {
+  // bisher passiert hier nichts, außer das das modal getriggert wird
+  showNewPlayerModal.value = true;
+}
+
+const showExistingPlayerModal = ref(false);
+const allPlayers = ref<PlayerOut[]>([]);
+const selectedPlayer = ref<PlayerOut>();
+
+async function JoinExistingPlayer() {
+  if (!setConnection) await onCheck();
+  if (setConnection) {
+    allPlayers.value = await api.listPlayers(true);
+    if (allPlayers.value.filter(p => p.status === "inactive").length === 0) {
+      window.alert(
+        `Es wurden keine inaktiven Spieler gefunden. ` +
+        `Erstelle einen neuen.`
+      );
+      return;
+    }
+    showExistingPlayerModal.value = true;
+  }
+
+}
+
 </script>
 
 
@@ -143,70 +319,168 @@ function normalizeOrigin(input: string): string {
     <div class="check-card">
       <label for="baseUrl">Backend-Adresse</label>
       <input
+        class = "input-field"
         id="baseUrl"
         v-model.trim="baseUrl"
         placeholder="z.B. http://localhost:8080"
         :disabled="status === 'checking'"
       />
 
-      <button @click="onCheck" :disabled="!baseUrl || status === 'checking'">
-        {{ status === 'checking' ? 'Prüfe...' : 'Verbindung prüfen' }}
+      <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
+        {{ status === 'checking' ? 'Checking...' : 'Check/Set Connection' }}
       </button>
 
       <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
-      <p v-else-if="status === 'error'">Nicht erreichbar: {{ message }}</p>
+      <p v-else-if="status === 'error'">Not available: {{ message }}</p>
     </div>
 
 
     <hr style="margin: 1rem 0" />
 
-    <form class="join-card" @submit="onSubmit">
-      <!-- 1) Rolle auswählen-->
-      <fieldset>
-        <legend>Rolle wählen</legend>
+    <div>
+      <button class="done-button" @click="onImport">Import Session</button>
+    </div>
+    <div v-if="showImportModal" class="modal-overlay">
+      <div class="modal">
+        <h2>Select a session to import</h2>
 
-        <label>
+        <div class="session-list">
+          <div
+            v-for="(folder, index) in sessions"
+            :key="index"
+            class="session-item"
+            :class="{ selected: selectedSession === folder }"
+            @click="selectedSession = folder"
+          >
+            {{ folder }}
+          </div>
+        </div>
+
+        <div class="modal-buttons">
+          <button class="btn-cancel" @click="showImportModal = false">Cancel</button>
+          <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
+            Import
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <hr style="margin: 1rem 0" />
+
+    <div>
+      <button class="button" @click="JoinNewPlayer">Join as new Player</button>
+      <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
+    </div>
+
+    <div v-if="showNewPlayerModal" class="modal-overlay">
+      <div class="modal">
+        <h2>Select a Role and a Name for your Player</h2>
+        <form class="join-card" @submit="onSubmit">
+          <!-- 1) select role-->
+          <fieldset>
+            <legend>Choose a role</legend>
+
+            <label>
+              <input
+                type="radio"
+                name="role"
+                :value="'leader'"
+                v-model="role"
+                />
+              Leader
+            </label>
+
+            <label>
+              <input
+                type="radio"
+                name="role"
+                :value="'member'"
+                v-model="role"
+                />
+              Member
+            </label>
+
+            <p v-if="touched && !role" class="error">Please select a role.</p>
+          </fieldset>
+
+          <!-- 2) local network IP -->
+          <div v-if="role === 'leader'">
+            <div style="margin-top: 4px;"></div>
+            <div v-if="networkIPs.length > 1">
+            <label for="networkIP">Select your local network IP:</label>
+            <div style="margin-top: 1px;"></div>
+            <select id="networkIP" v-model="selectedNetworkIP">
+              <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                {{ networkIP }}
+              </option>
+            </select>
+            </div>
+            <div v-else>
+              <label for="networkIP">Enter your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <input
+                id="networkIP"
+                type="text"
+                v-model="selectedNetworkIP"
+                placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                style="width: 100%; max-width: 200px;"
+              />
+            </div>
+            <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+          </div>
+
+          <!-- 3) player name -->
+          <div style="margin-top: 4px;"></div>
+          <!-- 2) Spielernamen -->
+          <label for="playerName">Your Name</label>
           <input
-            type="radio"
-            name="role"
-            :value="'leader'"
-            v-model="role"
+            class = "input-field"
+            id="playerName"
+            type="text"
+            v-model.trim="playerName"
+            maxlength="20"
+            placeholder="z.B. Alex"
+            @blur="touched = true"
+            autocomplete="name"
             />
-          Leader
-        </label>
+          <p v-if="touched && nameError" class="error">{{ nameError }}</p>
+          <p v-if="serverError" class="error">{{ serverError }}</p>
 
-        <label>
-          <input
-            type="radio"
-            name="role"
-            :value="'member'"
-            v-model="role"
-            />
-          Member
-        </label>
+          <!-- 4) join or cancel -->
+          <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
+            {{ submitting ? "Join ..." : "Join" }}
+          </button>
+          <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
+            Cancel
+          </button>
+        </form>
+      </div>
+    </div>
+    <div v-if="showExistingPlayerModal" class="modal-overlay">
+      <div class="modal">
+        <h2>Select your player</h2>
 
-        <p v-if="touched && !role" class="error">Bitte Rolle auswählen.</p>
-      </fieldset>
+        <div class="player-list">
+          <div
+            v-for="player in allPlayers.filter(p => p.status === 'inactive')"
+            :key="player.name"
+            class="player-item"
+            :class="{ selected: selectedPlayer === player }"
+            @click="selectedPlayer = player"
+          >
+            {{ player.name }}
+          </div>
+        </div>
 
-      <!-- 2) Spielernamen -->
-      <label for="playerName">Dein Name</label>
-      <input
-        id="playerName"
-        type="text"
-        v-model.trim="playerName"
-        maxlength="20"
-        placeholder="z.B. Alex"
-        @blur="touched = true"
-        autocomplete="name"
-        />
-      <p v-if="touched && nameError" class="error">{{ nameError }}</p>
-      <p v-if="serverError" class="error">{{ serverError }}</p>
+        <div class="modal-buttons">
+          <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
+          <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
+            {{ submitting ? "Join ..." : "Join" }}
+          </button>
+        </div>
+      </div>
+    </div>
 
-      <!-- 3) Beitreten -->
-      <button type="submit" :disabled="!canSubmit || submitting">
-        {{ submitting ? "Beitreten ..." : "Beitreten" }}
-      </button>
-    </form>
   </div>
 </template>
 
@@ -219,23 +493,156 @@ function normalizeOrigin(input: string): string {
 }
 
 select {
-  margin-top: 1rem;
+
   padding: 0.5rem;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
+.button,
 .done-button {
-  margin-top: 2rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  background-color: #42b983;
-  color: white;
-  border: none;
+  padding: 0.5rem 1rem;
+  background-color: rgba(53, 73, 94, 0.9);
+  border: 1px solid #4a575e;
   border-radius: 4px;
+  color: white;
   cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: normal;
+  transition: background-color 0.3s ease;
 }
 
-.done-button:hover {
-  background-color: #369f6e;
+.button:hover,
+.done-button :hover {
+  background-color: #4a575e;
+}
+
+
+
+.input-field {
+  padding: 0.75rem;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #695710;
+  border-radius: 10px;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+  background-color: #f1e6b4;
+
+  color: #4c3e06;
+  width: 90%;
+  box-sizing: border-box;
+}
+
+.login-page,
+.login-page h1,
+.login-page p,
+.login-page label,
+.login-page fieldset,
+.login-page legend,
+.login-page button {
+  font-family: 'MedievalSharp', cursive;
+}
+
+.login-page input,
+.login-page textarea,
+.login-page select {
+  font-family: inherit;
+}
+
+/* Modal base */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal {
+  background: rgba(163, 148, 95, 0.8);
+  border-radius: 12px;
+  padding: 24px;
+  width: 340px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  color: #000;
+}
+
+.modal h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+/* Session list */
+.player-list,
+.session-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  padding: 4px;
+}
+
+.player-item,
+.session-item {
+  padding: 8px 10px;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.player-item:hover,
+.session-item:hover {
+  background: #f3f4f6; /* gray-100 */
+}
+
+.player-item.selected,
+.session-item.selected {
+  background: #2563eb; /* blue-600 */
+  color: white;
+}
+
+/* Buttons */
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-cancel,
+.btn-save {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.btn-cancel {
+  background: #ddd;
+}
+
+.btn-cancel:hover {
+  background: #ccc;
+}
+
+.btn-save {
+  background: #4a575e;
+  color: white;
+}
+
+.btn-save:hover {
+  background: #1d4ed8;
+}
+
+.btn-save:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
 }
 </style>

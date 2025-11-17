@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import {computed, ref} from "vue"
 import { SERVER_CONFIG } from '../config/config'
 import { marked } from "marked"
 import { useRouter } from 'vue-router'
 
+
 const router = useRouter()
-const folderStructure = ref<Record<string, any>>({})
+interface FolderData {
+  files: string[]
+}
+const folderStructure = ref<Record<string, FolderData>>({})
+const visibleFolders = computed(() => {
+  // remove entries with empty keys
+  return Object.entries(folderStructure.value)
+    .filter(([folder]) => folder.trim() !== "")
+    .reduce((acc, [folder, data]) => {
+      acc[folder] = data
+      return acc
+    }, {} as Record<string, FolderData>)
+})
 const selectedFile = ref("")
 const markdownContent = ref("")
 const renderedMarkdown = ref("")
@@ -15,8 +28,6 @@ function goHome() {
   router.push('/')
 }
 async function fetchFolders() {
-  //const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
-  //folderStructure.value = await res.json()
   const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
   const data = await res.json()
   console.log("Fetched folders:", Object.keys(data))
@@ -32,7 +43,7 @@ async function fetchFile(path: string) {
   )
   const data = await res.json()
   markdownContent.value = data.content
-  renderedMarkdown.value = marked.parse(data.content)
+  renderedMarkdown.value = marked.parse(data.content) as string
 }
 
 function toggleFolder(folder: string) {
@@ -49,7 +60,7 @@ function toggleFolder(folder: string) {
     <div class="sidebar">
       <h2>System Reference Documents (SRD) v.5</h2>
       <ul>
-        <li v-for="(data, folder) in folderStructure" :key="folder" v-if="folder !== ''">
+        <li v-for="(data, folder) in visibleFolders" :key="folder">
           <div @click="toggleFolder(folder)" class="folder">
             ▶ {{ folder }}
           </div>
@@ -59,7 +70,7 @@ function toggleFolder(folder: string) {
                 class="file"
                 @click="fetchFile(folder ? folder + '/' + file : file)"
             >
-              {{ file.replace(/\.md$/, '') }}
+              {{ (file as string).replace(/\.md$/, '') }}
             </li>
           </ul>
         </li>
@@ -85,11 +96,11 @@ function toggleFolder(folder: string) {
 
 .sidebar {
   width: 300px;
-  background: rgba(163, 148, 95, 0.8); /* parchment look */
-  color: #392401; /* dark brown font */
+  background: rgba(163, 148, 95, 0.8);
+  color: #392401;
   padding: 2rem 1rem;
-  overflow-y: auto; /* enable vertical scrolling */
-  max-height: 100vh; /* full viewport height */
+  overflow-y: auto;
+  max-height: 100vh;
   border-right: 2px solid #8e7513;
   font-family: 'MedievalSharp', cursive;
   font-weight: 600;
@@ -97,12 +108,10 @@ function toggleFolder(folder: string) {
   border-radius: 8px 0 0 8px;
 }
 
-/* Optional: add a little padding so scrollbar doesn't overlap text */
 .sidebar ul {
   padding-right: 0.5rem;
 }
 
-/* Folder items */
 .folder {
   font-weight: bold;
   cursor: pointer;
@@ -116,7 +125,6 @@ function toggleFolder(folder: string) {
   background-color: rgba(200, 180, 100, 0.6);
 }
 
-/* File items */
 .file {
   margin-left: 1rem;
   cursor: pointer;
@@ -129,7 +137,6 @@ function toggleFolder(folder: string) {
   background-color: rgba(180, 150, 70, 0.6);
 }
 
-/* Sidebar header */
 .sidebar h2 {
   font-family: 'MedievalSharp', cursive;
   font-weight: 700;
@@ -194,12 +201,12 @@ function toggleFolder(folder: string) {
 }
 
 :deep(.markdown-output strong) {
-  color: #8b0000; /* dark red for emphasis */
+  color: #8b0000;
   font-weight: bold;
 }
 
 :deep(.markdown-output em) {
-  color: #003366; /* dark blue */
+  color: #003366;
   font-style: italic;
 }
 

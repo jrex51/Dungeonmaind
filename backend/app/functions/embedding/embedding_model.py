@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 import os
 import shutil
 
-def embedding_search(query: str, source=False, persist_directory=settings.chroma_db_path, top_k=2):
+def embedding_search(query: str, source=False, persist_directory=settings.chroma_db_path):
     if source:
         source_db = "rulebook"
     else:
@@ -25,7 +25,7 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
         #results = vectorstore.similarity_search(query, k=top_k)
         results = vectorstore.similarity_search(
             query,
-            k=top_k,
+            k=settings.embedding_top_k,
             filter={"source": source_db}
         )
     # If LLM is asked use the transcriptions and the rulebook information
@@ -39,7 +39,7 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
         )
         results_transcriptions = vectorstore.similarity_search(
             query,
-            k=top_k,
+            k=settings.embedding_top_k,
             filter={"source": "transcriptions"}
         )
 
@@ -53,7 +53,8 @@ def embedding_search(query: str, source=False, persist_directory=settings.chroma
 
     return results
 
-def embedd_transcriptions(embedding_text: list, persist_directory=settings.chroma_db_path):
+
+def embedd_transcriptions(embedding_text: list, player_id="none", persist_directory=settings.chroma_db_path):
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(
         model_name=settings.embedding_model
@@ -63,8 +64,8 @@ def embedd_transcriptions(embedding_text: list, persist_directory=settings.chrom
         Document(
             page_content=text,
             metadata={"source": "transcriptions",
-                      "player_id": "none", # Update here later
-                      "session_id": "none", # Update here later
+                      "player_id": player_id,  # Update here later
+                      "session_id": "none",  # Update here later
                       "path": "none"}
         )
         for i, text in enumerate(embedding_text)
@@ -73,7 +74,7 @@ def embedd_transcriptions(embedding_text: list, persist_directory=settings.chrom
     write_to_ChromaDB(persist_directory, documents, embedding_model)
 
 
-def embedd_rulebook(embedding_text: list, txt_paths: dict, persist_directory =settings.chroma_db_path):
+def embedd_rulebook(embedding_text: list, txt_paths: dict, persist_directory=settings.chroma_db_path):
     """
     embedding_text: list of text content
     txt_paths: dict mapping index in embedding_text -> absolute txt path
@@ -153,7 +154,6 @@ def delete_transcription_embeddings(persist_directory=settings.chroma_db_path):
     print(f"Deleted {len(ids_to_delete)} documents with source='transcriptions'")
 
 
-# Not finished yet!
 def reembed_chroma_entries(new_model: str, persist_directory=settings.chroma_db_path):
     old_model = settings.embedding_model
 

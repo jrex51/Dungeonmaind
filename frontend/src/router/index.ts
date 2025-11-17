@@ -2,7 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import { useSessionStore } from '@/stores/session.ts'
-import { checkPlayerExists } from "@/api/players";
+import { useConfigStore } from "@/stores/backendConfig.ts"
+import { checkPlayerExists } from "@/api/playersAPI.ts";
+import { fetchConfig } from "@/api/backendConfigAPI.ts";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -21,9 +23,6 @@ const router = createRouter({
     {
       path: '/about',
       name: 'about',
-      // route level code-splitting
-      // this generates a separate chunk (About.[hash].js) for this route
-      // which is lazy-loaded when the route is visited.
       component: () => import('../views/AboutView.vue'),
     },
     {
@@ -35,6 +34,11 @@ const router = createRouter({
       path: '/rulebook',
       name: 'rulebook',
       component: () => import('../views/RulebookView.vue'),
+    },
+    {
+      path: '/players',
+      name: 'players',
+      component: () => import('../views/PlayersView.vue'),
     },
   ],
 });
@@ -61,8 +65,19 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth && !store.currentPlayer) {
     return { name: "login" };
   }
+
   if (to.name === "login" && store.currentPlayer) {
     return { name: "home" };
+  }
+
+  if (to.name === "config") {
+    try {
+      const config = await fetchConfig();
+      const configStore = useConfigStore();
+      configStore.setConfig(config);
+    } catch (error) {
+      console.error("Error loading config:", error);
+    }
   }
 });
 

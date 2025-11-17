@@ -1,11 +1,20 @@
+import sys, asyncio
+
+# On windows its possible to run into race conditions when using asyncio.
+# Setting the EventLoopPolicy here will prevent async race conditions.
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
 from app.functions.embedding.embedding_model import embedd_rulebook, read_text_files, delete_chromadb
-from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown
+from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown, export_import_session
 from contextlib import asynccontextmanager
+from app.core.bus import bus
 
 # List of available api endpoints
 all_routers = [
@@ -16,9 +25,8 @@ all_routers = [
     (health.router, "/health", ["health"]),
     (players.router, "/players", ["players"]),
     (ws_players.router, "/ws", ["ws"]),
-    #(rulebook_markdown.router, "/folders", ["folders"]),
-    #(rulebook_markdown.router, "/file", ["file"]),
     (rulebook_markdown.router, "/rulebook", ["rulebook"]),
+    (export_import_session.router, "/exportImport", ["exportImport"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen
@@ -36,17 +44,25 @@ async def lifespan(app: FastAPI):
     logging.info("Server starting: deleting old ChromaDB and re-embedding rulebook...")
     delete_chromadb()
 
+    logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
+    await bus.start()
+
     # Rulebook embedding
     texts, txt_paths = read_text_files()
     embedd_rulebook(texts, txt_paths)
     logging.info("Rulebook successfully embedded.")
+    print("Rulebook successfully embedded.")
 
-    yield  # ← Server running
-
-    # Shutdown logic
-    logging.info("Server Dungeonmaind shutting down...")
+    try:
+        yield  # Server running
+    finally:
+        # Shutdown logic
+        logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
+        await bus.stop()
+        logging.info("Server Dungeonmaind shutting down...")
 
 def create_app() -> FastAPI:
+
     # Configure root logger
     logging.basicConfig(
         level=logging.DEBUG if settings.debug else logging.INFO,

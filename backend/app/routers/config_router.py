@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, status
-from app.base_models.config_base_models import ConfigRequest, ConfigResponse
+from app.base_models.config_base_models import ConfigRequest, ConfigChangeResponse, ConfigGetResponse
 from app.core.config import settings
 from app.core.chat_store import chat_store
 from app.domain.store import store
 from app.functions.embedding.embedding_model import delete_transcription_embeddings, reembed_chroma_entries
+from app.functions.process_audio_data.transcribe_audio import reload_transcription_model
 
 
 router = APIRouter()
@@ -15,7 +16,7 @@ VALID_MODELS = {
     "hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M"
 }
 
-VALID_TRANS_MODELS = {"base", "medium"}
+VALID_TRANS_MODELS = {"base", "medium", "large-v3"}
 
 VALID_EMBEDDING_MODELS = {
     "all-MiniLM-L6-v2",
@@ -23,7 +24,9 @@ VALID_EMBEDDING_MODELS = {
     "paraphrase-multilingual-MiniLM-L12-v2"
 }
 
-@router.post("/changeConfig", response_model=ConfigResponse)
+VALID_EMBEDDING_Top_K = {1, 2, 3, 4}
+
+@router.post("/changeConfig", response_model=ConfigChangeResponse)
 async def submit_config(request: ConfigRequest):
     """
     Receives a selected config option and returns confirmation.
@@ -35,20 +38,24 @@ async def submit_config(request: ConfigRequest):
             raise HTTPException(status_code=400, detail="Invalid transcription model selected.")
         if request.embedding_model not in VALID_EMBEDDING_MODELS:
             raise HTTPException(status_code=400, detail="Invalid embedding model selected.")
+        if request.embedding_top_k not in VALID_EMBEDDING_Top_K:
+            raise HTTPException(status_code=400, detail="Invalid embedding TopK selected.")
 
         # save in config
-        settings.llm_model = request.selected_LLM
-        settings.transcription_model = request.transcription_model
-        print(f"[CONFIG] LLM changed to: {settings.llm_model}")
-        print(f"[CONFIG] Transcription model changed to: {settings.transcription_model}")
+        if settings.llm_model != request.selected_LLM:
+            settings.llm_model = request.selected_LLM
+            print(f"[CONFIG] LLM changed to: {settings.llm_model}")
+
+        if settings.transcription_model != request.transcription_model:
+            settings.transcription_model = request.transcription_model
+            reload_transcription_model()
+            print(f"[CONFIG] Transcription model changed to: {settings.transcription_model}")
 
         if request.clear_chat:
             try:
                 player = store.group.get_player(request.player_id)
             except KeyError:
-                print("Player not found")
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
-            #chat_store.chat_history.clear()
             await chat_store.clear(player.id)
             print("[CONFIG] Chat Verlauf gelöscht.")
 
@@ -61,7 +68,21 @@ async def submit_config(request: ConfigRequest):
             settings.embedding_model = request.embedding_model
             print(f"[CONFIG] Embedding model changed to: {settings.embedding_model}")
 
+        if settings.embedding_top_k != request.embedding_top_k:
+            settings.embedding_top_k = request.embedding_top_k
+            print(f"[CONFIG] Embedding TopK changed to: {settings.embedding_top_k}")
 
-        return ConfigResponse(status="success")
+
+        return ConfigChangeResponse(status="success")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/getConfig", response_model=ConfigGetResponse)
+async def get_config():
+    return ConfigGetResponse(
+        selected_LLM=settings.llm_model,
+        transcription_model=settings.transcription_model,
+        embedding_model=settings.embedding_model,
+        embedding_top_k=settings.embedding_top_k
+    )
+
