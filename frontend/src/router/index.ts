@@ -3,7 +3,6 @@ import HomeView from '../views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useConfigStore } from "@/stores/backendConfig.ts"
-import { useRecorderStore } from '@/stores/recorder'
 import { checkPlayerExists } from "@/api/playersAPI.ts";
 import { fetchConfig } from "@/api/backendConfigAPI.ts";
 
@@ -67,7 +66,7 @@ router.beforeEach(async (to) => {
     return { name: "login" };
   }
 
-  if (to.name === "login" && isAuthenticated) {
+  if (to.name === "login" && store.currentPlayer) {
     return { name: "home" };
   }
 
