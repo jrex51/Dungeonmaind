@@ -23,7 +23,6 @@ function goHome() {
 
 async function submitSelection() {
   isSubmitting.value = true
-  goHome()
   const payload: Payload = {
     player_id: store.currentPlayer?.id,
     selected_LLM: selectedLLM.value,
@@ -36,8 +35,11 @@ async function submitSelection() {
   try {
     await submitConfig(payload)
     console.log('Configuration successfully submitted')
+    goHome()
   } catch (error) {
     console.error('Error calling submitConfig:', error)
+  } finally {
+    isSubmitting.value = false
   }
 }
 

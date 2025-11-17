@@ -67,7 +67,7 @@ router.beforeEach(async (to) => {
     return { name: "login" };
   }
 
-  if (to.name === "login" && isAuthenticated) {
+  if (to.name === "login" && !!store.currentPlayer) {
     return { name: "home" };
   }
 

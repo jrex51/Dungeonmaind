@@ -83,7 +83,6 @@ def load_settings_from_json2(file_path: str) -> None:
         print(f"Error parsing JSON: {e}. Using defaults.")
         return
 
-    # Iterate over fields of Settings and update if present in JSON
     for field_name, field_info in settings.__fields__.items():
         if field_name in data:
             value = data[field_name]

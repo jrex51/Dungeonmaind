@@ -149,7 +149,7 @@ class PresenceBus:
                 stale = []
                 async with self._lock:
                     for ws, meta in list(self._ws_meta.items()):
-                        if now - meta["last_seen"] > self._timeout_sec:
+                        if now - meta["last_seen"].timestamp() > self._timeout_sec:
                             stale.append(ws)
                 for ws in stale:
                     await self.unregister(ws)

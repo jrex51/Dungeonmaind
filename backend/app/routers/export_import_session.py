@@ -27,9 +27,6 @@ def export_session(req: ExportRequest) -> None:
     export_group_to_json(folder_path)
     export_settings_to_json(folder_path)
     copy_chroma_db(folder_path) # What is if at this point not all transcriptions are calculated?
-    # Save Chat-History
-    # Save Health characteristics etc.
-
 
 
 @router.post("/import")
