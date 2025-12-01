@@ -1,0 +1,88 @@
+<script setup lang="ts">
+import { useSessionStore } from '@/stores/session.ts'
+import DiceWidget from '../HomeView/DiceWidget.vue'
+import AbilitiesSection from '../HomeView/AbilitiesSection.vue'
+
+const store = useSessionStore()
+</script>
+
+<template>
+  <!-- Right: abilities, health and dice -->
+  <aside :class="['right-rail', store.isLeader ? 'right-rail--leader' : 'right-rail--member']">
+    <div :class="['right-rail__inner', store.isLeader ? 'right-rail__inner--leader' : null]">
+      <DiceWidget />
+      <AbilitiesSection />
+    </div>
+  </aside>
+</template>
+
+<style src="@/assets/styles.css"></style>
+<style scoped>
+/* Right rail layout */
+.right-rail {
+  position: fixed;
+  right: 15%;
+  width: 540px;
+  z-index: 900;
+  box-sizing: border-box;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+}
+
+/* Leader-Version: füllt vertikal den Bildschirmbereich und scrollt intern */
+.right-rail--leader {
+  top: 10px;
+  bottom: 5px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.5rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.right-rail--leader::-webkit-scrollbar {
+  display: none;
+}
+
+/* Player-Version: fixed */
+.right-rail--member {
+  top: 240px;
+  bottom: auto;
+  overflow: visible;
+  padding-right: 0;
+}
+
+/* Gemeinsames Layout innen: Cards untereinander mit Abstand */
+.right-rail__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
+.right-rail__inner--leader {
+  padding-top: 65px;
+}
+
+/* Responsive design */
+@media (max-width: 900px) {
+  .right-rail {
+    position: static;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: auto;
+    margin: 1rem;
+    padding-right: 0;
+  }
+
+  .right-rail--leader,
+  .right-rail--member {
+    overflow: visible;
+  }
+
+  .right-rail__inner--leader {
+    padding-top: 0;
+  }
+}
+</style>

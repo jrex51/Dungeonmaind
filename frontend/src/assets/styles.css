@@ -1,0 +1,146 @@
+/* Holds reoccurring design elements */
+
+/* Global font & base layout */
+@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('/bg-texture.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-color: rgba(36, 25, 7, 0.95);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Headings & separators */
+h1 {
+  color: #392401;
+  text-align: center;
+  padding-top: 20px;
+  margin: 0 0 1.5rem;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+}
+
+h2 {
+  color: #392401;
+  text-align: center;
+  margin: 0 0 1.5rem;
+  font-size: x-large;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+}
+
+hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid rgba(94, 80, 53, 0.5);
+  margin: 2rem 0;
+}
+
+/* Small information text */
+.secondary-medieval-text {
+  font-family: 'MedievalSharp', cursive;
+  color: #392401;
+  line-height: 1.5;
+  font-size: 1rem;
+}
+
+
+/* Generic content section layout */
+.content-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Shared form controls */
+.input-field {
+  padding: 0.75rem;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #695710;
+  border-radius: 10px;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: bolder;
+  background-color: #f1e6b4;
+  color: #4c3e06;
+  width: 90%;
+  box-sizing: border-box;
+}
+
+.submit-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  background-color: #b74d30;
+  color: white;
+  border: 1px solid #8e7513;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-bottom: 1rem;
+  font-family: 'MedievalSharp', cursive;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.submit-button:hover:not(:disabled) {
+  background-color: #7e6f34;
+  transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Shared output-style panel */
+.output {
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: rgba(110, 97, 50, 0.7);
+  color: white;
+  border-radius: 10px;
+  border: 1px solid #000;
+  box-sizing: border-box;
+  font-family: 'MedievalSharp', cursive;
+  font-weight: 400;
+}
+
+.output p {
+  margin: 0;
+}
+
+.output h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #f1e6b4;
+}
+
+/* Shared rail/card visuals for the right-hand side panels */
+.rail-panel {
+  background-color: rgba(163, 148, 95, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+}
+
+.rail-title {
+  margin: 0 0 1rem;
+  text-align: center;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
