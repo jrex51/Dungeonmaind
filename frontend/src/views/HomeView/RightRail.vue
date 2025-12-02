@@ -2,6 +2,7 @@
 import { useSessionStore } from '@/stores/session.ts'
 import DiceWidget from '../HomeView/DiceWidget.vue'
 import AbilitiesSection from '../HomeView/AbilitiesSection.vue'
+import JoinLink from "@/views/HomeView/JoinLink.vue";
 
 const store = useSessionStore()
 </script>
@@ -10,6 +11,7 @@ const store = useSessionStore()
   <!-- Right: abilities, health and dice -->
   <aside :class="['right-rail', store.isLeader ? 'right-rail--leader' : 'right-rail--member']">
     <div :class="['right-rail__inner', store.isLeader ? 'right-rail__inner--leader' : null]">
+      <JoinLink />
       <DiceWidget />
       <AbilitiesSection />
     </div>

@@ -9,6 +9,10 @@ import * as api from '@/api/playersAPI.ts'
 const store = useSessionStore();
 const router = useRouter();
 
+const isLocalhost =
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1'
+
 // Logik für checkConnection
 
 type Status = "idle" | "checking" | "ok" | "error";

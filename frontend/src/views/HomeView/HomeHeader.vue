@@ -16,10 +16,6 @@ function goToConfig() {
   router.push('/config')
 }
 
-function goToPlayers() {
-  router.push('/players')
-}
-
 function goToRulebook() {
   router.push('/rulebook')
 }
@@ -46,7 +42,6 @@ async function onExport() {
     <h1>Dungeonmaind</h1>
     <div class="header-right">
       <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
-      <button v-if="store.isLeader" class="players-button" @click="goToPlayers">Players</button>
       <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button>
       <button v-if="store.isLeader" class="export-button" @click="showNameModal = true">
         Save Session

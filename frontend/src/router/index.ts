@@ -35,11 +35,6 @@ const router = createRouter({
       name: 'rulebook',
       component: () => import('../views/RulebookView.vue'),
     },
-    {
-      path: '/players',
-      name: 'players',
-      component: () => import('../views/PlayersView.vue'),
-    },
   ],
 });
 
