@@ -155,7 +155,12 @@ class Player:
     def  from_dict(cls, data: dict) -> "Player":
         role = Role(data["role"])
 
-        status=PlayerStatus.active if role == Role.leader else PlayerStatus.inactive
+        if role == Role.leader:  # alle leader werden active gesetzt
+            status=PlayerStatus.active
+        elif PlayerStatus(data["status"]) == PlayerStatus.active:  # alle (noch) aktiven Player werden inactive, um rejoinen zu können
+            status=PlayerStatus.inactive
+        else:
+            status = PlayerStatus(data["status"])  # Player die bereits inactive oder kicked sind behalten ihren Status
 
         hp_field = data.get("hp") or {}
         hp = Hp(
