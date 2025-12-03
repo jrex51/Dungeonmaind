@@ -208,7 +208,7 @@ async function kick(playerId: string) {
               class="ability-controls"
             >
               <button
-                class="ability-stepper"
+                class="ability-stepper submit-button"
                 :disabled="abilityBusy[a.key]"
                 @click="decAbility(p, a.key)"
                 aria-label="decrease"
@@ -216,7 +216,7 @@ async function kick(playerId: string) {
                 −
               </button>
               <button
-                class="ability-stepper"
+                class="ability-stepper submit-button"
                 :disabled="abilityBusy[a.key]"
                 @click="incAbility(p, a.key)"
                 aria-label="increase"
@@ -269,13 +269,13 @@ async function kick(playerId: string) {
             v-if="store.isLeader || p.id === store.currentPlayer?.id"
           >
             <button
-              class="ability-stepper"
+              class="ability-stepper submit-button"
               @click="damage(p.id, 1)"
               aria-label="take 1 damage"
             >
               −
             </button>
-            <button class="ability-stepper" @click="heal(p.id, 1)" aria-label="heal 1 hp">
+            <button class="ability-stepper submit-button" @click="heal(p.id, 1)" aria-label="heal 1 hp">
               +
             </button>
           </div>
