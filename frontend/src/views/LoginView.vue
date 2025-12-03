@@ -318,182 +318,196 @@ async function JoinExistingPlayer() {
 
 <template>
   <div class="login-page">
-    <h1>Login Page</h1>
+    <div class="rail-panel login-card">
+      <h1>Login Page</h1>
 
-    <div class="check-card">
-      <label for="baseUrl">Backend-Adresse</label>
-      <input
-        class = "input-field"
-        id="baseUrl"
-        v-model.trim="baseUrl"
-        placeholder="z.B. http://localhost:8080"
-        :disabled="status === 'checking'"
-      />
+      <div class="check-card">
+        <label for="baseUrl">Backend-Adresse</label>
+        <input
+          class = "input-field"
+          id="baseUrl"
+          v-model.trim="baseUrl"
+          placeholder="z.B. http://localhost:8080"
+          :disabled="status === 'checking'"
+        />
 
-      <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
-        {{ status === 'checking' ? 'Checking...' : 'Check/Set Connection' }}
-      </button>
+        <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
+          {{ status === 'checking' ? 'Checking...' : 'Check/Set Connection' }}
+        </button>
 
-      <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
-      <p v-else-if="status === 'error'">Not available: {{ message }}</p>
-    </div>
+        <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
+        <p v-else-if="status === 'error'">Not available: {{ message }}</p>
+      </div>
 
 
-    <hr style="margin: 1rem 0" />
+      <hr style="margin: 1rem 0" />
 
-    <div>
-      <button class="done-button" @click="onImport">Import Session</button>
-    </div>
-    <div v-if="showImportModal" class="modal-overlay">
-      <div class="modal">
-        <h2>Select a session to import</h2>
+      <div>
+        <button class="done-button" @click="onImport">Import Session</button>
+      </div>
+      <div v-if="showImportModal" class="modal-overlay">
+        <div class="modal">
+          <h2>Select a session to import</h2>
 
-        <div class="session-list">
-          <div
-            v-for="(folder, index) in sessions"
-            :key="index"
-            class="session-item"
-            :class="{ selected: selectedSession === folder }"
-            @click="selectedSession = folder"
-          >
-            {{ folder }}
+          <div class="session-list">
+            <div
+              v-for="(folder, index) in sessions"
+              :key="index"
+              class="session-item"
+              :class="{ selected: selectedSession === folder }"
+              @click="selectedSession = folder"
+            >
+              {{ folder }}
+            </div>
+          </div>
+
+          <div class="modal-buttons">
+            <button class="btn-cancel" @click="showImportModal = false">Cancel</button>
+            <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
+              Import
+            </button>
           </div>
         </div>
-
-        <div class="modal-buttons">
-          <button class="btn-cancel" @click="showImportModal = false">Cancel</button>
-          <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
-            Import
-          </button>
-        </div>
       </div>
-    </div>
 
-    <hr style="margin: 1rem 0" />
+      <hr style="margin: 1rem 0" />
 
-    <div>
-      <button class="button" @click="JoinNewPlayer">Join as new Player</button>
-      <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
-    </div>
+      <div>
+        <button class="button" @click="JoinNewPlayer">Join as new Player</button>
+        <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
+      </div>
 
-    <div v-if="showNewPlayerModal" class="modal-overlay">
-      <div class="modal">
-        <h2>Select a Role and a Name for your Player</h2>
-        <form class="join-card" @submit="onSubmit">
-          <!-- 1) select role-->
-          <fieldset>
-            <legend>Choose a role</legend>
+      <div v-if="showNewPlayerModal" class="modal-overlay">
+        <div class="modal">
+          <h2>Select a Role and a Name for your Player</h2>
+          <form class="join-card" @submit="onSubmit">
+            <!-- 1) select role-->
+            <fieldset>
+              <legend>Choose a role</legend>
 
-            <label>
-              <input
-                type="radio"
-                name="role"
-                :value="'leader'"
-                v-model="role"
-                />
-              Leader
-            </label>
+              <label>
+                <input
+                  type="radio"
+                  name="role"
+                  :value="'leader'"
+                  v-model="role"
+                  />
+                Leader
+              </label>
 
-            <label>
-              <input
-                type="radio"
-                name="role"
-                :value="'member'"
-                v-model="role"
-                />
-              Member
-            </label>
+              <label>
+                <input
+                  type="radio"
+                  name="role"
+                  :value="'member'"
+                  v-model="role"
+                  />
+                Member
+              </label>
 
-            <p v-if="touched && !role" class="error">Please select a role.</p>
-          </fieldset>
+              <p v-if="touched && !role" class="error">Please select a role.</p>
+            </fieldset>
 
-          <!-- 2) local network IP -->
-          <div v-if="role === 'leader'">
-            <div style="margin-top: 4px;"></div>
-            <div v-if="networkIPs.length > 1">
-            <label for="networkIP">Select your local network IP:</label>
-            <div style="margin-top: 1px;"></div>
-            <select id="networkIP" v-model="selectedNetworkIP">
-              <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
-                {{ networkIP }}
-              </option>
-            </select>
-            </div>
-            <div v-else>
-              <label for="networkIP">Enter your local network IP:</label>
+            <!-- 2) local network IP -->
+            <div v-if="role === 'leader'">
+              <div style="margin-top: 4px;"></div>
+              <div v-if="networkIPs.length > 1">
+              <label for="networkIP">Select your local network IP:</label>
               <div style="margin-top: 1px;"></div>
-              <input
-                id="networkIP"
-                type="text"
-                v-model="selectedNetworkIP"
-                placeholder="e.g. FRITZ!Box: 192.168.178.x"
-                style="width: 100%; max-width: 200px;"
-              />
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
+              </div>
+              <div v-else>
+                <label for="networkIP">Enter your local network IP:</label>
+                <div style="margin-top: 1px;"></div>
+                <input
+                  id="networkIP"
+                  type="text"
+                  v-model="selectedNetworkIP"
+                  placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                  style="width: 100%; max-width: 200px;"
+                />
+              </div>
+              <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
             </div>
-            <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
-          </div>
 
-          <!-- 3) player name -->
-          <div style="margin-top: 4px;"></div>
-          <!-- 2) Spielernamen -->
-          <label for="playerName">Your Name</label>
-          <input
-            class = "input-field"
-            id="playerName"
-            type="text"
-            v-model.trim="playerName"
-            maxlength="20"
-            placeholder="z.B. Alex"
-            @blur="touched = true"
-            autocomplete="name"
-            />
-          <p v-if="touched && nameError" class="error">{{ nameError }}</p>
-          <p v-if="serverError" class="error">{{ serverError }}</p>
+            <!-- 3) player name -->
+            <div style="margin-top: 4px;"></div>
+            <!-- 2) Spielernamen -->
+            <label for="playerName">Your Name</label>
+            <input
+              class = "input-field"
+              id="playerName"
+              type="text"
+              v-model.trim="playerName"
+              maxlength="20"
+              placeholder="z.B. Alex"
+              @blur="touched = true"
+              autocomplete="name"
+              />
+            <p v-if="touched && nameError" class="error">{{ nameError }}</p>
+            <p v-if="serverError" class="error">{{ serverError }}</p>
 
-          <!-- 4) join or cancel -->
-          <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
-            {{ submitting ? "Join ..." : "Join" }}
-          </button>
-          <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
-            Cancel
-          </button>
-        </form>
-      </div>
-    </div>
-    <div v-if="showExistingPlayerModal" class="modal-overlay">
-      <div class="modal">
-        <h2>Select your player</h2>
-
-        <div class="player-list">
-          <div
-            v-for="player in allPlayers.filter(p => p.status === 'inactive')"
-            :key="player.name"
-            class="player-item"
-            :class="{ selected: selectedPlayer === player }"
-            @click="selectedPlayer = player"
-          >
-            {{ player.name }}
-          </div>
-        </div>
-
-        <div class="modal-buttons">
-          <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
-          <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
-            {{ submitting ? "Join ..." : "Join" }}
-          </button>
+            <!-- 4) join or cancel -->
+            <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
+              {{ submitting ? "Join ..." : "Join" }}
+            </button>
+            <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
+              Cancel
+            </button>
+          </form>
         </div>
       </div>
-    </div>
+      <div v-if="showExistingPlayerModal" class="modal-overlay">
+        <div class="modal">
+          <h2>Select your player</h2>
 
+          <div class="player-list">
+            <div
+              v-for="player in allPlayers.filter(p => p.status === 'inactive')"
+              :key="player.name"
+              class="player-item"
+              :class="{ selected: selectedPlayer === player }"
+              @click="selectedPlayer = player"
+            >
+              {{ player.name }}
+            </div>
+          </div>
+
+          <div class="modal-buttons">
+            <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
+            <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
+              {{ submitting ? "Join ..." : "Join" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
+<style src="@/assets/styles.css"></style>
 <style scoped>
 .config-page {
   max-width: 600px;
   margin: 2rem auto;
   padding: 1rem;
   text-align: center;
+}
+
+.login-page {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+
+.login-card {
+  /* rail-panel liefert Hintergrund, Rahmen etc. */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 select {
