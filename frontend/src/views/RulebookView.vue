@@ -24,9 +24,8 @@ const markdownContent = ref("")
 const renderedMarkdown = ref("")
 const expandedFolders = ref<Set<string>>(new Set())
 
-function goHome() {
-  router.push('/')
-}
+const emit = defineEmits(['submit-success'])
+
 async function fetchFolders() {
   const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
   const data = await res.json()
@@ -83,7 +82,7 @@ function toggleFolder(folder: string) {
         v-html="renderedMarkdown"
         class="markdown-output scrollable-panel">
       </div>
-      <button class="goHome-button" @click="goHome">return</button>
+      <button class="goHome-button" @click="emit('submit-success')">return</button>
     </div>
   </div>
 </template>
@@ -95,12 +94,15 @@ function toggleFolder(folder: string) {
 }
 
 .sidebar {
-  width: 300px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 20%;
   background: rgba(163, 148, 95, 0.8);
   color: #392401;
   padding: 2rem 1rem;
   overflow-y: auto;
-  max-height: 100vh;
+  height: 100vh;
   border-right: 2px solid #8e7513;
   font-family: 'MedievalSharp', cursive;
   font-weight: 600;
@@ -153,7 +155,7 @@ function toggleFolder(folder: string) {
 }
 
 .goHome-button {
-  padding: 0.5rem 1rem;
+  padding: 0.7rem 1.4rem;
   background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
   border-radius: 4px;
@@ -161,7 +163,10 @@ function toggleFolder(folder: string) {
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
   font-weight: normal;
+  font-size: 0.9rem;
   transition: background-color 0.3s ease;
+  margin-top: 10px;
+  margin-left: 20%;
 }
 
 .goHome-button :hover {
@@ -251,14 +256,15 @@ function toggleFolder(folder: string) {
 }
 
 :deep(.scrollable-panel) {
-  max-height: 400px;
+  max-height: 90%;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 3rem;
   border: 1px solid #ccc;
   border-radius: 8px;
-  background-color: rgba(110, 97, 50, 0.7);
+  background-color: rgba(110, 97, 50, 0.95);
   box-sizing: border-box;
+  margin-left: 20%;
 }
 </style>
