@@ -152,42 +152,18 @@ class Player:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Player":
-        """
-        Robust gegen altes Flat-Format:
-        - akzeptiert verschachteltes "hp" oder flat "hp/max_hp/temp_hp"
-        - akzeptiert "status" sowohl als Enum-Value ("active") als auch als "PlayerStatus.active"
-        - abilities optional; defaultet auf sinnvolle Werte
-        """
-        # Role
+    def  from_dict(cls, data: dict) -> "Player":
         role = Role(data["role"])
 
-        # Status (tolerant)
-        status_raw = data.get("status", PlayerStatus.active)
-        if isinstance(status_raw, PlayerStatus):
-            status = status_raw
-        else:
-            s = str(status_raw)
-            if "." in s:  # handle "PlayerStatus.active"
-                s = s.split(".", 1)[1]
-            status = PlayerStatus(s)
+        status=PlayerStatus.active if role == Role.leader else PlayerStatus.inactive
 
-        # HP: nested or flat
-        hp_field = data.get("hp")
-        if isinstance(hp_field, dict):
-            hp = Hp(
-                current=int(hp_field.get("current", 10)),
-                max=int(hp_field.get("max", 10)),
-                temp=int(hp_field.get("temp", 0)),
-            )
-        else:
-            hp = Hp(
-                current=int(data.get("hp", 10)),
-                max=int(data.get("max_hp", 10)),
-                temp=int(data.get("temp_hp", 0)),
-            )
+        hp_field = data.get("hp") or {}
+        hp = Hp(
+            current=int(hp_field.get("current", 10)),
+            max=int(hp_field.get("max", 10)),
+            temp=int(hp_field.get("temp", 0)),
+        )
 
-        # Abilities
         abilities_data = data.get("abilities") or {}
         abilities = Abilities(
             str=int(abilities_data.get("str", 10)),
@@ -238,16 +214,29 @@ class Group:
             if p.status == PlayerStatus.active
         }
 
+    def inactive(self) -> Dict[UUID, Player]:
+        """Nur inaktive Spieler."""
+        return {
+            pid: p
+            for pid, p in self.players.items()
+            if p.status == PlayerStatus.inactive
+        }
+
     def size(self) -> int:
         """Aktuelle Gruppengröße = nur aktive Spieler."""
         return len(self.active())
 
-    def leader_id(self) -> Optional[UUID]:
+    def leader_id(self, is_inactive_ok = False) -> Optional[UUID]:
         """Aktiver Leader, falls vorhanden."""
-        for pid, p in self.active().items():
+        leader_pid: UUID = None
+        for pid, p in self.active().items():  # zuerst versuchen einen aktiven leader zu finden
             if p.role == Role.leader:
-                return pid
-        return None
+                leader_pid = pid
+        if is_inactive_ok and leader_pid is None:
+            for pid, p in self.inactive().items():  # wenn keinen gefunden, dann inaktiven
+                if p.role == Role.leader:
+                    leader_pid = pid
+        return leader_pid
 
     def has_active_name(self, name: str) -> bool:
         """Eindeutiger Name unter aktiven Spielern."""
