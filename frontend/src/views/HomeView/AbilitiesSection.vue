@@ -126,12 +126,29 @@ async function onMaxHpChange(player: PlayerOut, event: Event) {
     return
   }
 
+  // remember old hp value
+  const oldMax = player.hp.max
+  const oldCur = player.hp.current
+
   try {
     const updated = await updateMaxHp(player.id, raw, apiBase())
 
     const index = store.players.findIndex((p: PlayerOut) => p.id === updated.id)
     if (index !== -1) {
       store.players[index] = updated
+    }
+
+    // check for increase or decrease (new MaxHP - old MaxHP)
+    const delta = updated.hp.max - oldMax
+
+    // if maxhp increased than increase current HP
+    if (delta > 0) {
+      await heal(player.id, 1)
+    }
+
+    // if maxhp decreased than decrease current HP
+    else if (delta < 0 && oldMax!= oldCur) { // avoid  additional damage if healthpoints were full
+      await damage(player.id, 1)
     }
   } catch (err) {
     console.error(err)
