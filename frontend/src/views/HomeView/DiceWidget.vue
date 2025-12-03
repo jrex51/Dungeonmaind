@@ -36,7 +36,7 @@ function rollDice(sides: number) {
 .dice-widget {
   position: static;
   width: 100%;
-  margin-top: 3rem;
+  margin-top: 0rem;
 }
 
 .dice-widget--member {
