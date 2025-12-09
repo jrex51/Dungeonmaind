@@ -67,4 +67,4 @@ export const EMBEDDING_TopK = [
 ]
 
 // Set the default embedding model
-export const DEFAULT_EMBEDDING_TopK = EMBEDDING_MODELS[1].value
+export const DEFAULT_EMBEDDING_TopK = EMBEDDING_TopK[1].value

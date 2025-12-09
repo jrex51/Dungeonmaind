@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session.ts'
 import { SERVER_CONFIG } from '@/config/config.ts'
+import ConfigView from '@/views/ConfigView.vue'
+import RulebookView from '@/views/RulebookView.vue'
 
 /** Holds Header and session saving */
 
@@ -11,10 +13,8 @@ const store = useSessionStore()
 
 const showNameModal = ref(false)
 const sessionName = ref("")
-
-function goToConfig() {
-  router.push('/config')
-}
+const showConfigModal = ref(false)
+const showRulebookModal = ref(false)
 
 function goToRulebook() {
   router.push('/rulebook')
@@ -41,8 +41,10 @@ async function onExport() {
     <div class="header-left"></div>
     <h1>Dungeonmaind</h1>
     <div class="header-right">
-      <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
-      <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button>
+      <!-- <button class="rulebook-button" @click="goToRulebook">Rulebook</button> -->
+      <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
+      <!-- <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button> -->
+      <button v-if="store.isLeader" class="config-button" @click="showConfigModal = true">Config</button>
       <button v-if="store.isLeader" class="export-button" @click="showNameModal = true">
         Save Session
       </button>
@@ -60,6 +62,12 @@ async function onExport() {
           <button class="btn-save" @click="onExport">Save</button>
         </div>
       </div>
+    </div>
+    <div v-if="showConfigModal" class="modal-overlay">
+      <ConfigView @submit-success="showConfigModal = false" />
+    </div>
+    <div v-if="showRulebookModal" class="modal-overlay">
+      <RulebookView @submit-success="showRulebookModal = false" />
     </div>
   </div>
 </template>

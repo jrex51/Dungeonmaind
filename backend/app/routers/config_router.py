@@ -27,7 +27,7 @@ VALID_EMBEDDING_MODELS = {
 VALID_EMBEDDING_Top_K = {1, 2, 3, 4}
 
 @router.post("/changeConfig", response_model=ConfigChangeResponse)
-async def submit_config(request: ConfigRequest):
+async def change_config(request: ConfigRequest):
     """
     Receives a selected config option and returns confirmation.
     """

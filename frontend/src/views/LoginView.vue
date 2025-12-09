@@ -253,6 +253,7 @@ async function confirmImport() {
         session_name: selectedSession.value,
       }),
     })
+
     if (!res.ok) throw new Error("Import failed")
       const leader = await res.json();
 
@@ -261,6 +262,7 @@ async function confirmImport() {
     store.setCurrentPlayer(leader);
 
     await router.push({ name: "home" });
+
     showImportModal.value = false
     alert(`Session "${selectedSession.value}" imported successfully!`)
   } catch (err) {

@@ -40,6 +40,7 @@ export const useRecorderStore = defineStore('recorder', () => {
       'audio/ogg;codecs=opus',
       'audio/webm;codecs=opus',
       'audio/webm',
+      'audio/mp4',
     ]
     for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t
     return undefined

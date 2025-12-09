@@ -222,6 +222,29 @@ export async function kickPlayer(
   }
 }
 
+export async function postPlayerVoiceprint(
+  playerId: string,
+  voiceprint: Blob,
+  baseUrl: string,
+) {
+  const fileExtension = voiceprint.type.split('/')[1]?.split(';')[0] || 'ogg'
+  const url = new URL(`/players/${playerId}/voiceprint`, base(baseUrl)).toString()
+
+  const formData = new FormData()
+  formData.append('audio', voiceprint, `voiceprint.${fileExtension}`)
+  const res = await fetch(url, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      'X-Player-Id': playerId,
+    },
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(msg || `Failed to upload voiceprint: HTTP ${res.status}`)
+  }
+}
+
 /**
  * Check if a player exists.
  */

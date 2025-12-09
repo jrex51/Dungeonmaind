@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import secrets
 import string
+import base64
 
 
 class Role(str, Enum):
@@ -49,6 +50,11 @@ class Hp:
     max: int = 10
     temp: int = 0
 
+@dataclass
+class Voiceprint:
+    audio_bytes: bytes
+    content_type: str
+
 
 @dataclass
 class Player:
@@ -60,6 +66,7 @@ class Player:
     created_at: datetime = field(default_factory=now_utc)
     last_seen_at: datetime = field(default_factory=now_utc)
     abilities: Abilities = field(default_factory=Abilities)
+    voiceprint: Voiceprint | None = None
 
 
     def touch(self) -> None:
@@ -127,6 +134,13 @@ class Player:
     # Serialization helpers (tolerate legacy formats)
 
     def to_dict(self) -> dict:
+        voice_dict = None
+        if getattr(self, "voiceprint", None) is not None:
+            voice_dict = {
+                "content_type": self.voiceprint.content_type,
+                "audio_b64": base64.b64encode(self.voiceprint.audio_bytes).decode("ascii"),
+            }
+
         return {
             "id": str(self.id),
             "name": self.name,
@@ -147,47 +161,29 @@ class Player:
             }
             if self.abilities
             else None,
+            "voiceprint": voice_dict,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat(),
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Player":
-        """
-        Robust gegen altes Flat-Format:
-        - akzeptiert verschachteltes "hp" oder flat "hp/max_hp/temp_hp"
-        - akzeptiert "status" sowohl als Enum-Value ("active") als auch als "PlayerStatus.active"
-        - abilities optional; defaultet auf sinnvolle Werte
-        """
-        # Role
+    def  from_dict(cls, data: dict) -> "Player":
         role = Role(data["role"])
 
-        # Status (tolerant)
-        status_raw = data.get("status", PlayerStatus.active)
-        if isinstance(status_raw, PlayerStatus):
-            status = status_raw
+        if role == Role.leader:  # alle leader werden active gesetzt
+            status=PlayerStatus.active
+        elif PlayerStatus(data["status"]) == PlayerStatus.active:  # alle (noch) aktiven Player werden inactive, um rejoinen zu können
+            status=PlayerStatus.inactive
         else:
-            s = str(status_raw)
-            if "." in s:  # handle "PlayerStatus.active"
-                s = s.split(".", 1)[1]
-            status = PlayerStatus(s)
+            status = PlayerStatus(data["status"])  # Player die bereits inactive oder kicked sind behalten ihren Status
 
-        # HP: nested or flat
-        hp_field = data.get("hp")
-        if isinstance(hp_field, dict):
-            hp = Hp(
-                current=int(hp_field.get("current", 10)),
-                max=int(hp_field.get("max", 10)),
-                temp=int(hp_field.get("temp", 0)),
-            )
-        else:
-            hp = Hp(
-                current=int(data.get("hp", 10)),
-                max=int(data.get("max_hp", 10)),
-                temp=int(data.get("temp_hp", 0)),
-            )
+        hp_field = data.get("hp") or {}
+        hp = Hp(
+            current=int(hp_field.get("current", 10)),
+            max=int(hp_field.get("max", 10)),
+            temp=int(hp_field.get("temp", 0)),
+        )
 
-        # Abilities
         abilities_data = data.get("abilities") or {}
         abilities = Abilities(
             str=int(abilities_data.get("str", 10)),
@@ -197,6 +193,16 @@ class Player:
             wis=int(abilities_data.get("wis", 10)),
             cha=int(abilities_data.get("cha", 10)),
         )
+
+        voiceprint = None
+        voice_data = data.get("voiceprint")
+        if voice_data and voice_data.get("audio_b64"):
+            try:
+                audio_bytes = base64.b64decode(voice_data["audio_b64"])
+                content_type = voice_data.get("content_type", "application/octet-stream")
+                voiceprint = Voiceprint(audio_bytes=audio_bytes, content_type=content_type)
+            except Exception:
+                voiceprint = None
 
         created_at = (
             datetime.fromisoformat(data["created_at"])
@@ -216,6 +222,7 @@ class Player:
             status=status,
             hp=hp,
             abilities=abilities,
+            voiceprint=voiceprint,
             created_at=created_at,
             last_seen_at=last_seen_at,
         )
@@ -238,16 +245,29 @@ class Group:
             if p.status == PlayerStatus.active
         }
 
+    def inactive(self) -> Dict[UUID, Player]:
+        """Nur inaktive Spieler."""
+        return {
+            pid: p
+            for pid, p in self.players.items()
+            if p.status == PlayerStatus.inactive
+        }
+
     def size(self) -> int:
         """Aktuelle Gruppengröße = nur aktive Spieler."""
         return len(self.active())
 
-    def leader_id(self) -> Optional[UUID]:
+    def leader_id(self, is_inactive_ok = False) -> Optional[UUID]:
         """Aktiver Leader, falls vorhanden."""
-        for pid, p in self.active().items():
+        leader_pid: UUID = None
+        for pid, p in self.active().items():  # zuerst versuchen einen aktiven leader zu finden
             if p.role == Role.leader:
-                return pid
-        return None
+                leader_pid = pid
+        if is_inactive_ok and leader_pid is None:
+            for pid, p in self.inactive().items():  # wenn keinen gefunden, dann inaktiven
+                if p.role == Role.leader:
+                    leader_pid = pid
+        return leader_pid
 
     def has_active_name(self, name: str) -> bool:
         """Eindeutiger Name unter aktiven Spielern."""

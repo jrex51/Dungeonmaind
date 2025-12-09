@@ -1,5 +1,7 @@
 import sys, asyncio
 
+from aiohttp.hdrs import ACCESS_CONTROL_ALLOW_ORIGIN
+
 # On windows its possible to run into race conditions when using asyncio.
 # Setting the EventLoopPolicy here will prevent async race conditions.
 if sys.platform.startswith("win"):
@@ -77,7 +79,6 @@ def create_app() -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[],
         allow_origin_regex=LAN_REGEX,
         allow_credentials=True,
         allow_methods=["*"],
