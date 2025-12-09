@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import secrets
 import string
+import base64
 
 
 class Role(str, Enum):
@@ -49,6 +50,11 @@ class Hp:
     max: int = 10
     temp: int = 0
 
+@dataclass
+class Voiceprint:
+    audio_bytes: bytes
+    content_type: str
+
 
 @dataclass
 class Player:
@@ -60,6 +66,7 @@ class Player:
     created_at: datetime = field(default_factory=now_utc)
     last_seen_at: datetime = field(default_factory=now_utc)
     abilities: Abilities = field(default_factory=Abilities)
+    voiceprint: Voiceprint | None = None
 
 
     def touch(self) -> None:
@@ -127,6 +134,13 @@ class Player:
     # Serialization helpers (tolerate legacy formats)
 
     def to_dict(self) -> dict:
+        voice_dict = None
+        if getattr(self, "voiceprint", None) is not None:
+            voice_dict = {
+                "content_type": self.voiceprint.content_type,
+                "audio_b64": base64.b64encode(self.voiceprint.audio_bytes).decode("ascii"),
+            }
+
         return {
             "id": str(self.id),
             "name": self.name,
@@ -147,6 +161,7 @@ class Player:
             }
             if self.abilities
             else None,
+            "voiceprint": voice_dict,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat(),
         }
@@ -179,6 +194,16 @@ class Player:
             cha=int(abilities_data.get("cha", 10)),
         )
 
+        voiceprint = None
+        voice_data = data.get("voiceprint")
+        if voice_data and voice_data.get("audio_b64"):
+            try:
+                audio_bytes = base64.b64decode(voice_data["audio_b64"])
+                content_type = voice_data.get("content_type", "application/octet-stream")
+                voiceprint = Voiceprint(audio_bytes=audio_bytes, content_type=content_type)
+            except Exception:
+                voiceprint = None
+
         created_at = (
             datetime.fromisoformat(data["created_at"])
             if "created_at" in data
@@ -197,6 +222,7 @@ class Player:
             status=status,
             hp=hp,
             abilities=abilities,
+            voiceprint=voiceprint,
             created_at=created_at,
             last_seen_at=last_seen_at,
         )

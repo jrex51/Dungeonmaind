@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { type PlayerOut, updateMaxHp, damagePlayer, healPlayer, patchPlayerAbility, kickPlayer } from '@/api/playersAPI.ts'
+import { type PlayerOut, updateMaxHp, damagePlayer, healPlayer, patchPlayerAbility, kickPlayer, postPlayerVoiceprint } from '@/api/playersAPI.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { SERVER_CONFIG } from '@/config/config'
 
@@ -12,6 +12,20 @@ function apiBase(): string {
 
 /** Ability PATCH*/
 const abilityBusy = ref<Record<string, boolean>>({})
+
+const voiceBusy = ref<Record<string, boolean>>({})
+
+const playerVoiceStatus = ref<string>('')
+const isRecordingPlayerVoice = ref(false)
+const currentRecordingPlayerId = ref<string | null>(null)
+
+const mediaRecorderVoiceNote = ref<MediaRecorder | null>(null)
+const audioChunksVoiceNote = ref<Blob[]>([])
+
+//const recordedVoiceNoteURL = ref<string | null>(null)
+const currentVoiceNote = ref<HTMLAudioElement | null>(null)
+
+const playerVoiceDrafts = ref<Record<string, { blob: Blob; url: string }>>({})
 
 /** Abilities */
 type AbilitySpec = {
@@ -152,6 +166,98 @@ async function kick(playerId: string) {
     console.error('Kick failed:', e)
   }
 }
+
+async function setPlayerVoiceprint(player: PlayerOut) {
+  if (!player.id) return
+  voiceBusy.value[player.id] = true
+  const draft = playerVoiceDrafts.value[player.id]
+  const voiceprint = draft.blob
+
+   try {
+    await postPlayerVoiceprint(player.id, voiceprint, apiBase())
+   } catch (err) {
+    console.error('Create player voice failed:', err)
+  } finally {
+    voiceBusy.value[player.id] = false
+  }
+}
+
+function pickMimeType(): string | undefined {
+    const candidates = [
+      'audio/ogg;codecs=opus',
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+    ]
+    for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t
+    return undefined
+  }
+
+async function startVoiceprintRecording(player: PlayerOut) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunksVoiceNote.value = []
+
+    const mimeType = pickMimeType()
+    if (!mimeType) {
+      playerVoiceStatus.value = 'No supported audio format.'
+      stream.getTracks().forEach(t => t.stop())
+      return
+    }
+
+    mediaRecorderVoiceNote.value = new MediaRecorder(stream, { mimeType })
+    mediaRecorderVoiceNote.value.ondataavailable = (e) => e.data.size && audioChunksVoiceNote.value.push(e.data)
+    mediaRecorderVoiceNote.value.onstop = () => {
+      const pID = currentRecordingPlayerId.value
+      isRecordingPlayerVoice.value = false
+      currentRecordingPlayerId.value = null
+
+      if (!pID) return
+
+      const audioBlob = new Blob(audioChunksVoiceNote.value, { type: mediaRecorderVoiceNote.value?.mimeType })
+
+      const existing = playerVoiceDrafts.value[pID]
+      if (existing?.url) {
+        URL.revokeObjectURL(existing.url)
+      }
+
+      const url = URL.createObjectURL(audioBlob)
+      playerVoiceDrafts.value[pID] = { blob: audioBlob, url }
+    }
+
+    currentRecordingPlayerId.value = player.id
+    isRecordingPlayerVoice.value = true
+    mediaRecorderVoiceNote.value.start()
+  } catch (err) {
+    console.error('Voice note recording failed', err)
+  }
+}
+
+function stopVoiceprintRecording() {
+  mediaRecorderVoiceNote.value?.stop()
+}
+
+function playRecordingNote(player: PlayerOut){
+  if (!player.id) return
+  const draft = playerVoiceDrafts.value[player.id]
+  if (!draft) return;
+
+  const url = draft.url
+  if (!currentVoiceNote.value) {
+    currentVoiceNote.value = new Audio(url)
+  } else {
+    // If one already exists, but for a different player / different URL
+    if (currentVoiceNote.value.src !== url) {
+      currentVoiceNote.value.pause()
+      currentVoiceNote.value = new Audio(url)
+    }
+  }
+
+  currentVoiceNote.value.pause()
+  currentVoiceNote.value.currentTime = 0
+  currentVoiceNote.value.play()
+}
+
 </script>
 
 <template>
@@ -177,6 +283,34 @@ async function kick(playerId: string) {
             {{ p.name ?? 'Unnamed Player' }}
           </div>
         </div>
+
+        <div v-if="store.isLeader">
+          <h2>Record Your Voiceprint</h2>
+          <button @click="startVoiceprintRecording(p)" v-if="!isRecordingPlayerVoice" class="submit-button">
+            Start Recording
+          </button>
+          <button @click="stopVoiceprintRecording" v-if="isRecordingPlayerVoice" class="submit-button">
+            Stop Recording
+          </button>
+          <button
+            class="submit-button"
+            @click="playRecordingNote(p)"
+            :disabled="!playerVoiceDrafts[p.id]"
+          >
+            Play
+          </button>
+          <button
+            class="submit-button"
+            @click="setPlayerVoiceprint(p)"
+            :disabled="!playerVoiceDrafts[p.id] || voiceBusy[p.id]"
+          >
+            Stimme speichern
+          </button>
+        </div>
+        <div v-else>
+          <h2>Leader need to create a Voiceprint of you</h2>
+        </div>
+
         <div class="section__label">Abilities:</div>
         <div class="ability-grid">
           <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">

@@ -6,6 +6,8 @@ from fastapi import (
     Header,
     Depends,
     Query,
+    UploadFile,
+    File,
 )
 from uuid import UUID
 
@@ -25,6 +27,7 @@ from app.base_models.schemas import (
     JoinCheckOut,
 )
 from app.domain.models import Player as DomainPlayer
+from app.domain.models import Voiceprint
 from app.domain.store import store
 from app.core.bus import bus
 
@@ -361,5 +364,29 @@ async def update_max_hp(player_id: UUID, body: MaxHpUpdate, request: Request):
             "temp": p.hp.temp,
         },
     })
+
+    return player_to_out(p, request)
+
+@router.post("/{player_id}/voiceprint", response_model=PlayerOut)
+async def upload_player_voiceprint(
+    player_id: UUID,
+    request: Request,
+    audio: UploadFile = File(...),
+):
+    try:
+        p = await store.get_player(player_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Player not found",
+        )
+
+    audio_bytes = await audio.read()
+    content_type = audio.content_type
+    p.voiceprint = Voiceprint(
+        audio_bytes=audio_bytes,
+        content_type=content_type,
+    )
+    await store.save_player(p)
 
     return player_to_out(p, request)
