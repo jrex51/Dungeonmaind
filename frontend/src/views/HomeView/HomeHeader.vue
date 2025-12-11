@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session.ts'
+import { useRecorderStore } from '@/stores/recorder.ts'
 import { SERVER_CONFIG } from '@/config/config.ts'
 import ConfigView from '@/views/ConfigView.vue'
 import RulebookView from '@/views/RulebookView.vue'
@@ -10,18 +11,20 @@ import RulebookView from '@/views/RulebookView.vue'
 
 const router = useRouter()
 const store = useSessionStore()
+const recorder = useRecorderStore()
 
 const showNameModal = ref(false)
 const sessionName = ref("")
 const showConfigModal = ref(false)
 const showRulebookModal = ref(false)
 
-function goToRulebook() {
-  router.push('/rulebook')
-}
-
 /** Session actions */
 async function onExport() {
+  if (recorder.isRecording || recorder.isStopping || (recorder.recordedAudioURL && !recorder.canExportSession)) {
+    alert("Please wait for recording and transcription to finish before saving the session.")
+    return }
+
+
   if (!sessionName.value.trim()) return alert("Please enter a session name.")
   showNameModal.value = false
   console.log(sessionName.value)
@@ -41,11 +44,14 @@ async function onExport() {
     <div class="header-left"></div>
     <h1>Dungeonmaind</h1>
     <div class="header-right">
-      <!-- <button class="rulebook-button" @click="goToRulebook">Rulebook</button> -->
       <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
-      <!-- <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button> -->
       <button v-if="store.isLeader" class="config-button" @click="showConfigModal = true">Config</button>
-      <button v-if="store.isLeader" class="export-button" @click="showNameModal = true">
+      <button
+        v-if="store.isLeader"
+        class="export-button"
+        @click="showNameModal = true"
+        :disabled="recorder.isRecording || recorder.isStopping || (!!recorder.recordedAudioURL && !recorder.canExportSession)"
+      >
         Save Session
       </button>
     </div>
@@ -98,7 +104,6 @@ async function onExport() {
 }
 
 .rulebook-button,
-.players-button,
 .config-button,
 .export-button {
   padding: 0.5rem 1rem;
@@ -113,10 +118,16 @@ async function onExport() {
 }
 
 .rulebook-button:hover,
-.players-button:hover,
 .config-button:hover,
 .export-button:hover {
   background-color: #4a575e;
+}
+
+.rulebook-button:disabled,
+.config-button:disabled,
+.export-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 /* Modal */

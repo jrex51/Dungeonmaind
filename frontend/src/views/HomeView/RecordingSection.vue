@@ -17,6 +17,16 @@ function stopRecording() {
 function playRecording() {
   recorder.playRecording()
 }
+
+function getStatusClass() {
+    if (recorder.isRecording) return 'output recording-active'
+    if (recorder.transcriptionStatus) {
+        return recorder.canExportSession ? 'output transcription-success' : 'output transcription-pending'
+    }
+    // Default or initial mic status
+    return 'output'
+}
+
 </script>
 
 <template>
@@ -33,8 +43,9 @@ function playRecording() {
       </button>
     </div>
 
-    <div v-if="recorder.micPermissionStatus" class="output">
-      <p>{{ recorder.micPermissionStatus }}</p>
+    <div v-if="recorder.micPermissionStatus || recorder.transcriptionStatus" :class="getStatusClass()">
+      <p v-if="recorder.transcriptionStatus"> {{ recorder.transcriptionStatus }}</p>
+      <p v-else-if="recorder.micPermissionStatus">{{ recorder.micPermissionStatus }}</p>
     </div>
 
     <div v-if="recorder.isRecording" class="recording-timer output">
