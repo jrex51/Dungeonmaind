@@ -29,7 +29,6 @@ async def run_llm(req: LLMRequest):
     print("speichere nachricht")
 
     # 3) Embeddings erhalten für system prompt
-    # k has to be adjusted after some testing later.
     retrieved_docs = embedding_search(req.input_string, req.use_rulebook)
 
     await chat_store.append(player.id, "user", req.input_string)

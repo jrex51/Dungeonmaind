@@ -23,7 +23,9 @@ export const SERVER_CONFIG = {
     EXPORT_SESSION: '/exportImport/export',
     IMPORT_SESSION: '/exportImport/import',
     GET_SESSIONS: '/exportImport/getSessions',
-
+    GET_CAMPAIGNS: '/exportImport/getCampaigns',
+    DELETE_SESSION_OR_CAMPAIGN: '/exportImport/deleteCampaignsOrSessions',
+    RENAME_SESSION: '/exportImport/renameSession',
   },
 }
 

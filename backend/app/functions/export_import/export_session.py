@@ -1,3 +1,4 @@
+from fastapi import HTTPException, status
 import json
 import os
 import shutil
@@ -14,6 +15,11 @@ def export_group_to_json(folder_path: str) -> None:
     """
     Saves a list of Group objects (and their players) into a JSON file.
     """
+
+    if len(store.group.players) == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Can not save session, because currently no active"
+                                                                f"player is still in the session")
+
     def serialize_group(group: Group) -> dict:
         return {
             "id": str(group.id),
@@ -23,9 +29,13 @@ def export_group_to_json(folder_path: str) -> None:
 
     data = serialize_group(store.group)
 
-    file_path = os.path.join(folder_path, "group.json")
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+    try:
+        file_path = os.path.join(folder_path, "group.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+    except PermissionError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Could not save group.json")
+
 
 
 def export_settings_to_json(folder_path: str) -> None:
@@ -37,12 +47,13 @@ def export_settings_to_json(folder_path: str) -> None:
     # Include all Pydantic fields
     data.update(settings.model_dump())  # model_dump() returns a dict of all fields
 
-    file_path = os.path.join(folder_path, "settings.json")
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
-    print(f"Settings exported to {file_path}")
-
+    try:
+        file_path = os.path.join(folder_path, "settings.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        print(f"Settings exported to {file_path}")
+    except PermissionError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Could not save settings.json")
 
 def copy_chroma_db(folder_path: str) -> None:
     """
@@ -52,7 +63,7 @@ def copy_chroma_db(folder_path: str) -> None:
     source_path = settings.chroma_db_path
 
     if not os.path.exists(source_path):
-        raise FileNotFoundError(f"Source folder does not exist: {source_path}")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Source folder for DB does not exist: {source_path}")
 
     os.makedirs(folder_path, exist_ok=True)
 
@@ -61,8 +72,12 @@ def copy_chroma_db(folder_path: str) -> None:
     if os.path.exists(dest_folder_path):
         shutil.rmtree(dest_folder_path)
 
-    shutil.copytree(source_path, dest_folder_path)
-    print(f"Copied 'chroma_db' to {dest_folder_path}")
+    try:
+        shutil.copytree(source_path, dest_folder_path)
+        print(f"Copied 'chroma_db' to {dest_folder_path}")
+    except PermissionError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Could not copy chroma_db folder: {source_path}")
+
 
 
 # Not sure if this is wanted for all players, if they are kept seperately for each player. Would also e necessary to save the player uuid in the file or filename
@@ -73,7 +88,7 @@ async def export_chat_history_of_player(player_id: UUID, folder_path: str) -> No
 
     Args:
         player_id: The UUID of the player.
-        output_dir: Directory where the chat file will be saved.
+        folder_path: Directory where the chat file will be saved.
     """
 
     history = await chat_store.history(player_id)
@@ -89,10 +104,14 @@ async def export_chat_history_of_player(player_id: UUID, folder_path: str) -> No
             f.write(f"[{role}] {content}\n")
 
 
-def get_folder_name(session_name: str) -> str:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder_name = f"{session_name}_{timestamp}"
-    folder_path = os.path.join(BASE_DIR, folder_name)
+def get_folder_name(campaign_name: str, session_name: str) -> str:
+    folder_path = os.path.join(BASE_DIR, os.path.join(campaign_name, session_name))
     os.makedirs(folder_path, exist_ok=True)
 
     return folder_path
+
+
+def rename_folder(campaign_name: str, old_session_name: str, new_session_name: str) -> None:
+    old_folder_path = os.path.join(BASE_DIR, os.path.join(campaign_name, old_session_name))
+    new_folder_path = os.path.join(BASE_DIR, os.path.join(campaign_name, new_session_name))
+    os.rename(old_folder_path, new_folder_path)

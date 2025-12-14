@@ -86,10 +86,18 @@ type CheckResult = {
   error?: string;
 };
 
+interface SessionList {
+  folders: string[]
+}
+interface CampaignsWithSessions {
+  campaigns: Record<string, SessionList>
+}
 // For session import
 const showImportModal = ref(false)
-const sessions = ref([])
+//const sessions = ref([])
 const selectedSession = ref("")
+const campaigns = ref<CampaignsWithSessions | null>(null)
+const selectedCampaign = ref<string | null>(null)
 
 const octet = '(?:25[0-5]|2[0-4]\\d|1?\\d{1,2})';
 const localIPRegex = new RegExp(
@@ -246,6 +254,7 @@ async function confirmImport() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
+        campaign_name: selectedCampaign.value,
         session_name: selectedSession.value,
       }),
     })
@@ -271,15 +280,25 @@ async function confirmImport() {
 
 async function onImport() {
   try {
-    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.GET_SESSIONS}`)
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.GET_CAMPAIGNS}`)
     if (!res.ok) throw new Error("Failed to fetch sessions")
 
-    const data = await res.json()
-    sessions.value = data.folders
+    campaigns.value = await res.json()
+    //sessions.value = data.folders
     showImportModal.value = true
   } catch (err) {
     console.error(err)
   }
+}
+
+function selectSession(campaignName: string, sessionName: string) {
+  selectedCampaign.value = campaignName
+  selectedSession.value = sessionName
+}
+
+function deselectSession() {
+  selectedCampaign.value = ""
+  selectedSession.value = ""
 }
 
 const showNewPlayerModal = ref(false);
@@ -345,19 +364,27 @@ async function JoinExistingPlayer() {
         <h2>Select a session to import</h2>
 
         <div class="session-list">
-          <div
-            v-for="(folder, index) in sessions"
-            :key="index"
-            class="session-item"
-            :class="{ selected: selectedSession === folder }"
-            @click="selectedSession = folder"
-          >
-            {{ folder }}
+          <div v-if="campaigns && Object.keys(campaigns.campaigns).length">
+            <div v-for="(sessionList, campaignName) in campaigns.campaigns" :key="campaignName">
+              <h3 class="campaign-name">{{ campaignName }}</h3>
+              <ul>
+                <li
+                  v-for="session in sessionList.folders"
+                  :key="session"
+                  class="session-name-font session-clickable"
+                  @click="selectSession(campaignName, session)"
+                >
+                  {{ session }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div v-else class="no-sessions-text">
+            No loadable sessions available.
           </div>
         </div>
-
         <div class="modal-buttons">
-          <button class="btn-cancel" @click="showImportModal = false">Cancel</button>
+          <button class="btn-cancel" @click="showImportModal = false; deselectSession()">Cancel</button>
           <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
             Import
           </button>
@@ -633,7 +660,7 @@ select {
 }
 
 .btn-save {
-  background: #4a575e;
+  background-color: rgba(53, 73, 94, 0.9);
   color: white;
 }
 
@@ -644,5 +671,35 @@ select {
 .btn-save:disabled {
   background: #9ca3af;
   cursor: not-allowed;
+}
+
+.campaign-name {
+  color: darkslategray;
+}
+
+.campaign-name-clickable {
+  cursor: pointer;
+  color: black;
+  font-weight: bold;
+  font-family: 'MedievalSharp', cursive;
+}
+
+.session-clickable {
+  cursor: pointer;
+  color: black;
+  font-weight: bold;
+  font-family: 'MedievalSharp', cursive;
+
+}
+
+.session-clickable:hover {
+  text-decoration: underline;
+}
+
+.no-sessions-text {
+  color: #555;
+  font-family: 'MedievalSharp', cursive;
+  font-style: italic;
+  padding: 0.5rem;
 }
 </style>

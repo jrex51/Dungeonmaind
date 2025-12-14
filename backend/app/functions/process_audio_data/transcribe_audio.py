@@ -141,7 +141,6 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
         # Return the diarized segments
         return final_segments
 
-
     except Exception as e:
         print(f"An error occurred during transcription: {e}")
         return None

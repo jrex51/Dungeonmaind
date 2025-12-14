@@ -1,0 +1,27 @@
+{
+    "id": "ff6d5896-cc63-43f0-ad09-1a8d5cb1cc13",
+    "max_size": 6,
+    "players": [
+        {
+            "id": "6ea34364-5036-4426-a51d-9de596320706",
+            "name": "Luca",
+            "role": "leader",
+            "status": "active",
+            "hp": {
+                "current": 10,
+                "max": 10,
+                "temp": 0
+            },
+            "abilities": {
+                "str": 10,
+                "dex": 10,
+                "con": 10,
+                "int_": 10,
+                "wis": 10,
+                "cha": 10
+            },
+            "created_at": "2025-12-14T19:34:23.305049+00:00",
+            "last_seen_at": "2025-12-14T19:34:23.305066+00:00"
+        }
+    ]
+}
