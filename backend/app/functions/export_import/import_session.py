@@ -26,10 +26,16 @@ def load_groups_from_json(file_path: str) -> Player:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        # Deserialize players
+        # Deserialize players - only serialize one leader
         players = {}
+        found_leader: bool = False
         for p in data.get("players", []):
             player = Player.from_dict(p)
+            if player.role == Role.leader and found_leader:  # sobald der erste leader gefunden wurde, werden alle anderen
+                player.role = Role.member                    # auf Member und inactive gesetzt - inactive, weil bei from_dict
+                player.status = PlayerStatus.inactive        # alle leader auf active gesetzt werden
+            if player.role == Role.leader:
+                found_leader = True
             players[player.id] = player
 
         if not players:

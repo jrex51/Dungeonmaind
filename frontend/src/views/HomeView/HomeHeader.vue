@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import {ref} from 'vue'
-import {useRouter} from 'vue-router'
-import {useSessionStore} from '@/stores/session.ts'
-import {SERVER_CONFIG} from '@/config/config.ts'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useSessionStore } from '@/stores/session.ts'
+import { useRecorderStore } from '@/stores/recorder.ts'
+import { SERVER_CONFIG } from '@/config/config.ts'
+import ConfigView from '@/views/ConfigView.vue'
+import RulebookView from '@/views/RulebookView.vue'
 
 /** Holds Header and session saving */
 
@@ -16,22 +19,23 @@ interface CampaignsWithSessions {
 
 const router = useRouter()
 const store = useSessionStore()
+const recorder = useRecorderStore()
 
 const showNameModal = ref(false)
 const sessionName = ref("")
-
 const showCampaignSelectModal = ref(false)
 const showCampaignCreateModal = ref(false)
 const campaigns = ref<CampaignsWithSessions | null>(null)
 const newCampaignName = ref("")
 const selectedCampaign = ref<string | null>(null)
 const selectedSession = ref<string | null>(null)
-
 const showOverwriteConfirm = ref(false)
-
 const showDeleteConfirm = ref(false)
 const deleteTargetLabel = ref("")
 const deleteTargetName = ref("")
+
+const showConfigModal = ref(false)
+const showRulebookModal = ref(false)
 
 
 interface Campaign {
@@ -385,10 +389,14 @@ async function confirmDeletion() {
     <div class="header-left"></div>
     <h1>Dungeonmaind</h1>
     <div class="header-right">
-      <button class="rulebook-button" @click="goToRulebook">Rulebook</button>
-      <button v-if="store.isLeader" class="players-button" @click="goToPlayers">Players</button>
-      <button v-if="store.isLeader" class="config-button" @click="goToConfig">Config</button>
-      <button v-if="store.isLeader" class="export-button" @click="openSaveFlow">
+      <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
+      <button v-if="store.isLeader" class="config-button" @click="showConfigModal = true">Config</button>
+      <button
+        v-if="store.isLeader"
+        class="export-button"
+        @click="openSaveFlow"
+        :disabled="recorder.isRecording || recorder.isStopping || (!!recorder.recordedAudioURL && !recorder.canExportSession)"
+      >
         Save Session
       </button>
 
@@ -406,6 +414,12 @@ async function confirmDeletion() {
           <button class="btn-save" @click="onExport">Save</button>
         </div>
       </div>
+    </div>
+    <div v-if="showConfigModal" class="modal-overlay">
+      <ConfigView @submit-success="showConfigModal = false" />
+    </div>
+    <div v-if="showRulebookModal" class="modal-overlay">
+      <RulebookView @submit-success="showRulebookModal = false" />
     </div>
   </div>
   <div v-if="showCampaignSelectModal" class="modal-overlay">
@@ -554,7 +568,6 @@ async function confirmDeletion() {
 }
 
 .rulebook-button,
-.players-button,
 .config-button,
 .export-button {
   padding: 0.5rem 1rem;
@@ -569,10 +582,16 @@ async function confirmDeletion() {
 }
 
 .rulebook-button:hover,
-.players-button:hover,
 .config-button:hover,
 .export-button:hover {
   background-color: #4a575e;
+}
+
+.rulebook-button:disabled,
+.config-button:disabled,
+.export-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 /* Modal */
@@ -654,13 +673,11 @@ async function confirmDeletion() {
 }
 
 .btn-save {
-  background-color: #4a575e;
+  background-color: rgba(53, 73, 94, 0.9);
   border: 1px solid #4a575e;
   border-radius: 4px;
   color: #fff;
 }
-
-
 
 .btn-save:disabled,
 .btn-delete:disabled {
@@ -700,7 +717,7 @@ async function confirmDeletion() {
 .session-name-font {
   cursor: pointer;
   display: block;
-  color: darkslategray;
+  color: black;
   font-family: 'MedievalSharp', cursive;
   padding: 3px 4px;
   border-radius: 4px;

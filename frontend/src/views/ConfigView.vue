@@ -3,8 +3,13 @@ import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session.ts'
 import { useConfigStore } from '@/stores/backendConfig'
-import { LLM_OPTIONS, TRANSCRIPTION_MODELS, EMBEDDING_MODELS, EMBEDDING_TopK} from '@/config/config'
-import {type Payload, submitConfig} from "@/api/backendConfigAPI.ts";
+import {
+  LLM_OPTIONS,
+  TRANSCRIPTION_MODELS,
+  EMBEDDING_MODELS,
+  EMBEDDING_TopK,
+} from '@/config/config'
+import { type Payload, submitConfig } from '@/api/backendConfigAPI.ts'
 
 const router = useRouter()
 const store = useSessionStore()
@@ -17,12 +22,14 @@ const selectedEmbeddingTopK = ref(configStore.embeddingTopK)
 const clearChat = ref(false)
 const deleteTranscriptions = ref(false)
 
-function goHome() {
-  router.push('/')
-}
+const emit = defineEmits(['submit-success'])
+
+const errorHappend = ref(false)
+const errorMessage = ""
 
 async function submitSelection() {
   isSubmitting.value = true
+  //goHome()
   const payload: Payload = {
     player_id: store.currentPlayer?.id,
     selected_LLM: selectedLLM.value,
@@ -30,17 +37,21 @@ async function submitSelection() {
     embedding_model: selectedEmbeddingModel.value,
     embedding_top_k: selectedEmbeddingTopK.value,
     clear_chat: clearChat.value,
-    delete_transcriptions: deleteTranscriptions.value
+    delete_transcriptions: deleteTranscriptions.value,
   }
   try {
     await submitConfig(payload)
     console.log('Configuration successfully submitted')
-    goHome()
+    emit('submit-success')
   } catch (error) {
     console.error('Error calling submitConfig:', error)
   } finally {
     isSubmitting.value = false
   }
+}
+
+function cancelSubmit() {
+  emit('submit-success')
 }
 
 </script>
@@ -82,7 +93,7 @@ async function submitSelection() {
       </option>
     </select>
 
-    <div style="margin-top: 1rem;"></div>
+    <div style="margin-top: 1rem"></div>
 
     <label for="embeddingTopK">Choose Embedding TopK:</label>
     <select id="embeddingTopK" v-model="selectedEmbeddingTopK">
@@ -91,7 +102,7 @@ async function submitSelection() {
       </option>
     </select>
 
-    <div style="margin-top: 1rem;"></div>
+    <div style="margin-top: 1rem"></div>
 
     <div>
       <label>
@@ -102,6 +113,8 @@ async function submitSelection() {
 
     <hr style="margin: 1rem 0" />
 
+    <label v-if="errorHappend">Error occured: {{ errorMessage }}</label>
+    <button v-if="errorHappend" @click="cancelSubmit" class="done-button">Cancel</button>
     <button @click="submitSelection" class="done-button" :disabled="isSubmitting">
       {{ isSubmitting ? 'Submitting...' : 'Done' }}
     </button>
@@ -128,7 +141,7 @@ async function submitSelection() {
 
 label,
 option,
-input[type="checkbox"] + label {
+input[type='checkbox'] + label {
   font-weight: 600;
   font-size: 1.1rem;
   font-family: 'MedievalSharp', cursive;
@@ -160,7 +173,6 @@ select {
   border: 1px solid #8e7513;
   border-radius: 10px;
   cursor: pointer;
-
 }
 
 .done-button:disabled {
@@ -173,4 +185,3 @@ select {
   background-color: #7e6f34;
 }
 </style>
-
