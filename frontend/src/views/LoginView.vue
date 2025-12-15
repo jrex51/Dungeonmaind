@@ -200,7 +200,11 @@ async function onSubmit(e: Event) {
 
 
   if (selectedPlayer.value !== undefined) {
-    role.value = selectedPlayer.value.role;
+    if (isLocalhost) {
+      role.value = 'member';
+    } else {
+      role.value = selectedPlayer.value.role;
+    }
     playerName.value = selectedPlayer.value.name;
   }
   if (!canSubmit.value || !role.value) return;
@@ -213,29 +217,29 @@ async function onSubmit(e: Event) {
   } catch (err: any) {
     console.error("Join error:", err);
 
-  // Fehler auslesen
-  if (err?.response) {
-    // Axios-Format
-    const data = err.response.data;
-    serverError.value =
-      typeof data === "object" && data.detail
-        ? data.detail
-        : JSON.stringify(data);
-  } else if (err instanceof Error) {
-    try {
-      // versuchen JSON aus err.message zu parsen
-      const data = JSON.parse(err.message);
+    // Fehler auslesen
+    if (err?.response) {
+      // Axios-Format
+      const data = err.response.data;
       serverError.value =
         typeof data === "object" && data.detail
           ? data.detail
-          : err.message;
-    } catch {
-      // fallback: plain Error message
-      serverError.value = err.message;
-    }
-    } else {
-      serverError.value = String(err);
-    }
+          : JSON.stringify(data);
+    } else if (err instanceof Error) {
+      try {
+        // versuchen JSON aus err.message zu parsen
+        const data = JSON.parse(err.message);
+        serverError.value =
+          typeof data === "object" && data.detail
+            ? data.detail
+            : err.message;
+      } catch {
+        // fallback: plain Error message
+        serverError.value = err.message;
+      }
+      } else {
+        serverError.value = String(err);
+      }
   } finally {
     submitting.value = false;
   }
@@ -363,7 +367,7 @@ async function JoinExistingPlayer() {
 
       <hr style="margin: 1rem 0" />
 
-      <div>
+      <div v-if="isLocalhost">
         <button class="done-button" @click="onImport">Import Session</button>
       </div>
       <div v-if="showImportModal" class="modal-overlay">
@@ -411,57 +415,59 @@ async function JoinExistingPlayer() {
         <div class="modal">
           <h2>Select a Role and a Name for your Player</h2>
           <form class="join-card" @submit="onSubmit">
-            <!-- 1) select role-->
-            <fieldset>
-              <legend>Choose a role</legend>
+            <div v-if="isLocalhost"> <!-- only show if backend is hosted on this machine -->
+              <!-- 1) select role-->
+              <fieldset>
+                <legend>Choose a role</legend>
 
-              <label>
-                <input
-                  type="radio"
-                  name="role"
-                  :value="'leader'"
-                  v-model="role"
-                  />
-                Leader
-              </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="role"
+                    :value="'leader'"
+                    v-model="role"
+                    />
+                  Leader
+                </label>
 
-              <label>
-                <input
-                  type="radio"
-                  name="role"
-                  :value="'member'"
-                  v-model="role"
-                  />
-                Member
-              </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="role"
+                    :value="'member'"
+                    v-model="role"
+                    />
+                  Member
+                </label>
 
-              <p v-if="touched && !role" class="error">Please select a role.</p>
-            </fieldset>
+                <p v-if="touched && !role" class="error">Please select a role.</p>
+              </fieldset>
 
-            <!-- 2) local network IP -->
-            <div v-if="role === 'leader'">
-              <div style="margin-top: 4px;"></div>
-              <div v-if="networkIPs.length > 1">
-              <label for="networkIP">Select your local network IP:</label>
-              <div style="margin-top: 1px;"></div>
-              <select id="networkIP" v-model="selectedNetworkIP">
-                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
-                  {{ networkIP }}
-                </option>
-              </select>
-              </div>
-              <div v-else>
-                <label for="networkIP">Enter your local network IP:</label>
+              <!-- 2) local network IP -->
+              <div v-if="role === 'leader'">
+                <div style="margin-top: 4px;"></div>
+                <div v-if="networkIPs.length > 1">
+                <label for="networkIP">Select your local network IP:</label>
                 <div style="margin-top: 1px;"></div>
-                <input
-                  id="networkIP"
-                  type="text"
-                  v-model="selectedNetworkIP"
-                  placeholder="e.g. FRITZ!Box: 192.168.178.x"
-                  style="width: 100%; max-width: 200px;"
-                />
+                <select id="networkIP" v-model="selectedNetworkIP">
+                  <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                    {{ networkIP }}
+                  </option>
+                </select>
+                </div>
+                <div v-else>
+                  <label for="networkIP">Enter your local network IP:</label>
+                  <div style="margin-top: 1px;"></div>
+                  <input
+                    id="networkIP"
+                    type="text"
+                    v-model="selectedNetworkIP"
+                    placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                    style="width: 100%; max-width: 200px;"
+                  />
+                </div>
+                <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
               </div>
-              <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
             </div>
 
             <!-- 3) player name -->
