@@ -33,11 +33,13 @@ all_routers = [
 
 # 192.168.x.x und beliebige localhost-Ports zulassen
 LAN_REGEX = (
-    r"^https?://("                         # http:// oder https://
-    r"192\.168\.\d{1,3}\.\d{1,3}"          # 192.168.*.*
-    r"|localhost"                          # localhost
-    r"|127\.0\.0\.1"                       # 127.0.0.1
-    r")(?::\d+)?$"                         # optional :Port
+    r"^https?://("                                      # http:// oder https://
+    r"192\.168\.\d{1,3}\.\d{1,3}"                       # 192.168.*.*
+    r"|10\.d{1,3}\.\d{1,3}\.\d{1,3}"                    # 10.*.*.*
+    r"|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"    # 172.16-31.*.*
+    r"|localhost"                                       # localhost
+    r"|127\.0\.0\.1"                                    # 127.0.0.1
+    r")(?::\d+)?$"                                      # optional :Port
 )
 
 @asynccontextmanager
