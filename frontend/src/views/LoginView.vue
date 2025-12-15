@@ -217,7 +217,7 @@ async function onSubmit(e: Event) {
 
   submitting.value = true;
   try {
-    await preflightAndJoin(backendUrl, playerName.value.trim(), role.value);
+    await preflightAndJoin(backendUrl, playerName.value.trim(), effectiveRole);
     store.setLocalNetworkIP(lastValidIP)
     await router.push({ name: "home" });
   } catch (err: any) {
