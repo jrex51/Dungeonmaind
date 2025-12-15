@@ -192,12 +192,12 @@ onBeforeUnmount(() => {
       <!-- Left: main LLM -->
       <QuestionSection />
 
-      <hr style="margin: 2rem 0" />
+      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
 
       <!-- Leader-only: recording -->
       <RecordingSection v-if="store.isLeader" />
 
-      <hr style="margin: 2rem 0" />
+      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
 
       <!-- Leader-only: upload -->
       <AudioUploadSection v-if="store.isLeader" />
