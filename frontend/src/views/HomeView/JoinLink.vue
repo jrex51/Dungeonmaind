@@ -5,7 +5,6 @@ import { useSessionStore } from '@/stores/session.ts'
 import {ref} from "vue";
 
 const store = useSessionStore()
-//style="margin-top: 1rem;"
 const localNetworkIP = SERVER_CONFIG.LOCAL_NETWORK_IP
 const port = window.location.port
 const showQRCodeModal = ref(false)
