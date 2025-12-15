@@ -77,7 +77,7 @@ const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
 const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);
-let setConnection = ref(false);
+const setConnection = ref(false);
 
 const networkIPs = __NETWORK_IPS__
 const selectedNetworkIP = ref(networkIPs[0] || "")
@@ -200,14 +200,20 @@ async function onSubmit(e: Event) {
 
 
   if (selectedPlayer.value !== undefined) {
-    if (isLocalhost) {
-      role.value = 'member';
-    } else {
-      role.value = selectedPlayer.value.role;
-    }
+    role.value = selectedPlayer.value.role;
     playerName.value = selectedPlayer.value.name;
   }
-  if (!canSubmit.value || !role.value) return;
+
+  if (!canSubmit.value || role.value == null) return;
+
+  const effectiveRole: Role =
+    (!isLocalhost && role.value === 'leader') ? 'member' : role.value;
+
+  if (!isLocalhost && role.value === 'leader') {
+    window.alert('Ledaer kann nur über localhost beitreten. Du trittst als Member bei.');
+  }
+
+  if (nameError.value) return;
 
   submitting.value = true;
   try {
@@ -216,30 +222,6 @@ async function onSubmit(e: Event) {
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
-
-    // Fehler auslesen
-    if (err?.response) {
-      // Axios-Format
-      const data = err.response.data;
-      serverError.value =
-        typeof data === "object" && data.detail
-          ? data.detail
-          : JSON.stringify(data);
-    } else if (err instanceof Error) {
-      try {
-        // versuchen JSON aus err.message zu parsen
-        const data = JSON.parse(err.message);
-        serverError.value =
-          typeof data === "object" && data.detail
-            ? data.detail
-            : err.message;
-      } catch {
-        // fallback: plain Error message
-        serverError.value = err.message;
-      }
-      } else {
-        serverError.value = String(err);
-      }
   } finally {
     submitting.value = false;
   }
@@ -314,7 +296,9 @@ function deselectSession() {
 const showNewPlayerModal = ref(false);
 
 function JoinNewPlayer() {
-  // bisher passiert hier nichts, außer das das modal getriggert wird
+  selectedPlayer.value = undefined;
+  serverError.value = '';
+  touched.value = false;
   showNewPlayerModal.value = true;
 }
 
@@ -323,8 +307,9 @@ const allPlayers = ref<PlayerOut[]>([]);
 const selectedPlayer = ref<PlayerOut>();
 
 async function JoinExistingPlayer() {
-  if (!setConnection) await onCheck();
-  if (setConnection) {
+  selectedPlayer.value = undefined;
+  if (!setConnection.value) await onCheck();
+  if (setConnection.value) {
     allPlayers.value = await api.listPlayers(true);
     if (allPlayers.value.filter(p => p.status === "inactive").length === 0) {
       window.alert(
@@ -415,59 +400,57 @@ async function JoinExistingPlayer() {
         <div class="modal">
           <h2>Select a Role and a Name for your Player</h2>
           <form class="join-card" @submit="onSubmit">
-            <div v-if="isLocalhost"> <!-- only show if backend is hosted on this machine -->
-              <!-- 1) select role-->
-              <fieldset>
-                <legend>Choose a role</legend>
+            <!-- 1) select role-->
+            <fieldset>
+              <legend>Choose a role</legend>
 
-                <label>
-                  <input
-                    type="radio"
-                    name="role"
-                    :value="'leader'"
-                    v-model="role"
-                    />
-                  Leader
-                </label>
-
-                <label>
-                  <input
-                    type="radio"
-                    name="role"
-                    :value="'member'"
-                    v-model="role"
-                    />
-                  Member
-                </label>
-
-                <p v-if="touched && !role" class="error">Please select a role.</p>
-              </fieldset>
-
-              <!-- 2) local network IP -->
-              <div v-if="role === 'leader'">
-                <div style="margin-top: 4px;"></div>
-                <div v-if="networkIPs.length > 1">
-                <label for="networkIP">Select your local network IP:</label>
-                <div style="margin-top: 1px;"></div>
-                <select id="networkIP" v-model="selectedNetworkIP">
-                  <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
-                    {{ networkIP }}
-                  </option>
-                </select>
-                </div>
-                <div v-else>
-                  <label for="networkIP">Enter your local network IP:</label>
-                  <div style="margin-top: 1px;"></div>
-                  <input
-                    id="networkIP"
-                    type="text"
-                    v-model="selectedNetworkIP"
-                    placeholder="e.g. FRITZ!Box: 192.168.178.x"
-                    style="width: 100%; max-width: 200px;"
+              <label>
+                <input
+                  type="radio"
+                  name="role"
+                  :value="'leader'"
+                  v-model="role"
                   />
-                </div>
-                <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+                Leader
+              </label>
+
+              <label>
+                <input
+                  type="radio"
+                  name="role"
+                  :value="'member'"
+                  v-model="role"
+                  />
+                Member
+              </label>
+
+              <p v-if="touched && !role" class="error">Please select a role.</p>
+            </fieldset>
+
+            <!-- 2) local network IP -->
+            <div v-if="role === 'leader'">
+              <div style="margin-top: 4px;"></div>
+              <div v-if="networkIPs.length > 1">
+              <label for="networkIP">Select your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
               </div>
+              <div v-else>
+                <label for="networkIP">Enter your local network IP:</label>
+                <div style="margin-top: 1px;"></div>
+                <input
+                  id="networkIP"
+                  type="text"
+                  v-model="selectedNetworkIP"
+                  placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                  style="width: 100%; max-width: 200px;"
+                />
+              </div>
+              <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
             </div>
 
             <!-- 3) player name -->
