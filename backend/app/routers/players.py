@@ -63,6 +63,8 @@ def player_to_out(player: DomainPlayer, request: Request | None = None) -> Playe
         temp=int(player.hp.temp),
     )
 
+    has_voiceprint = getattr(player, "voiceprint", None) is not None
+
     return PlayerOut(
         id=player.id,
         name=player.name,
@@ -73,6 +75,7 @@ def player_to_out(player: DomainPlayer, request: Request | None = None) -> Playe
         backend_url=backend_url,
         hp=hp_model,
         abilities=abilities_model,
+        has_voiceprint=has_voiceprint,
     )
 
 
@@ -389,4 +392,7 @@ async def upload_player_voiceprint(
     )
     await store.save_player(p)
 
-    return player_to_out(p, request)
+    out = player_to_out(p, request)
+    await bus.publish({"type": "update", "player": out.model_dump()})
+
+    return out
