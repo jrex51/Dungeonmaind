@@ -11,7 +11,6 @@ import {
 } from '@/config/config'
 import { type Payload, submitConfig } from '@/api/backendConfigAPI.ts'
 
-const router = useRouter()
 const store = useSessionStore()
 const configStore = useConfigStore()
 const isSubmitting = ref(false)

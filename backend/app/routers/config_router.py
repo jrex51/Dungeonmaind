@@ -11,9 +11,10 @@ router = APIRouter()
 
 VALID_MODELS = {
     "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
-    "hf.co/bartowski/Qwen_Qwen3-1.7B-GGUF:Q5_K_M",
     "hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M",
-    "hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M"
+    "hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M",
+    "hf.co/bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF:Q5_K_M",
+    "hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M"
 }
 
 VALID_TRANS_MODELS = {"base", "medium", "large-v3"}
@@ -41,6 +42,7 @@ async def change_config(request: ConfigRequest):
         if request.embedding_top_k not in VALID_EMBEDDING_Top_K:
             raise HTTPException(status_code=400, detail="Invalid embedding TopK selected.")
 
+        print(request.selected_LLM)
         # save in config
         if settings.llm_model != request.selected_LLM:
             settings.llm_model = request.selected_LLM

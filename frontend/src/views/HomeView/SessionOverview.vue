@@ -21,7 +21,7 @@ async function onLeave() {
   <section>
     <h2>Hello {{ store.currentPlayer?.name }}</h2>
     <p v-if="store.isLeader" class="secondary-medieval-text">
-      You are the Leader.
+      You are the Leader
     </p>
 
     <button class="submit-button" @click="onLeave">Leave</button>

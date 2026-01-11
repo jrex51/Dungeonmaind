@@ -330,7 +330,7 @@ function stopReRecord(playerId: string) {
       <template v-if="hasVoiceprint(store.currentPlayer) && !recordVoiceprintMode[store.currentPlayer.id]">
         <div class="leader-voice-row">
           <div class="section__label">
-            {{ store.currentPlayer?.name ?? 'Unnamed Leader' }} is the leader.
+            You are the Leader
           </div>
 
           <button class="submit-button" @click="startReRecord(store.currentPlayer.id)">
@@ -352,7 +352,7 @@ function stopReRecord(playerId: string) {
           </button>
         </div>
 
-        <div class="ability-card__name voiceprint-title">Record voiceprint for leader:</div>
+        <div class="ability-card__name voiceprint-title">Record a voiceprint for you:</div>
 
         <div class="voiceprint-actions">
           <button
@@ -418,7 +418,7 @@ function stopReRecord(playerId: string) {
                 Go Back
               </button>
             </div>
-            <div class="ability-card__name voiceprint-title">Record voiceprint for player:</div>
+            <div class="ability-card__name voiceprint-title">Record a voiceprint for player:</div>
 
             <div class="voiceprint-actions">
               <button

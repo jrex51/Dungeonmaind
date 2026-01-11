@@ -32,9 +32,10 @@ export const SERVER_CONFIG = {
 // Set the available LLM models
 export const LLM_OPTIONS = [
   { value: 'hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M', label: 'Phi4-3.8B' },
-  { value: 'hf.co/bartowski/Qwen_Qwen3-1.7B-GGUF:Q5_K_M', label: 'Qwen3-1.7B' },
   { value: 'hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M', label: 'Gemma3-1B' },
   { value: 'hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M', label: 'Gemma3-12B' },
+  { value: 'hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M', label: 'Ministral3-3B'},
+  { value: 'hf.co/bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF:Q5_K_M', label: 'Ministral3-14B'},
 ]
 
 // Set the default LLM model
