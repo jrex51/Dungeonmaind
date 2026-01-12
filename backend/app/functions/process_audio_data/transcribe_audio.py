@@ -82,14 +82,12 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
         if key in content_type:
             fileExtension = file_extension_map[key]
             break
-    
-    print("check players list")
 
     players = await store.list_players()
     print(len(players))
 
     combined_audio = AudioSegment.silent(duration=1000) 
-    speaker_order = [] # Kombiniere alle Voiceprints aus dem Store 
+    speaker_order = [] # Kombiniere alle Voiceprints von den Spieler
     for p in players: 
         if p.voiceprint is None: 
             continue # Spieler ohne Voiceprint überspringen 
