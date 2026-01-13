@@ -39,7 +39,7 @@ async def transcribe_audio_file(audio: UploadFile = File(...)):
     """
     try:
         audio_bytes = await audio.read()
-        transcription = transcribe_audio(audio_bytes,content_type=audio.content_type)
+        transcription = await transcribe_audio(audio_bytes,content_type=audio.content_type)
         return TranscriptionResponse(output=transcription)
 
     except Exception as e:
