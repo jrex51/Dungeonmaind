@@ -68,8 +68,6 @@ def embedd_transcriptions(embedding_text: list, player_id="none", persist_direct
     if persist_directory is None:
         persist_directory = settings.chroma_db_path
 
-    print("???????????????????????")
-    print(persist_directory)
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(
         model_name=settings.embedding_model
