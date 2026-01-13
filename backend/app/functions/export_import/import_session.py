@@ -4,14 +4,12 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List
-from datetime import datetime
 from uuid import UUID
 from app.domain.store import store
 from app.domain.models import Group, Role, Player, now_utc, PlayerStatus
 from app.core.config import settings
+from datetime import datetime
 
-
-# Still needs correct http error handling
 def load_groups_from_json(file_path: str) -> Player:
     """
     Loads group and player data from a JSON file into the store.
@@ -98,29 +96,26 @@ def replace_chroma_db(saved_sessions_path: str, data_path: str) -> None:
         data_path: Path to the data folder where the active chroma_db lives.
     """
     session_db_path = os.path.join(saved_sessions_path, "chroma_db")
-    target_db_path = os.path.join(data_path, "chroma_db")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target_db_path = os.path.join(data_path, "chroma_db", "tmp"+timestamp)
 
     if not os.path.isdir(session_db_path):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"No chroma_db found in saved session: {session_db_path}")
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            detail=f"No chroma_db found in saved session: {session_db_path}")
 
     if not os.path.isdir(data_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Data path does not exist: {data_path}")
 
+    # Copy the saved chroma_db into data folder
     try:
-        # Remove existing chroma_db in data folder
-        if os.path.exists(target_db_path):
-            shutil.rmtree(target_db_path)
-            print(f"Removed old chroma_db at {target_db_path}")
-        else:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Can not find preloaded database in: "
-                                                                  f"{target_db_path}, is the folder structure corrupted?")
-
-        # Copy the saved chroma_db into data folder
         shutil.copytree(session_db_path, target_db_path)
         print(f"Restored chroma_db from {session_db_path} to {target_db_path}")
     except PermissionError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Could not copy database from: {session_db_path} to"
                                                                 f"{target_db_path}")
+    settings.chroma_db_path = target_db_path
+    print("changed settings.chroma_db_path to " + settings.chroma_db_path)
+
 
 # Not used at the moment
 def read_chat_history(file_path: str) -> List[Dict[str, str]]:

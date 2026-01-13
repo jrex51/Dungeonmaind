@@ -13,8 +13,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
-from app.functions.embedding.embedding_model import embedd_rulebook, read_text_files, delete_chromadb
-from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown, export_import_session
+from app.functions.embedding.embedding_model import (embedd_rulebook, read_text_files, delete_chromadb,
+                                                     delete_transcription_embeddings, has_rulebook_embeddings)
+from app.routers import (root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown,
+                         export_import_session)
 from contextlib import asynccontextmanager
 from app.core.bus import bus
 
@@ -44,21 +46,28 @@ LAN_REGEX = (
 async def lifespan(app: FastAPI):
     # Startup logic
     logging.info("Server starting: deleting old ChromaDB and re-embedding rulebook...")
-    delete_chromadb()
+    # Check if this deletes everything. Should just delete the tmp folders and for the main db just delete transcriptions
+    delete_chromadb(True, False)
 
     logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
     await bus.start()
 
     # Rulebook embedding
-    texts, txt_paths = read_text_files()
-    embedd_rulebook(texts, txt_paths)
-    logging.info("Rulebook successfully embedded.")
-    print("Rulebook successfully embedded.")
+    # Here check first if the rulebook embeddings are still present in the main db. If not for some reason we add them again. This will also happen
+    # on the very first start up of the application
+    if not has_rulebook_embeddings():
+        texts, txt_paths = read_text_files()
+        embedd_rulebook(texts, txt_paths)
+        logging.info("Rulebook successfully embedded.")
+        print("Rulebook successfully embedded.")
+    delete_transcription_embeddings()
 
     try:
         yield  # Server running
     finally:
         # Shutdown logic
+        # Keep the main db, just delete the tmp bases
+        delete_chromadb(True, True)
         logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
         await bus.stop()
         logging.info("Server Dungeonmaind shutting down...")

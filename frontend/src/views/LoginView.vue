@@ -378,7 +378,7 @@ async function JoinExistingPlayer() {
                   <li class="session-name-font session-clickable"
                     v-for="session in sessionList.folders"
                     :key="session"
-                    :class="{ selected: selectedSession === session }"
+                    :class="{ selected: selectedSession === session && selectedCampaign === campaignName }"
                     @click="selectSession(campaignName, session)"
                   >
                     {{ session }}

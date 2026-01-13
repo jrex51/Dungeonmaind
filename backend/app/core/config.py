@@ -55,9 +55,20 @@ class Settings(BaseSettings):
         description="Root directory of the backend"
     )
 
+    #@property
+    #def chroma_db_path(self) -> str:
+    #    return os.path.join(self.backend_root_path, "data", "chroma_db")
+
+    _chroma_db_path: str | None = None
+
     @property
     def chroma_db_path(self) -> str:
-        return os.path.join(self.backend_root_path, "data", "chroma_db")
+        # If a custom path was set, return it; otherwise return default
+        return self._chroma_db_path or os.path.join(self.backend_root_path, "data", "chroma_db")
+
+    @chroma_db_path.setter
+    def chroma_db_path(self, value: str):
+        self._chroma_db_path = value
 
 
 settings = Settings()

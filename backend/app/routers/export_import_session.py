@@ -49,6 +49,7 @@ async def import_session(req: ImportRequest) -> Player:
     load_settings_from_json(file_path_settings)
     file_path_groups = os.path.join(folder_path, "group.json")
     leader = load_groups_from_json(file_path_groups)
+
     replace_chroma_db(folder_path, DATA_DIR)
 
     # Maybe the publishing has to be player by player, so that actually only those players are shown, which actually
