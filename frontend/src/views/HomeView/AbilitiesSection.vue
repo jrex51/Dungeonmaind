@@ -3,11 +3,29 @@ import { ref, computed } from 'vue'
 import { type PlayerOut, updateMaxHp, damagePlayer, healPlayer, patchPlayerAbility, kickPlayer, postPlayerVoiceprint } from '@/api/playersAPI.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { SERVER_CONFIG } from '@/config/config'
+import { useRouter } from 'vue-router'
+import { useRecorderStore } from '@/stores/recorder.ts'
 
 const store = useSessionStore()
+const router = useRouter()
+const recorder = useRecorderStore()
 
 function apiBase(): string {
   return store.backendUrl ?? SERVER_CONFIG.BASE_URL
+}
+
+
+/** Leave action */
+async function onLeave() {
+  // stop any ongoing recordings (leader recorder + voiceprint recorder)
+  try { recorder.stopRecording() } catch {}
+  try {
+    if (isRecordingPlayerVoice.value) stopVoiceprintRecording()
+    currentVoiceNote.value?.pause()
+  } catch {}
+
+  await store.leave()
+  await router.push({ name: 'login' })
 }
 
 /** Ability PATCH*/
@@ -316,9 +334,16 @@ function stopReRecord(playerId: string) {
       !store.isLeader ? 'abilities-section--member' : null,
     ]"
   >
-    <h2 class="rail-title">
-      {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
-    </h2>
+    <!-- MEMBER: Leave immer sichtbar (auch wenn Voiceprint fehlt) -->
+    <div v-if="!store.isLeader" class="rail-header">
+      <h2 class="rail-title">Your Information</h2>
+
+      <div class="rail-actions">
+        <button class="submit-button leave-button" @click="onLeave">
+          Leave
+        </button>
+      </div>
+    </div>
 
     <!-- LEADER VOICEPRINT -->
     <div v-if="store.isLeader && store.currentPlayer?.id" class="ability-card leader-voice-card">
@@ -327,19 +352,33 @@ function stopReRecord(playerId: string) {
           {{ store.currentPlayer?.name ?? 'Unnamed Leader' }}
         </div>
       </div>
-      <template v-if="hasVoiceprint(store.currentPlayer) && !recordVoiceprintMode[store.currentPlayer.id]">
-        <div class="leader-voice-row">
-          <div class="section__label">
-            You are the Leader
-          </div>
 
+      <!-- LEADER: Leave immer sichtbar; wenn New Voiceprint angezeigt wird, sitzt Leave rechts daneben -->
+      <template v-if="hasVoiceprint(store.currentPlayer) && !recordVoiceprintMode[store.currentPlayer.id]">
+        <div class="section__label leader-note">
+          You are the Leader
+        </div>
+        <div class="leader-actions-row">
           <button class="submit-button" @click="startReRecord(store.currentPlayer.id)">
             New Voiceprint
+          </button>
+
+          <button class="submit-button leave-button" @click="onLeave">
+            Leave
           </button>
         </div>
       </template>
 
+
       <template v-else>
+        <!-- In Recording/Needs-Voiceprint Mode: Leave unter Name rechts -->
+        <div v-if="!hasVoiceprint(store.currentPlayer)" class="leader-leave-row">
+          <button class="submit-button leave-button" @click="onLeave">
+            Leave
+          </button>
+        </div>
+
+
         <div
           v-if="hasVoiceprint(store.currentPlayer)"
           class="voiceprint-topbar"
@@ -612,6 +651,9 @@ function stopReRecord(playerId: string) {
   padding: 0.75rem 0.9rem 1rem;
   background: rgba(110, 97, 50, 0.25);
   position: relative;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .leader__controls {
@@ -641,7 +683,7 @@ function stopReRecord(playerId: string) {
 
 .ability-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.5rem;
 }
 
@@ -803,10 +845,14 @@ function stopReRecord(playerId: string) {
 .voiceprint-rerecord {
   margin: 0.25rem 0 0.75rem;
   display: flex;
-  justify-content: flex-start;
   align-items: center;
-  gap: 183px;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }
+
 
 .voiceprint-rerecord .submit-button {
   width: auto;
@@ -837,6 +883,57 @@ function stopReRecord(playerId: string) {
   width: auto;
 }
 
+.rail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rail-title {
+  margin: 0;
+}
+
+.rail-actions {
+  display: flex;
+  justify-content: flex-end; /* rechts in der Box */
+}
+
+.leave-button {
+  width: auto !important;    /* falls submit-button 100% setzt */
+  flex: 0 0 auto;
+}
+
+.leader-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* links Leave, rechts New Voiceprint */
+  gap: 12px;
+  margin-top: 0.25rem;
+}
+
+.leader-note {
+  margin-top: 0.5rem; /* Text unter den Buttons */
+}
+
+.leader-actions-row .submit-button {
+  width: auto !important;
+  flex: 0 0 auto;
+}
+
+.leader-leave-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.leader-leave-row .leave-button {
+  width: auto !important;     /* submit-button width:100% überschreiben */
+  flex: 0 0 auto;
+  margin-left: auto;          /* sicher nach rechts drücken */
+}
 
 
 </style>
