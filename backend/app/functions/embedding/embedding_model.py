@@ -350,7 +350,7 @@ def embed_text(embedding_text: str):
         List of embedding vectors (lists of floats).
     """
     embedding_model = SentenceTransformerEmbeddings(model_name=settings.embedding_model)
-    embeddings = embedding_model.embed_documents(embedding_text)
+    embeddings = embedding_model.embed_query(embedding_text)
     return embeddings
 
 
@@ -358,18 +358,17 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
-async def embedding_search_on_chat_history(query: str, query_embedding: list[float], player_id: UUID,
-                                           top_k: int = 5) -> list[dict]:
+async def embedding_search_on_chat_history(query: str, query_embedding: list[float], player_id: UUID) -> list[dict]:
     """
     Perform similarity search over in-memory embeddings.
 
     Returns a list of tuples: (chat_text, similarity_score)
     """
-
+    top_k = settings.embedding_top_k
     #query_embedding = embed_text(query)
     query_embedding = np.array(query_embedding)
-    query_embedding = query_embedding.reshape(-1, query_embedding.shape[-1])
-    query_embedding = query_embedding.mean(axis=0)   # shape: (embedding_dim,)
+    #query_embedding = query_embedding.reshape(-1, query_embedding.shape[-1])
+    #query_embedding = query_embedding.mean(axis=0)   # shape: (embedding_dim,)
 
     history = await chat_store.history(player_id)
     if not history or len(query_embedding) == 0:
@@ -394,17 +393,16 @@ async def embedding_search_on_chat_history(query: str, query_embedding: list[flo
     assistant_texts = [a["content"] for u, a in paired_entries]
     # Compute one embedding vector per text by averaging over token embeddings
     user_embeddings = [
-        np.array(u["embedded_content"]).mean(axis=0)  # shape: (embedding_dim,)
-        for u, a in paired_entries if len(u["embedded_content"]) > 0
+        np.array(u["embedded_content"])
+        for u, a in paired_entries if u["embedded_content"] is not None
     ]
     assistant_embeddings = [
-        np.array(a["embedded_content"]).mean(axis=0)  # shape: (embedding_dim,)
-        for u, a in paired_entries if len(a["embedded_content"]) > 0
+        np.array(a["embedded_content"])
+        for u, a in paired_entries if a["embedded_content"] is not None
     ]
 
-    user_embeddings_np = np.stack(user_embeddings)  # shape: (num_user_texts, embedding_dim)
-    assistant_embeddings_np = np.stack(assistant_embeddings)  # shape: (num_assistant_texts, embedding_dim)
-    #query_embedding = query_embedding.reshape(-1, query_embedding.shape[-1])
+    user_embeddings_np = np.stack(user_embeddings)
+    assistant_embeddings_np = np.stack(assistant_embeddings)
     print("Query shape:", query_embedding.shape)
 
     # Do the similarity calculations with cosine sim on both requests and answers
