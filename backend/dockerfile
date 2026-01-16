@@ -21,9 +21,15 @@ RUN mkdir -p /models && \
     python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/models')"
 ENV SENTENCE_TRANSFORMERS_HOME=/models
 
-# Pre-download WhisperX model
+# Pre-download WhisperX model with PyTorch safe globals for Pyannote
 RUN mkdir -p /models/whisperx && \
-    python -c "import whisperx; whisperx.load_model('base', language='en', device='cpu', compute_type='int8', download_root='/models/whisperx')"
+    python - <<EOF
+import torch
+import omegaconf.listconfig
+torch.serialization.add_safe_globals([omegaconf.listconfig.ListConfig])
+import whisperx
+whisperx.load_model('base', language='en', device='cpu', compute_type='int8', download_root='/models/whisperx')
+EOF
 ENV WHISPERX_MODELS_DIR=/models/whisperx
 
 # For predownloading the alignment model
