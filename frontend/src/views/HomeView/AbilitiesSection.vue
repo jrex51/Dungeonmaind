@@ -3,11 +3,29 @@ import { ref, computed } from 'vue'
 import { type PlayerOut, updateMaxHp, damagePlayer, healPlayer, patchPlayerAbility, kickPlayer, postPlayerVoiceprint } from '@/api/playersAPI.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { SERVER_CONFIG } from '@/config/config'
+import { useRouter } from 'vue-router'
+import { useRecorderStore } from '@/stores/recorder.ts'
 
 const store = useSessionStore()
+const router = useRouter()
+const recorder = useRecorderStore()
 
 function apiBase(): string {
   return store.backendUrl ?? SERVER_CONFIG.BASE_URL
+}
+
+
+/** Leave action */
+async function onLeave() {
+  // stop any ongoing recordings (leader recorder + voiceprint recorder)
+  try { recorder.stopRecording() } catch {}
+  try {
+    if (isRecordingPlayerVoice.value) stopVoiceprintRecording()
+    currentVoiceNote.value?.pause()
+  } catch {}
+
+  await store.leave()
+  await router.push({ name: 'login' })
 }
 
 /** Ability PATCH*/
@@ -26,6 +44,9 @@ const audioChunksVoiceNote = ref<Blob[]>([])
 const currentVoiceNote = ref<HTMLAudioElement | null>(null)
 
 const playerVoiceDrafts = ref<Record<string, { blob: Blob; url: string }>>({})
+
+const voiceprintSaved = ref<Record<string, boolean>>({})
+const recordVoiceprintMode = ref<Record<string, boolean>>({})
 
 /** Abilities */
 type AbilitySpec = {
@@ -184,6 +205,14 @@ async function kick(playerId: string) {
   }
 }
 
+/* Voiceprint methods */
+function canShowStats(p: any) {
+  const id = p?.id
+  if (!id) return false
+  if (recordVoiceprintMode.value[id]) return false
+  return hasVoiceprint(p)
+}
+
 async function setPlayerVoiceprint(player: PlayerOut) {
   if (!player.id) return
   voiceBusy.value[player.id] = true
@@ -192,6 +221,8 @@ async function setPlayerVoiceprint(player: PlayerOut) {
 
    try {
     await postPlayerVoiceprint(player.id, voiceprint, apiBase())
+    voiceprintSaved.value[player.id] = true
+    recordVoiceprintMode.value[player.id] = false
    } catch (err) {
     console.error('Create player voice failed:', err)
   } finally {
@@ -275,6 +306,24 @@ function playRecordingNote(player: PlayerOut){
   currentVoiceNote.value.play()
 }
 
+/* Rerecord voiceprint */
+function hasVoiceprint(p: any) {
+  const id = p?.id
+  if (!id) return false
+  return Boolean(voiceprintSaved.value[id] || p?.has_voiceprint === true)
+}
+
+function startReRecord(playerId: string) {
+  if (!playerId) return
+  recordVoiceprintMode.value[playerId] = true
+  currentVoiceNote.value?.pause()
+}
+
+function stopReRecord(playerId: string) {
+  if (!playerId) return
+  recordVoiceprintMode.value[playerId] = false
+}
+
 </script>
 
 <template>
@@ -285,9 +334,102 @@ function playRecordingNote(player: PlayerOut){
       !store.isLeader ? 'abilities-section--member' : null,
     ]"
   >
-    <h2 class="rail-title">
-      {{ store.isLeader ? 'Player Overview' : 'Your Information' }}
-    </h2>
+    <!-- MEMBER: Leave immer sichtbar (auch wenn Voiceprint fehlt) -->
+    <div v-if="!store.isLeader" class="rail-header">
+      <h2 class="rail-title">Your Information</h2>
+
+      <div class="rail-actions">
+        <button class="submit-button leave-button" @click="onLeave">
+          Leave
+        </button>
+      </div>
+    </div>
+
+    <!-- LEADER VOICEPRINT -->
+    <div v-if="store.isLeader && store.currentPlayer?.id" class="ability-card leader-voice-card">
+      <div class="ability-card__header">
+        <div class="ability-card__name">
+          {{ store.currentPlayer?.name ?? 'Unnamed Leader' }}
+        </div>
+      </div>
+
+      <!-- LEADER: Leave immer sichtbar; wenn New Voiceprint angezeigt wird, sitzt Leave rechts daneben -->
+      <template v-if="hasVoiceprint(store.currentPlayer) && !recordVoiceprintMode[store.currentPlayer.id]">
+        <div class="section__label leader-note">
+          You are the Leader
+        </div>
+        <div class="leader-actions-row">
+          <button class="submit-button" @click="startReRecord(store.currentPlayer.id)">
+            New Voiceprint
+          </button>
+
+          <button class="submit-button leave-button" @click="onLeave">
+            Leave
+          </button>
+        </div>
+      </template>
+
+
+      <template v-else>
+        <!-- In Recording/Needs-Voiceprint Mode: Leave unter Name rechts -->
+        <div v-if="!hasVoiceprint(store.currentPlayer)" class="leader-leave-row">
+          <button class="submit-button leave-button" @click="onLeave">
+            Leave
+          </button>
+        </div>
+
+
+        <div
+          v-if="hasVoiceprint(store.currentPlayer)"
+          class="voiceprint-topbar"
+        >
+          <button
+            class="submit-button back-button"
+            @click="stopReRecord(store.currentPlayer.id)"
+          >
+            Go Back
+          </button>
+        </div>
+
+        <div class="ability-card__name voiceprint-title">Record a voiceprint for you:</div>
+
+        <div class="voiceprint-actions">
+          <button
+            @click="startVoiceprintRecording(store.currentPlayer)"
+            v-if="!isRecordingPlayerVoice || currentRecordingPlayerId !== store.currentPlayer.id"
+            class="submit-button"
+            :disabled="isRecordingPlayerVoice && currentRecordingPlayerId !== store.currentPlayer.id"
+          >
+            Start Recording
+          </button>
+
+          <button
+            @click="stopVoiceprintRecording"
+            v-if="isRecordingPlayerVoice && currentRecordingPlayerId === store.currentPlayer.id"
+            class="submit-button"
+          >
+            Stop Recording
+          </button>
+
+          <button
+            class="submit-button"
+            @click="playRecordingNote(store.currentPlayer)"
+            :disabled="!playerVoiceDrafts[store.currentPlayer.id]"
+          >
+            Play
+          </button>
+
+          <button
+            class="submit-button"
+            @click="setPlayerVoiceprint(store.currentPlayer)"
+            :disabled="!playerVoiceDrafts[store.currentPlayer.id] || voiceBusy[store.currentPlayer.id]"
+          >
+            Save Recording
+          </button>
+        </div>
+      </template>
+    </div>
+
 
     <div v-if="visiblePlayers.length" class="ability-list">
       <div
@@ -301,141 +443,185 @@ function playRecordingNote(player: PlayerOut){
           </div>
         </div>
 
-        <div v-if="store.isLeader">
-          <h2>Record Your Voiceprint</h2>
-          <button @click="startVoiceprintRecording(p)" v-if="!isRecordingPlayerVoice" class="submit-button">
-            Start Recording
-          </button>
-          <button @click="stopVoiceprintRecording" v-if="isRecordingPlayerVoice" class="submit-button">
-            Stop Recording
-          </button>
-          <button
-            class="submit-button"
-            @click="playRecordingNote(p)"
-            :disabled="!playerVoiceDrafts[p.id]"
-          >
-            Play
-          </button>
-          <button
-            class="submit-button"
-            @click="setPlayerVoiceprint(p)"
-            :disabled="!playerVoiceDrafts[p.id] || voiceBusy[p.id]"
-          >
-            Stimme speichern
-          </button>
-        </div>
-        <div v-else>
-          <h2>Leader need to create a Voiceprint of you</h2>
+        <!-- VOICEPRINT ONLY -->
+        <div v-if="!canShowStats(p)">
+          <template v-if="store.isLeader">
+            <div
+              v-if="store.isLeader && hasVoiceprint(p)"
+              class="voiceprint-topbar"
+            >
+              <button
+                class="submit-button back-button"
+                @click="stopReRecord(p.id)"
+              >
+                Go Back
+              </button>
+            </div>
+            <div class="ability-card__name voiceprint-title">Record a voiceprint for player:</div>
+
+            <div class="voiceprint-actions">
+              <button
+                @click="startVoiceprintRecording(p)"
+                v-if="!isRecordingPlayerVoice || currentRecordingPlayerId !== p.id"
+                class="submit-button"
+                :disabled="isRecordingPlayerVoice && currentRecordingPlayerId !== p.id"
+              >
+                Start Recording
+              </button>
+
+              <button
+                @click="stopVoiceprintRecording"
+                v-if="isRecordingPlayerVoice && currentRecordingPlayerId === p.id"
+                class="submit-button"
+              >
+                Stop Recording
+              </button>
+
+              <button
+                class="submit-button"
+                @click="playRecordingNote(p)"
+                :disabled="!playerVoiceDrafts[p.id]"
+              >
+                Play
+              </button>
+
+              <button
+                class="submit-button"
+                @click="setPlayerVoiceprint(p)"
+                :disabled="!playerVoiceDrafts[p.id] || voiceBusy[p.id]"
+              >
+                Save Recording
+              </button>
+            </div>
+
+          </template>
+
+          <template v-else>
+            <h3>The leader needs to record a voiceprint for you.</h3>
+          </template>
         </div>
 
-        <div class="section__label">Abilities:</div>
-        <div class="ability-grid">
-          <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
-            <div class="ability-label">
-              {{ a.label }}
+        <!-- STATS (erst nach gespeichert) -->
+        <div v-else>
+          <div v-if="store.isLeader" class="voiceprint-rerecord">
+            <button class="submit-button" @click="startReRecord(p.id)">
+              New Voiceprint
+            </button>
+            <button
+              class="submit-button"
+              v-if="p.id !== store.currentPlayer?.id"
+              @click="kick(p.id)"
+            >
+              Kick Player
+            </button>
+          </div>
+          <div class="section__label">Abilities:</div>
+          <div class="ability-grid">
+            <div v-for="a in getAbilityData(p)" :key="a.key" class="ability-box">
+              <div class="ability-label">
+                {{ a.label }}
+              </div>
+
+              <div class="ability-score">
+                <span>{{ a.score ?? '—' }}</span>
+              </div>
+
+              <div
+                v-if="store.isLeader || p.id === store.currentPlayer?.id"
+                class="ability-controls"
+              >
+                <button
+                  class="ability-stepper submit-button"
+                  :disabled="abilityBusy[a.key]"
+                  @click="decAbility(p, a.key)"
+                  aria-label="decrease"
+                >
+                  −
+                </button>
+
+                <button
+                  class="ability-stepper submit-button"
+                  :disabled="abilityBusy[a.key]"
+                  @click="incAbility(p, a.key)"
+                  aria-label="increase"
+                >
+                  +
+                </button>
+              </div>
             </div>
-            <div class="ability-score">
-              <span>{{ a.score ?? '—' }}</span>
-            </div>
+          </div>
+
+          <div class="healthbar" :class="hpClass(p)">
+            <!-- Column 1: Label -->
+            <div class="section__label">Hit Points:</div>
+
+            <!-- Column 2: Progressbar -->
             <div
+              class="healthbar__track"
+              role="progressbar"
+              :aria-valuemin="0"
+              :aria-valuemax="p.hp.max"
+              :aria-valuenow="p.hp.current"
+              :aria-valuetext="`${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp})` : ''}`"
+              :title="`HP ${p.hp.current}/${p.hp.max}${p.hp.temp ? ` (+${p.hp.temp} temp)` : ''}`"
+            >
+              <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
+
+              <div
+                v-if="p.hp.temp"
+                class="healthbar__temp"
+                :style="{
+                  left: hpPct(p) + '%',
+                  width: tempPct(p) + '%',
+                }"
+              ></div>
+            </div>
+
+            <!-- Column 3: Numbers -->
+            <div class="healthbar__numbers">
+              {{ p.hp.current }} / {{ p.hp.max }}
+              <span v-if="p.hp.temp"> (+{{ p.hp.temp }}) </span>
+            </div>
+
+            <!-- Column 4: Buttons -->
+            <div
+              class="healthbar__controls"
               v-if="store.isLeader || p.id === store.currentPlayer?.id"
-              class="ability-controls"
             >
               <button
                 class="ability-stepper submit-button"
-                :disabled="abilityBusy[a.key]"
-                @click="decAbility(p, a.key)"
-                aria-label="decrease"
+                @click="damage(p.id, 1)"
+                aria-label="take 1 damage"
               >
                 −
               </button>
               <button
                 class="ability-stepper submit-button"
-                :disabled="abilityBusy[a.key]"
-                @click="incAbility(p, a.key)"
-                aria-label="increase"
+                @click="heal(p.id, 1)"
+                aria-label="heal 1 hp"
               >
                 +
               </button>
             </div>
           </div>
-        </div>
 
-        <div class="healthbar" :class="hpClass(p)">
-          <!-- Column 1: Label -->
-          <div class="section__label">Hit Points:</div>
-
-          <!-- Column 2: Progressbar -->
-          <div
-            class="healthbar__track"
-            role="progressbar"
-            :aria-valuemin="0"
-            :aria-valuemax="p.hp.max"
-            :aria-valuenow="p.hp.current"
-            :aria-valuetext="`${p.hp.current}/${p.hp.max}${
-              p.hp.temp ? ` (+${p.hp.temp})` : ''
-            }`"
-            :title="`HP ${p.hp.current}/${p.hp.max}${
-              p.hp.temp ? ` (+${p.hp.temp} temp)` : ''
-            }`"
-          >
-            <div class="healthbar__fill" :style="{ width: hpPct(p) + '%' }"></div>
-
-            <div
-              v-if="p.hp.temp"
-              class="healthbar__temp"
-              :style="{
-                left: hpPct(p) + '%',
-                width: tempPct(p) + '%',
-              }"
-            ></div>
+          <div class="hpmax-row">
+            <label class="section__label" :for="'hpmax-' + p.id">
+              Maximum Hit Points:
+            </label>
+            <input
+              :id="'hpmax-' + p.id"
+              class="hpmax-input"
+              type="number"
+              min="1"
+              :value="p.hp.max"
+              @change="onMaxHpChange(p, $event)"
+            />
           </div>
-
-          <!-- Column 3: Numbers -->
-          <div class="healthbar__numbers">
-            {{ p.hp.current }} / {{ p.hp.max }}
-            <span v-if="p.hp.temp"> (+{{ p.hp.temp }}) </span>
-          </div>
-
-          <!-- Column 4: Buttons -->
-          <div
-            class="healthbar__controls"
-            v-if="store.isLeader || p.id === store.currentPlayer?.id"
-          >
-            <button
-              class="ability-stepper submit-button"
-              @click="damage(p.id, 1)"
-              aria-label="take 1 damage"
-            >
-              −
-            </button>
-            <button class="ability-stepper submit-button" @click="heal(p.id, 1)" aria-label="heal 1 hp">
-              +
-            </button>
-          </div>
-        </div>
-
-        <div class="hpmax-row">
-          <label class="section__label" :for="'hpmax-' + p.id"> Maximum Hit Points: </label>
-          <input
-            :id="'hpmax-' + p.id"
-            class="hpmax-input"
-            type="number"
-            min="1"
-            :value="p.hp.max"
-            @change="onMaxHpChange(p, $event)"
-          />
-        </div>
-        <div class="leader__controls" v-if="store.isLeader">
-          <button class="submit-button"
-            v-if="store.isLeader && p.id !== store.currentPlayer?.id"
-            @click="kick(p.id)"
-          >
-            Kick
-          </button>
         </div>
       </div>
     </div>
+
     <p v-else class="output">No players found.</p>
   </section>
 </template>
@@ -465,6 +651,9 @@ function playRecordingNote(player: PlayerOut){
   padding: 0.75rem 0.9rem 1rem;
   background: rgba(110, 97, 50, 0.25);
   position: relative;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .leader__controls {
@@ -494,7 +683,7 @@ function playRecordingNote(player: PlayerOut){
 
 .ability-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.5rem;
 }
 
@@ -639,4 +828,112 @@ function playRecordingNote(player: PlayerOut){
   font-family: 'MedievalSharp', cursive;
   font-weight: 700;
 }
+
+
+/* Voice Print*/
+.voiceprint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.voiceprint-actions .submit-button {
+  min-width: 110px;
+}
+
+.voiceprint-rerecord {
+  margin: 0.25rem 0 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+
+.voiceprint-rerecord .submit-button {
+  width: auto;
+}
+
+.voiceprint-topbar {
+  display: flex;
+  justify-content: flex-end; /* rechts */
+}
+
+.voiceprint-topbar .back-button {
+  width: auto !important;    /* falls submit-button width:100% hat */
+  flex: 0 0 auto;
+}
+
+.leader-voice-card {
+  margin-bottom: 0.75rem;
+}
+
+.leader-voice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.leader-voice-row .submit-button {
+  width: auto;
+}
+
+.rail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rail-title {
+  margin: 0;
+}
+
+.rail-actions {
+  display: flex;
+  justify-content: flex-end; /* rechts in der Box */
+}
+
+.leave-button {
+  width: auto !important;    /* falls submit-button 100% setzt */
+  flex: 0 0 auto;
+}
+
+.leader-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* links Leave, rechts New Voiceprint */
+  gap: 12px;
+  margin-top: 0.25rem;
+}
+
+.leader-note {
+  margin-top: 0.5rem; /* Text unter den Buttons */
+}
+
+.leader-actions-row .submit-button {
+  width: auto !important;
+  flex: 0 0 auto;
+}
+
+.leader-leave-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.leader-leave-row .leave-button {
+  width: auto !important;     /* submit-button width:100% überschreiben */
+  flex: 0 0 auto;
+  margin-left: auto;          /* sicher nach rechts drücken */
+}
+
+
 </style>

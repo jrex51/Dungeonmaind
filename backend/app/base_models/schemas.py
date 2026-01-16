@@ -63,6 +63,7 @@ class PlayerOut(BaseModel):
     last_seen_at: datetime
     abilities: Optional[Abilities] = None
     backend_url: Optional[str] = None
+    has_voiceprint: bool = False
 
 
 # Optional: unified patch model (not currently used by routes)

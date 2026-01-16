@@ -77,7 +77,7 @@ const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
 const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);
-let setConnection = ref(false);
+const setConnection = ref(false);
 
 const networkIPs = __NETWORK_IPS__
 const selectedNetworkIP = ref(networkIPs[0] || "")
@@ -203,39 +203,25 @@ async function onSubmit(e: Event) {
     role.value = selectedPlayer.value.role;
     playerName.value = selectedPlayer.value.name;
   }
-  if (!canSubmit.value || !role.value) return;
+
+  if (!canSubmit.value || role.value == null) return;
+
+  const effectiveRole: Role =
+    (!isLocalhost && role.value === 'leader') ? 'member' : role.value;
+
+  if (!isLocalhost && role.value === 'leader') {
+    window.alert('Ledaer kann nur über localhost beitreten. Du trittst als Member bei.');
+  }
+
+  if (nameError.value) return;
 
   submitting.value = true;
   try {
-    await preflightAndJoin(backendUrl, playerName.value.trim(), role.value);
+    await preflightAndJoin(backendUrl, playerName.value.trim(), effectiveRole);
     store.setLocalNetworkIP(lastValidIP)
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
-
-  // Fehler auslesen
-  if (err?.response) {
-    // Axios-Format
-    const data = err.response.data;
-    serverError.value =
-      typeof data === "object" && data.detail
-        ? data.detail
-        : JSON.stringify(data);
-  } else if (err instanceof Error) {
-    try {
-      // versuchen JSON aus err.message zu parsen
-      const data = JSON.parse(err.message);
-      serverError.value =
-        typeof data === "object" && data.detail
-          ? data.detail
-          : err.message;
-    } catch {
-      // fallback: plain Error message
-      serverError.value = err.message;
-    }
-    } else {
-      serverError.value = String(err);
-    }
   } finally {
     submitting.value = false;
   }
@@ -310,7 +296,9 @@ function deselectSession() {
 const showNewPlayerModal = ref(false);
 
 function JoinNewPlayer() {
-  // bisher passiert hier nichts, außer das das modal getriggert wird
+  selectedPlayer.value = undefined;
+  serverError.value = '';
+  touched.value = false;
   showNewPlayerModal.value = true;
 }
 
@@ -319,8 +307,9 @@ const allPlayers = ref<PlayerOut[]>([]);
 const selectedPlayer = ref<PlayerOut>();
 
 async function JoinExistingPlayer() {
-  if (!setConnection) await onCheck();
-  if (setConnection) {
+  selectedPlayer.value = undefined;
+  if (!setConnection.value) await onCheck();
+  if (setConnection.value) {
     allPlayers.value = await api.listPlayers(true);
     if (allPlayers.value.filter(p => p.status === "inactive").length === 0) {
       window.alert(
@@ -363,7 +352,7 @@ async function JoinExistingPlayer() {
 
       <hr style="margin: 1rem 0" />
 
-      <div>
+      <div v-if="isLocalhost">
         <button class="done-button" @click="onImport">Import Session</button>
       </div>
       <div v-if="showImportModal" class="modal-overlay">

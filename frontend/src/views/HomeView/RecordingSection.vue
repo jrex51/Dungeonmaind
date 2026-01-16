@@ -1,12 +1,22 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRecorderStore } from '@/stores/recorder.ts'
+import { useSessionStore } from '@/stores/session.ts'
 
 /** Holds recording section */
 
 
 const recorder = useRecorderStore()
+const store = useSessionStore()
+
+const allVoiceprintsReady = computed(() => {
+  const players = (store.players ?? []).filter(Boolean)
+  if (!players.length) return false
+  return players.every((p: any) => p?.has_voiceprint === true)
+})
 
 async function startRecording() {
+  if (!allVoiceprintsReady.value) return
   await recorder.startRecording()
 }
 
@@ -35,7 +45,12 @@ function getStatusClass() {
 
     <!-- Leader-only: recording -->
     <div class="recording-controls">
-      <button @click="startRecording" v-if="!recorder.isRecording" class="submit-button">
+      <button
+        @click="startRecording"
+        v-if="!recorder.isRecording"
+        class="submit-button"
+        :disabled="!allVoiceprintsReady"
+      >
         Start Recording
       </button>
       <button @click="stopRecording" v-if="recorder.isRecording" class="submit-button">

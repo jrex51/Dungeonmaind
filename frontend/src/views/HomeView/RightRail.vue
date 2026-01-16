@@ -48,7 +48,7 @@ const store = useSessionStore()
 
 /* Player-Version: fixed */
 .right-rail--member {
-  top: 240px;
+  top: 170px;
   bottom: auto;
   overflow: visible;
   padding-right: 0;
@@ -63,7 +63,7 @@ const store = useSessionStore()
 
 /* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
 .right-rail__inner--leader {
-  padding-top: 65px;
+  padding-top: 105px;
 }
 
 /* Responsive design */

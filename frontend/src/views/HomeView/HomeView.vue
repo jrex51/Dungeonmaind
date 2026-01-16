@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, onBeforeUnmount, ref } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config'
@@ -15,6 +15,65 @@ const store = useSessionStore()
 
 let socket: WebSocket | null = null;
 let pingTimer: number | null = null;
+let healthTimer: number | null = null;
+let manualClose = false;
+
+const HEARTBEAT_MS = 5000;      // ping alle 5s
+const HEALTHCHECK_MS = 3000;    // check alle 3s
+const STALE_AFTER_MS = 12000;   // nach 12s ohne pong => backend tot
+
+let lastPongAt = 0;
+let connectionLost = false;
+
+function clearWsTimers() {
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+  if (healthTimer) { clearInterval(healthTimer); healthTimer = null; }
+}
+
+function disconnectToLogin() {
+  clearWsTimers();
+  manualClose = true;
+  try { socket?.close(1000, 'user acknowledged') } catch {}
+  socket = null;
+
+  store.forceLogout();
+  router.push({ name: 'login' });
+}
+
+function markConnectionLost(reason: string) {
+  if (connectionLost) return  // nur einmal auslösen
+  connectionLost = true;
+
+  clearWsTimers();
+
+  //Socket schließen (triggert onclose), aber Modal bleibt
+  manualClose = true;
+  try { socket?.close(4000, 'connection lost') } catch {}
+  socket = null;
+
+  try {
+    window.confirm(`Verbindung zum Server unterbrochen.\n\n${reason}\n\nDu wirst jetzt zum Login weitergeleitet.`)
+  } finally {
+    disconnectToLogin();
+  }
+}
+
+function startHeartbeat() {
+  lastPongAt = Date.now()
+
+  // Ping senden
+  pingTimer = window.setInterval(() => {
+    try { socket?.send(JSON.stringify({ type: 'ping', ts: Date.now() })); console.log('ping send') } catch {}
+  }, HEARTBEAT_MS)
+
+  // Prüfen, ob pong/ACK noch kommt
+  healthTimer = window.setInterval(() => {
+    const age = Date.now() - lastPongAt;
+    if (age > STALE_AFTER_MS) {
+      markConnectionLost('Heartbeat timeout')
+    }
+  }, HEALTHCHECK_MS)
+}
 
 function apiBase(): string {
   return store.backendUrl ?? SERVER_CONFIG.BASE_URL
@@ -37,6 +96,9 @@ onMounted(() => {
     return
   }
 
+  connectionLost = false;
+  manualClose = false;
+
   // Use wsUrl() to ensure ws/wss scheme, then attach query params
   const baseWs = wsUrl(apiBase(), SERVER_CONFIG.ENDPOINTS.WS_PLAYERS)
   const url = new URL(baseWs)
@@ -54,15 +116,26 @@ onMounted(() => {
     } catch (e) {
       console.error('loadPlayers failed', e)
     }
-
-    try { socket?.send('ping'); } catch { }
-    pingTimer = window.setInterval(() => {    // Hearbeat alle 15s
-      try { socket?.send('ping'); } catch {}
-    }, 15000);
+    startHeartbeat();
+    console.log('heartbeat started')
+    try { socket?.send(JSON.stringify({ type: 'ping', ts: Date.now() })); } catch { }
   };
 
   socket.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data)
+    // pong kann JSON oder plain string sein – beides abfangen
+    if (ev.data === 'pong') {
+      lastPongAt = Date.now()
+      console.log('pong received')
+      return
+    }
+
+    let msg: any
+    try { msg = JSON.parse(ev.data) } catch { return }
+
+    if (msg.type === 'pong') {
+      lastPongAt = Date.now()
+      return
+    }
 
     if (msg.type === 'join') {
       // centralized in store
@@ -80,19 +153,31 @@ onMounted(() => {
   }
 
   socket.onclose = (ev) => {
-    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    clearWsTimers();
     // 4001 = vom Server gekickt
     if (ev.code === 4001) {
       store.forceLogout();
       router.push({ name: 'login' });
+      socket = null;
+      return
     }
     socket = null;
+
+    // Wenn nicht bewusst geschlossen, ists es "verbindung verloren"
+    if (!manualClose) {
+      markConnectionLost(`Websocket closed (code ${ev.code || 'n/a'})`)
+    }
   };
+
+  socket.onerror = () => {
+    markConnectionLost('Websocket error')
+  }
 });
 
-onUnmounted(() => {
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-  try { socket?.close(); } catch {}
+onBeforeUnmount(() => {
+  clearWsTimers();
+  manualClose = true;
+  try { socket?.close(1000, 'unmount') } catch {}
   socket = null;
 })
 </script>
@@ -107,12 +192,12 @@ onUnmounted(() => {
       <!-- Left: main LLM -->
       <QuestionSection />
 
-      <hr style="margin: 2rem 0" />
+      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
 
       <!-- Leader-only: recording -->
       <RecordingSection v-if="store.isLeader" />
 
-      <hr style="margin: 2rem 0" />
+      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
 
       <!-- Leader-only: upload -->
       <AudioUploadSection v-if="store.isLeader" />

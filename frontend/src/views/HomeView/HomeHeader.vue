@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { SERVER_CONFIG } from '@/config/config.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRecorderStore } from '@/stores/recorder.ts'
-import { SERVER_CONFIG } from '@/config/config.ts'
+import { useConfigStore } from "@/stores/backendConfig.ts";
+import { fetchConfig } from "@/api/backendConfigAPI.ts";
 import ConfigView from '@/views/ConfigView.vue'
 import RulebookView from '@/views/RulebookView.vue'
 
@@ -17,9 +18,9 @@ interface CampaignsWithSessions {
   campaigns: Record<string, SessionList>
 }
 
-const router = useRouter()
 const store = useSessionStore()
 const recorder = useRecorderStore()
+const configStore = useConfigStore()
 
 const showNameModal = ref(false)
 const sessionName = ref("")
@@ -38,20 +39,19 @@ const showConfigModal = ref(false)
 const showRulebookModal = ref(false)
 
 
+const openConfig = async () => {
+  try {
+    const config = await fetchConfig();
+    configStore.setConfig(config);
+
+    showConfigModal.value = true;
+  } catch (error) {
+    console.error('Failed to load config:', error);
+  }
+};
+
 interface Campaign {
   name: string
-}
-
-function goToConfig() {
-  router.push('/config')
-}
-
-function goToPlayers() {
-  router.push('/players')
-}
-
-function goToRulebook() {
-  router.push('/rulebook')
 }
 
 function isValidFolderName(name : string) {
@@ -390,7 +390,7 @@ async function confirmDeletion() {
     <h1>Dungeonmaind</h1>
     <div class="header-right">
       <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
-      <button v-if="store.isLeader" class="config-button" @click="showConfigModal = true">Config</button>
+      <button v-if="store.isLeader" class="config-button" @click="openConfig">Config</button>
       <button
         v-if="store.isLeader"
         class="export-button"
