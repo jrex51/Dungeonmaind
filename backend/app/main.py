@@ -63,13 +63,15 @@ async def lifespan(app: FastAPI):
         logging.info("Rulebook successfully embedded.")
         print("Rulebook successfully embedded.")
     delete_transcription_embeddings()
+    # Save original chroma_db path for shutdown
+    chroma_db_path = settings.chroma_db_path
 
     try:
         yield  # Server running
     finally:
         # Shutdown logic
         # Keep the main db, just delete the tmp bases
-        delete_chromadb(True, True)
+        delete_chromadb(True, True, chroma_db_path)
         logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
         await bus.stop()
         logging.info("Server Dungeonmaind shutting down...")

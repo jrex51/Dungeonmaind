@@ -263,10 +263,21 @@ def delete_chromadb(delete_tmp_only=False, forced_stop=False, persist_directory=
         persist_directory = settings.chroma_db_path
 
     if forced_stop:
+        # Create vectorstore to get connection to the SQL client
+        embedding_model = SentenceTransformerEmbeddings(
+            model_name=settings.embedding_model
+        )
+
+        vectorstore = Chroma(
+            persist_directory=persist_directory,
+            embedding_function=embedding_model,
+        )
         # Stops the SQLite client, which should break any lock the client has on the folder on windows
         vectorstore._client._system.stop()
+        print("Stopped client")
         # Wait a short moment to be sure the lock is gone
         time.sleep(1)
+
     if delete_tmp_only:
         if not os.path.isdir(persist_directory):
             print("Chroma DB directory does not exist.")
@@ -276,7 +287,7 @@ def delete_chromadb(delete_tmp_only=False, forced_stop=False, persist_directory=
 
         for name in os.listdir(persist_directory):
             path = os.path.join(persist_directory, name)
-
+            print(path)
             if os.path.isdir(path) and name.startswith("tmp"):
                 shutil.rmtree(path)
                 print(f"Deleted subfolder: {path}")
