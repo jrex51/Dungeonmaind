@@ -255,6 +255,7 @@ async function confirmImport() {
     if (!leader) throw new Error("No leader returned from backend");
 
     store.setCurrentPlayer(leader);
+    store.setLocalNetworkIP(lastValidIP);
 
     await router.push({ name: "home" });
 
@@ -350,7 +351,7 @@ async function JoinExistingPlayer() {
       </div>
 
 
-      <hr style="margin: 1rem 0" />
+      <hr v-if="isLocalhost" style="margin: 1rem 0" />
 
       <div v-if="isLocalhost">
         <button class="done-button" @click="onImport">Import Session</button>
@@ -379,6 +380,30 @@ async function JoinExistingPlayer() {
               No loadable sessions available.
             </div>
           </div>
+          <div>
+              <div v-if="networkIPs.length > 1">
+              <label for="networkIP">Select your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
+              </div>
+              <div v-else>
+                <label for="networkIP">Enter your local network IP:</label>
+                <div style="margin-top: 1px;"></div>
+                <input
+                  id="networkIP"
+                  type="text"
+                  v-model="selectedNetworkIP"
+                  placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                  style="width: 100%; max-width: 200px;"
+                />
+              </div>
+              <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+          </div>
+          <div style="margin-top: 8px;"></div>
           <div class="modal-buttons">
             <button class="btn-cancel" @click="showImportModal = false; deselectSession()">Cancel</button>
             <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
@@ -391,10 +416,19 @@ async function JoinExistingPlayer() {
 
       <hr style="margin: 1rem 0" />
 
-      <div>
+      <div class="button-row">
         <button class="button" @click="JoinNewPlayer">Join as new Player</button>
         <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
       </div>
+
+      <hr v-if="!isLocalhost" style="margin: 1rem 0" />
+      <label
+        v-if="!isLocalhost"
+        style="display: block; max-width: 410px;"
+      >
+        Joining as leader and importing a session are only possible
+        if the server is running locally on your device and the page
+        is opened via localhost or 127.0.0.1</label>
 
       <div v-if="showNewPlayerModal" class="modal-overlay">
         <div class="modal">
@@ -410,6 +444,7 @@ async function JoinExistingPlayer() {
                   name="role"
                   :value="'leader'"
                   v-model="role"
+                  :disabled="!isLocalhost"
                   />
                 Leader
               </label>
@@ -471,12 +506,14 @@ async function JoinExistingPlayer() {
             <p v-if="serverError" class="error">{{ serverError }}</p>
 
             <!-- 4) join or cancel -->
-            <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
-              {{ submitting ? "Join ..." : "Join" }}
-            </button>
-            <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
-              Cancel
-            </button>
+            <div class="modal-buttons">
+              <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
+                {{ submitting ? "Join ..." : "Join" }}
+              </button>
+              <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
+                Cancel
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -497,10 +534,10 @@ async function JoinExistingPlayer() {
           </div>
 
           <div class="modal-buttons">
-            <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
             <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
               {{ submitting ? "Join ..." : "Join" }}
             </button>
+            <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
           </div>
         </div>
       </div>
@@ -646,8 +683,8 @@ select {
 /* Buttons */
 .modal-buttons {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: center;
+  gap: 12px;
 }
 
 .session-name-font {
@@ -664,7 +701,7 @@ select {
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 6px;
-  margin-bottom: 1rem;
+  margin-bottom: 8px;
   padding: 4px;
 }
 
@@ -722,5 +759,10 @@ select {
   font-family: 'MedievalSharp', cursive;
   font-style: italic;
   padding: 0.5rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
 }
 </style>
