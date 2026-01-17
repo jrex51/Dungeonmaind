@@ -53,6 +53,9 @@ function getStatusClass() {
       >
         Start Recording
       </button>
+      <p v-if="!recorder.isRecording && !allVoiceprintsReady" class="secondary-medieval-text">
+        Please record a voiceprint for each player<br>and for yourself before starting the recording
+      </p>
       <button @click="stopRecording" v-if="recorder.isRecording" class="submit-button">
         Stop Recording
       </button>
@@ -82,7 +85,7 @@ function getStatusClass() {
 /* Recording specific styles */
 .recording-controls {
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
   justify-content: center;
   margin-bottom: 1rem;
 }

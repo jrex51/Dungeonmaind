@@ -42,7 +42,6 @@ async def change_config(request: ConfigRequest):
         if request.embedding_top_k not in VALID_EMBEDDING_Top_K:
             raise HTTPException(status_code=400, detail="Invalid embedding TopK selected.")
 
-        print(request.selected_LLM)
         # save in config
         if settings.llm_model != request.selected_LLM:
             settings.llm_model = request.selected_LLM

@@ -1,13 +1,10 @@
 import sys, asyncio
 
-from aiohttp.hdrs import ACCESS_CONTROL_ALLOW_ORIGIN
-
 # On windows its possible to run into race conditions when using asyncio.
 # Setting the EventLoopPolicy here will prevent async race conditions.
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import logging
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,8 +12,8 @@ from uvicorn import run
 from app.core.config import settings
 from app.functions.embedding.embedding_model import (embedd_rulebook, read_text_files, delete_chromadb,
                                                      delete_transcription_embeddings, has_rulebook_embeddings)
-from app.routers import (root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown,
-                         export_import_session)
+from app.api.routers import players, llm, root, health, config_router, ws_players, process_audio_data, \
+    export_import_session, rulebook_markdown
 from contextlib import asynccontextmanager
 from app.core.bus import bus
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 import os
 from pathlib import Path
 from typing import Dict, List
@@ -10,9 +10,10 @@ from app.functions.export_import.delete_session import delete_folder
 from app.base_models.export_import_models import (ExportRequest, Sessions, ImportRequest, Campaigns, DeleteRequest,
                                                   RenameRequest)
 from app.core.config import settings
-from app.domain.models import Player
+from app.base_models.schemas import PlayerOut
 from app.core.bus import bus
 from app.domain.store import store
+from app.api.mappers.player_mapper import player_to_out
 
 
 
@@ -41,7 +42,7 @@ def export_session(req: ExportRequest) -> None:
 
 
 @router.post("/import")
-async def import_session(req: ImportRequest) -> Player:
+async def import_session(req: ImportRequest, request: Request) -> PlayerOut:
     folder_path = os.path.join(SAVED_SESSIONS_DIR, req.campaign_name, req.session_name)
     if not os.path.isdir(folder_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Session folder '{req.session_name}' does not exist.")
@@ -59,7 +60,7 @@ async def import_session(req: ImportRequest) -> Player:
         "players": [p.name for p in store.group.players.values()],
     })
 
-    return leader
+    return player_to_out(leader, request)
 
 
 @router.get("/getSessions", response_model=Sessions)
