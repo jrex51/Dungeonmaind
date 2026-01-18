@@ -11,6 +11,8 @@ import torch
 import whisperx
 import tempfile
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from pydub import AudioSegment
 from io import BytesIO
 import glob
@@ -20,6 +22,8 @@ from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 from app.core.config import settings
 from whisperx.diarize import DiarizationPipeline
+
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 def load_transcription_model():
     new_model = whisperx.load_model(
@@ -37,11 +41,14 @@ def reload_transcription_model():
     transcription_model = load_transcription_model()
 
 def load_diarize_model():
-    # created an HF token and then added it
-    new_model = (DiarizationPipeline(
-        use_auth_token="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",
+    # add the HF Token from the .env file
+    if HF_TOKEN is None:
+        raise RuntimeError("HF_TOKEN is not set. Please add it to your .env file.")
+
+    new_model = DiarizationPipeline(
+        use_auth_token=HF_TOKEN,
         device=device
-    ))
+    )
     return new_model
 
 
