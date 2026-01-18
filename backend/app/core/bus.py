@@ -19,48 +19,27 @@ class PresenceBus:
     - GC entfernt stale Verbindungen (Fallback)
     """
 
-    def __init__(self, timeout_sec: int = 45):
+    def __init__(self, timeout_sec: int = 60):
         self._lock = asyncio.Lock()
         self._sockets: Set[WebSocket] = set()
-        self._ws_meta: Dict[WebSocket, dict] = {}
-        self._player_sockets: Dict[str, Set[WebSocket]] = {}  # player_id -> sockets | ein Player kann mehrere Tabs/Sockets offen haben, erst beim schließen des letzten einen leave ausführen
+        self._ws_meta: Dict[WebSocket, dict] = {}  # ws -> {"player_id": "..."}
+        self._player_sockets: Dict[str, Set[WebSocket]] = {}  # player_id -> set(ws) | ein Player kann mehrere Tabs/Sockets offen haben, erst beim schließen des letzten einen leave ausführen
         self._pending_leave: Dict[str, asyncio.Task] = {}  # player_id -> task
-        self._timeout_sec = timeout_sec
-        self._gc_task: Optional[asyncio.Task] = None
-
-    async def start(self):
-        """startet den GarbageCollector-Loop"""
-        # nur starten, wenn noch nicht gestartet
-        if self._gc_task is None or self._gc_task.done():
-            self._gc_task = asyncio.create_task(self._gc_loop())
-
-    async def stop(self):
-        """Stop GarbageCollector-Loop"""
-        if self._gc_task is not None and not self._gc_task.done():
-            self._gc_task.cancel()
-            try:
-                await self._gc_task
-            except asyncio.CancelledError:
-                pass
-        self._gc_task = None
-        # ausstehende Leave-Tasks abbrechen
-        for t in self._pending_leave.values():
-            t.cancel()
-        self._pending_leave.clear()
 
     async def register(self, ws: WebSocket, player_id: str, name: str, role: str):
         """Neuen Socket registrieren und Join-Event broadcasten"""
         async with self._lock:
+            pid = str(player_id)
             self._sockets.add(ws)
             self._ws_meta[ws] = {
-                "player_id": str(player_id),
+                "player_id": pid,
                 "name": name,
                 "role": role,
                 "last_seen": time.time(),
             }
-            self._player_sockets.setdefault(str(player_id), set()).add(ws)
+            self._player_sockets.setdefault(pid, set()).add(ws)
             # Falls ein Leave für diesen Spieler geplant war abbrechen
-            task = self._pending_leave.pop(str(player_id), None)
+            task = self._pending_leave.pop(pid, None)
             if task and not task.done():
                 task.cancel()
                 #task.add_done_callback(_silence_task_exception)
@@ -120,16 +99,10 @@ class PresenceBus:
                 #old.add_done_callback(_silence_task_exception)
             self._pending_leave[player_id] = task
 
-    async def touch(self, ws: WebSocket):
-        """Heartbeat vom Client - last_seen aktualisieren"""
-        async with self._lock:
-            if ws in self._ws_meta:
-                self._ws_meta[ws]["last_seen"] = datetime.now(timezone.utc)
-
     async def publish(self, event: dict):
         """An alle verbundenen Sockets senden"""
         data = json.dumps(event, default=str)
-        dead = []
+        dead: list[WebSocket] = []
         async with self._lock:
             targets = list(self._sockets)
         for ws in targets:
@@ -139,22 +112,6 @@ class PresenceBus:
                 dead.append(ws)
         for ws in dead:
             await self.unregister(ws)
-
-    async def _gc_loop(self):
-        """Räumt abgestürzte/pausierte Verbindungen anhand von last_seen auf"""
-        try:
-            while True:
-                await asyncio.sleep(10)
-                now = time.time()
-                stale = []
-                async with self._lock:
-                    for ws, meta in list(self._ws_meta.items()):
-                        if now - meta["last_seen"].timestamp() > self._timeout_sec:
-                            stale.append(ws)
-                for ws in stale:
-                    await self.unregister(ws)
-        except asyncio.CancelledError:
-            return
 
     async def _backend_leave_and_publish(self, player_id: str):
         try:
@@ -166,20 +123,12 @@ class PresenceBus:
 
     async def kick(self, player_id: UUID):
         pid = str(player_id)
-        sockets = list(self._player_sockets.get(pid, set()))
+        async with self._lock:
+            sockets = list(self._player_sockets.get(pid, set()))
         for ws in sockets:
             try:
                 await ws.close(code=4001, reason="kicked")
             except Exception:
                 pass
-
-    async def _server_leave_and_publish(self, player_id: str):
-        # statt store.leave() jetzt "soft leave"
-        store.group.deactivate(UUID(player_id), status=PlayerStatus.inactive)
-        await self.publish({"type": "leave", "player_id": str(player_id)})
-
-    def _silence_task_exception(t: asyncio.Task):
-        try: _ = t.result()
-        except Exception: pass
 
 bus = PresenceBus()
