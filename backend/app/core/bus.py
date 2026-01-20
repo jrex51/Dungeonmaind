@@ -13,10 +13,8 @@ class PresenceBus:
     """
     Präsenzverwaltung die einzelnen frontends/Spieler:
     - register/unregister verknüpft WebSocket mit player_id
-    - touch aktualisiert last_seen (Heartbeat)
     - broadcast_all sendet an alle verbundenen Sockets
     - publish bleibt als Alias auf broadcast_all
-    - GC entfernt stale Verbindungen (Fallback)
     """
 
     def __init__(self, timeout_sec: int = 60):
