@@ -26,6 +26,12 @@ class Settings(BaseSettings):
         description="Listening port"
     )
 
+    hf_token: str | None = Field(
+        default=None,
+        alias="HF_TOKEN",
+        description="Hugging Face access token"
+    )
+
     llm_model: str = Field(
         default="hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
         validation_alias="LLM_MODEL",
@@ -45,9 +51,9 @@ class Settings(BaseSettings):
     )
 
     embedding_top_k: int = Field(
-        default=2,
+        default=4,
         validation_alias="EMBEDDING_TOP_K",
-        description="Number of top_k embeddings (1-4)"
+        description="Number of top_k embeddings (2-8)"
     )
 
     backend_root_path: str = Field(

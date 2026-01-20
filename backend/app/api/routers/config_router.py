@@ -25,7 +25,7 @@ VALID_EMBEDDING_MODELS = {
     "paraphrase-multilingual-MiniLM-L12-v2"
 }
 
-VALID_EMBEDDING_Top_K = {1, 2, 3, 4}
+VALID_EMBEDDING_Top_K = {2, 4, 6, 8}
 
 @router.post("/changeConfig", response_model=ConfigChangeResponse)
 async def change_config(request: ConfigRequest):
