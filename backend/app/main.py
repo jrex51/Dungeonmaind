@@ -48,9 +48,6 @@ async def lifespan(app: FastAPI):
     # Check if this deletes everything. Should just delete the tmp folders and for the main db just delete transcriptions
     delete_chromadb(True, False)
 
-    logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
-    await bus.start()
-
     # Rulebook embedding
     # Here check first if the rulebook embeddings are still present in the main db. If not for some reason we add them again. This will also happen
     # on the very first start up of the application
@@ -69,8 +66,6 @@ async def lifespan(app: FastAPI):
         # Shutdown logic
         # Keep the main db, just delete the tmp bases
         delete_chromadb(True, True, chroma_db_path)
-        logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
-        await bus.stop()
         logging.info("Server Dungeonmaind shutting down...")
 
 def create_app() -> FastAPI:
@@ -109,6 +104,9 @@ if __name__ == "__main__":
         app,
         host=settings.host,
         port=settings.port,
+        ws="websockets",
+        ws_ping_interval=10,
+        ws_ping_timeout=10,
         reload=settings.debug,
         log_config=None,
     )

@@ -14,24 +14,10 @@ const router = useRouter()
 const store = useSessionStore()
 
 let socket: WebSocket | null = null;
-let pingTimer: number | null = null;
-let healthTimer: number | null = null;
 let manualClose = false;
-
-const HEARTBEAT_MS = 5000;      // ping alle 5s
-const HEALTHCHECK_MS = 3000;    // check alle 3s
-const STALE_AFTER_MS = 12000;   // nach 12s ohne pong => backend tot
-
-let lastPongAt = 0;
 let connectionLost = false;
 
-function clearWsTimers() {
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-  if (healthTimer) { clearInterval(healthTimer); healthTimer = null; }
-}
-
 function disconnectToLogin() {
-  clearWsTimers();
   manualClose = true;
   try { socket?.close(1000, 'user acknowledged') } catch {}
   socket = null;
@@ -44,8 +30,6 @@ function markConnectionLost(reason: string) {
   if (connectionLost) return  // nur einmal auslösen
   connectionLost = true;
 
-  clearWsTimers();
-
   //Socket schließen (triggert onclose), aber Modal bleibt
   manualClose = true;
   try { socket?.close(4000, 'connection lost') } catch {}
@@ -56,23 +40,6 @@ function markConnectionLost(reason: string) {
   } finally {
     disconnectToLogin();
   }
-}
-
-function startHeartbeat() {
-  lastPongAt = Date.now()
-
-  // Ping senden
-  pingTimer = window.setInterval(() => {
-    try { socket?.send(JSON.stringify({ type: 'ping', ts: Date.now() })); console.log('ping send') } catch {}
-  }, HEARTBEAT_MS)
-
-  // Prüfen, ob pong/ACK noch kommt
-  healthTimer = window.setInterval(() => {
-    const age = Date.now() - lastPongAt;
-    if (age > STALE_AFTER_MS) {
-      markConnectionLost('Heartbeat timeout')
-    }
-  }, HEALTHCHECK_MS)
 }
 
 function apiBase(): string {
@@ -116,26 +83,11 @@ onMounted(() => {
     } catch (e) {
       console.error('loadPlayers failed', e)
     }
-    startHeartbeat();
-    console.log('heartbeat started')
-    try { socket?.send(JSON.stringify({ type: 'ping', ts: Date.now() })); } catch { }
   };
 
   socket.onmessage = (ev) => {
-    // pong kann JSON oder plain string sein – beides abfangen
-    if (ev.data === 'pong') {
-      lastPongAt = Date.now()
-      console.log('pong received')
-      return
-    }
-
     let msg: any
     try { msg = JSON.parse(ev.data) } catch { return }
-
-    if (msg.type === 'pong') {
-      lastPongAt = Date.now()
-      return
-    }
 
     if (msg.type === 'join') {
       // centralized in store
@@ -149,11 +101,9 @@ onMounted(() => {
       // backend now sends nested hp directly
       store.patchPlayer(msg.player_id, { hp: msg.hp })
     }
-    // no attributes/abilities mapping needed anymore
   }
 
   socket.onclose = (ev) => {
-    clearWsTimers();
     // 4001 = vom Server gekickt
     if (ev.code === 4001) {
       store.forceLogout();
@@ -163,7 +113,7 @@ onMounted(() => {
     }
     socket = null;
 
-    // Wenn nicht bewusst geschlossen, ists es "verbindung verloren"
+    // Wenn nicht bewusst geschlossen, ist es "verbindung verloren"
     if (!manualClose) {
       markConnectionLost(`Websocket closed (code ${ev.code || 'n/a'})`)
     }
@@ -175,7 +125,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  clearWsTimers();
   manualClose = true;
   try { socket?.close(1000, 'unmount') } catch {}
   socket = null;
@@ -235,10 +184,12 @@ onBeforeUnmount(() => {
 }
 
 /* Responsive design */
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .container {
     max-width: 100%;
     margin: 1rem;
+    align-items: center;
   }
 }
+
 </style>

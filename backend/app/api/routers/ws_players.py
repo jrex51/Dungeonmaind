@@ -24,31 +24,12 @@ async def ws_players(websocket: WebSocket, player_id: UUID = Query(...), name: s
         await websocket.close(code=4004, reason="unknown player")
         return
 
-    await bus.register(websocket, player_id, name, role)
+    await bus.register(websocket, str(player_id), name, role)
 
     try:
         while True:
-            raw = await websocket.receive_text()
-
-            #akzeptiere sowohl plain "ping" als auch JSON ping
-            if raw == "ping":
-                await websocket.send_text("pong")
-                await bus.touch(websocket)
-                continue
-
-            try:
-                msg = json.loads(raw)
-            except Exception:
-                # unbekanntes Format, trotzdem als Aktivität werten
-                await bus.touch(websocket)
-                continue
-
-            if msg.get("type") == "ping":
-                await websocket.send_text("pong")
-                await bus.touch(websocket)
-                continue
-
-            await bus.touch(websocket)
+            # blockiert bis client etwas sendet oder disconnect passiert
+            await websocket.receive_text()
     except WebSocketDisconnect:
         await bus.unregister(websocket)
     except Exception:

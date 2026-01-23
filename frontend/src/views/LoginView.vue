@@ -524,13 +524,46 @@ async function JoinExistingPlayer() {
           <div class="player-list">
             <div
               v-for="player in allPlayers.filter(p => p.status === 'inactive')"
-              :key="player.name"
+              :key="player.id ?? player.name"
               class="player-item"
-              :class="{ selected: selectedPlayer === player }"
-              @click="selectedPlayer = player"
+              :class="{
+                selected: selectedPlayer === player,
+                disabled: !isLocalhost && player.role === 'leader'
+              }"
+              @click="() => {
+                if (!isLocalhost && player.role === 'leader') return
+                selectedPlayer = player
+              }"
             >
-              {{ player.name }}
+              {{ player.name }} ({{ player.role }})
+              <span v-if="!isLocalhost && player.role === 'leader'"> 🔒</span>
             </div>
+          </div>
+
+          <!-- IP nur anzeigen, wenn ein Leader ausgewählt ist -->
+          <div v-if="selectedPlayer?.role === 'leader'">
+            <div v-if="networkIPs.length > 1">
+              <label for="networkIP">Select your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
+            </div>
+            <div v-else>
+              <label for="networkIP">Enter your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <input
+                id="networkIP"
+                type="text"
+                v-model="selectedNetworkIP"
+                placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                style="width: 100%; max-width: 200px;"
+              />
+            </div>
+            <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+            <div style="margin-bottom: 12px;"></div>
           </div>
 
           <div class="modal-buttons">
@@ -656,7 +689,7 @@ select {
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 6px;
-  margin-bottom: 1rem;
+  margin-bottom: 12px;
   padding: 4px;
 }
 
@@ -676,8 +709,14 @@ select {
 
 .player-item.selected,
 .session-item.selected {
-  background: #2563eb; /* blue-600 */
-  color: white;
+  background: #8b5a2b;   /* muted leather brown */
+  color: #fdf6e3;
+}
+
+.player-item.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Buttons */

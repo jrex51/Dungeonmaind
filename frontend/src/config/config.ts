@@ -7,7 +7,7 @@ export const SERVER_CONFIG = {
   },
   get LOCAL_NETWORK_IP() {
     const store = useSessionStore();
-    return store.localNetworkIP || "localhost"; // Fallback
+    return store.localNetworkIP || "";
   },
   ENDPOINTS: {
     RUN_LLM: '/llm/run',
@@ -31,11 +31,11 @@ export const SERVER_CONFIG = {
 
 // Set the available LLM models
 export const LLM_OPTIONS = [
-  { value: 'hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M', label: 'Phi4-3.8B' },
-  { value: 'hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M', label: 'Gemma3-1B' },
-  { value: 'hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M', label: 'Gemma3-12B' },
   { value: 'hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M', label: 'Ministral3-3B'},
   { value: 'hf.co/bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF:Q5_K_M', label: 'Ministral3-14B'},
+  { value: 'hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M', label: 'Gemma3-1B' },
+  { value: 'hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M', label: 'Gemma3-12B' },
+  { value: 'hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M', label: 'Phi4-3.8B' },
 ]
 
 // Set the default LLM model
@@ -63,10 +63,10 @@ export const DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODELS[0].value
 
 // Set the available embedding models
 export const EMBEDDING_TopK = [
-  { value: '1', label: '1' },
   { value: '2', label: '2' },
-  { value: '3', label: '3' },
   { value: '4', label: '4' },
+  { value: '6', label: '6' },
+  { value: '8', label: '8' },
 ]
 
 // Set the default embedding model

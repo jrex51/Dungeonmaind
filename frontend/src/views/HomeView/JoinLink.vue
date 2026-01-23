@@ -13,22 +13,32 @@ const showQRCodeModal = ref(false)
 <template>
 <div v-if="store.isLeader" :class="['join-link', 'rail-panel']">
   <h2 class="rail-title">Join Link (New Members)</h2>
-  <label>http://{{ localNetworkIP }}:{{ port }}</label>
-  <button class="submit-button" @click="showQRCodeModal = true">QR Code</button>
-  <p>Copy the join link or click the button to open<br>
-    Dungeonmaind on another device via QR code</p>
+  <div v-if="localNetworkIP">
+    <label>http://{{ localNetworkIP }}:{{ port }}</label>
+    <button class="submit-button" @click="showQRCodeModal = true">QR Code</button>
+    <p>Copy the join link or click the button to open<br>
+      Dungeonmaind on another device via QR code</p>
 
-  <div v-if="localNetworkIP && showQRCodeModal" class="modal-overlay" >
-    <div class="modal">
-      <qrcode-vue
-      :value="`http://${localNetworkIP}:${port}`"
-      :size="180"
-      level="M"
-    />
-    <p>Scan the code to open<br>
-      Dungeonmaind on another device</p>
-    <button class="submit-button" @click="showQRCodeModal = false">Done</button>
+    <div v-if="localNetworkIP && showQRCodeModal" class="modal-overlay" >
+      <div class="modal">
+        <qrcode-vue
+        :value="`http://${localNetworkIP}:${port}`"
+        :size="180"
+        level="M"
+      />
+      <p>Scan the code to open<br>
+        Dungeonmaind on another device</p>
+      <button class="submit-button" @click="showQRCodeModal = false">Done</button>
+      </div>
     </div>
+  </div>
+
+  <div v-else>
+    <p>
+      No local network IP set<br>
+      Please leave the session and rejoin as<br>
+      Leader to set your local network IP
+    </p>
   </div>
 </div>
 </template>

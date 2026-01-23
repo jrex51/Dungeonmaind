@@ -29,33 +29,33 @@ const store = useSessionStore()
   box-sizing: border-box;
   color: #392401;
   font-family: 'MedievalSharp', cursive;
-}
-
-/* Leader-Version: füllt vertikal den Bildschirmbereich und scrollt intern */
-.right-rail--leader {
-  top: 10px;
-  bottom: 5px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 0.5rem;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-.right-rail--leader::-webkit-scrollbar {
+.right-rail::-webkit-scrollbar {
   display: none;
+}
+
+/* Leader-Version: füllt vertikal den Bildschirmbereich */
+.right-rail--leader {
+  top: 60px;
+  bottom: 5px;
+  padding-right: 0.5rem;
 }
 
 /* Player-Version: fixed */
 .right-rail--member {
-  top: 170px;
-  bottom: auto;
-  overflow: visible;
-  padding-right: 0;
+  top: 60px;
+  bottom: 5px;
+  padding-right: 0.5rem;
 }
 
 /* Gemeinsames Layout innen: Cards untereinander mit Abstand */
 .right-rail__inner {
+  padding-top: 100px;
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -63,18 +63,17 @@ const store = useSessionStore()
 
 /* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
 .right-rail__inner--leader {
-  padding-top: 105px;
+  padding-top: 80px;
 }
 
 /* Responsive design */
-@media (max-width: 900px) {
+@media (max-width: 1300px) {
   .right-rail {
     position: static;
     right: auto;
     top: auto;
     bottom: auto;
     width: auto;
-    margin: 1rem;
     padding-right: 0;
   }
 
@@ -83,8 +82,12 @@ const store = useSessionStore()
     overflow: visible;
   }
 
+  .right-rail__inner {
+    padding-top: 60px;
+  }
+
   .right-rail__inner--leader {
-    padding-top: 0;
+    padding-top: 20px;
   }
 }
 </style>

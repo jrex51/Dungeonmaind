@@ -935,5 +935,10 @@ function stopReRecord(playerId: string) {
   margin-left: auto;          /* sicher nach rechts drücken */
 }
 
+@media (max-width: 600px) {
+  .ability-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 
 </style>
