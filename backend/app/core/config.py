@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     llm_model: str = Field(
-        default="hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
+        default="hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M",
         validation_alias="LLM_MODEL",
         description="The default LLM model used by the backend"
     )

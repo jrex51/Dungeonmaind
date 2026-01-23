@@ -184,10 +184,12 @@ onBeforeUnmount(() => {
 }
 
 /* Responsive design */
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .container {
     max-width: 100%;
     margin: 1rem;
+    align-items: center;
   }
 }
+
 </style>
