@@ -72,7 +72,7 @@ For GPU support you need to install CUDA (CUDA Toolkit 12.8.1), cuDNN (cuDNN 9.1
 	```
 
 ### 4. Download the latest instance of ffmpeg (url https://www.ffmpeg.org/download.html)
-and provide it inside the project directory, the corresponding folder must be added to PATH before starting the backend.
+Add it inside the project directory, the corresponding folder must be added to PATH before starting the backend.
 
 ### 3. Initialize the frontend
 See the README.md file in the 'frontend' folder. (first run ```npm install```, then ```npm run dev```)
@@ -159,5 +159,3 @@ See the README.md file in the 'frontend' folder. (first run ```npm install```, t
 ### Session Organization
 1. Multi-Campaign Management: Support for creating and organizing sessions into distinct campaigns.
 2. Features delete, overwrite, import or export existing sessions within a campaign. The interface automatically prevents exporting or saving until the final transcription is safely finished, preventing data loss.
-
-
