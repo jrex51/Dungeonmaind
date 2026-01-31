@@ -150,8 +150,9 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
                                  return_char_alignments=False)
         # print("Aligned segments:", resultA["segments"])
 
-        # 7. Assign speaker labels
-        # print("Assigning speakers...")
+
+        # 6. Assign speaker labels
+        print("Assigning speakers...")
 
         # Max players is guaranteed to be available based on the user's requirement.
         max_players = store.group.max_size
@@ -166,40 +167,38 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
 
         # The final segments are the diarized result
 
-        for segment in resultB["segments"]:
-            original_speaker = segment["speaker"]
+        for segment in resultB.get("segments", []):
+            original_speaker = segment.get("speaker", "unknown")
             print(original_speaker)
-            player_name = speaker_map.get(original_speaker, "unkown")
+            player_name = speaker_map.get(original_speaker, "unknown")
             # print("segment playername:", segment["player_name"])
             segment["player_name"] = player_name
             print("playername:", player_name)
             segment["speaker"] = player_name
 
         final_segments = resultB["segments"]
-
         # remove voice notes
         filtered_segments = [seg for seg in resultB["segments"] if seg["start"] > intro_duration_s]
-
         # print("Final segments (Diarized):", filtered_segments)
 
-        texts = [segment['text'] for segment in resultB["segments"]]
-        speakers = [segment['speaker'] for segment in resultB["segments"]]
-
-
-        # 6. Embed the resulting text
-        if texts and any(text.strip() for text in texts):
-            print(texts)
-            embedd_transcriptions(texts, speakers)
+        # 7. Embed the resulting text
+        texts = []
+        speakers = []
 
         for seg in filtered_segments:
-            print(
-                f"[{seg['start']:.2f}s – {seg['end']:.2f}s] "
-                f"{seg['speaker']}: {seg['text']}"
+            text = seg.get("text", "").strip()
+            if not text:
+                continue
+
+            texts.append(text)
+            speakers.append(seg.get("speaker", "unknown"))
+
+        if texts:
+            embedd_transcriptions(
+                embedding_text=texts,
+                speakers=speakers
             )
         # print(f"Removed intro (first {intro_duration_s:.2f} seconds). Remaining segments: {len(filtered_segments)}")
-
-
-
 
         return filtered_segments
 

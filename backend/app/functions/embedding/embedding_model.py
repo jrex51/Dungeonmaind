@@ -63,30 +63,26 @@ def embedding_search(query: str, source=False, persist_directory=None):
     return results
 
 
-def embedd_transcriptions(embedding_text: list, player_id="none", persist_directory=None):
+def embedd_transcriptions(embedding_text: list, speakers: list[str], persist_directory=None):
 
     if persist_directory is None:
         persist_directory = settings.chroma_db_path
+
+    if len(embedding_text) != len(speakers):
+        raise ValueError(
+            f"embedding_text ({len(embedding_text)}) and speakers ({len(speakers)}) must have the same length"
+        )
 
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(
         model_name=settings.embedding_model
     )
 
-    if isinstance(player_id, str):
-        player_id_list = [player_id] * len(embedding_text)
-    elif isinstance(player_id, list):
-        # If list is shorter than embedding_text, pad with "unkown"
-        player_id_list = player_id + ["unowkn"] * (len(embedding_text) - len(player_id))
-    else:
-        player_id_list = ["unkown"] * len(embedding_text)
-
-
     documents = [
         Document(
             page_content=text,
             metadata={"source": "transcriptions",
-                      "player_id": player_id_list[i],
+                      "player_id": speakers[i],
                       "session_id": "none",  # Update here later
                       "path": "none"}
         )
