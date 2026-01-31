@@ -73,11 +73,20 @@ def embedd_transcriptions(embedding_text: list, player_id="none", persist_direct
         model_name=settings.embedding_model
     )
 
+    if isinstance(player_id, str):
+        player_id_list = [player_id] * len(embedding_text)
+    elif isinstance(player_id, list):
+        # If list is shorter than embedding_text, pad with "unkown"
+        player_id_list = player_id + ["unowkn"] * (len(embedding_text) - len(player_id))
+    else:
+        player_id_list = ["unkown"] * len(embedding_text)
+
+
     documents = [
         Document(
             page_content=text,
             metadata={"source": "transcriptions",
-                      "player_id": player_id,  # Update here later
+                      "player_id": player_id_list[i],
                       "session_id": "none",  # Update here later
                       "path": "none"}
         )
@@ -201,11 +210,6 @@ def has_rulebook_embeddings(persist_directory=None) -> bool:
 
         return False  # no rulebook found
 
-        #if count > 0:
-        #    return 1
-        #else:
-        #    return 2
-        #return count > 0
     except PermissionError:
         return False
 
@@ -351,22 +355,9 @@ def write_to_ChromaDB(persist_directory, documents, embedding_model):
 
 
 def embed_text(embedding_text: str):
-    """
-    Embed a list of text strings and return embeddings as vectors.
-
-    Args:
-        embedding_text: List of strings to embed.
-
-    Returns:
-        List of embedding vectors (lists of floats).
-    """
     embedding_model = SentenceTransformerEmbeddings(model_name=settings.embedding_model)
     embeddings = embedding_model.embed_query(embedding_text)
     return embeddings
-
-
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
 async def embedding_search_on_chat_history(query: str, query_embedding: list[float], player_id: UUID) -> list[dict]:
@@ -376,10 +367,7 @@ async def embedding_search_on_chat_history(query: str, query_embedding: list[flo
     Returns a list of tuples: (chat_text, similarity_score)
     """
     top_k = settings.embedding_top_k
-    #query_embedding = embed_text(query)
     query_embedding = np.array(query_embedding)
-    #query_embedding = query_embedding.reshape(-1, query_embedding.shape[-1])
-    #query_embedding = query_embedding.mean(axis=0)   # shape: (embedding_dim,)
 
     history = await chat_store.history(player_id)
     if not history or len(query_embedding) == 0:

@@ -150,13 +150,6 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
                                  return_char_alignments=False)
         # print("Aligned segments:", resultA["segments"])
 
-        texts = [segment['text'] for segment in resultA["segments"]]
-
-        # 6. Embed the resulting text
-        if texts and any(text.strip() for text in texts):
-            print(texts)
-            embedd_transcriptions(texts)
-
         # 7. Assign speaker labels
         # print("Assigning speakers...")
 
@@ -189,12 +182,24 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
 
         # print("Final segments (Diarized):", filtered_segments)
 
+        texts = [segment['text'] for segment in resultB["segments"]]
+        speakers = [segment['speaker'] for segment in resultB["segments"]]
+
+
+        # 6. Embed the resulting text
+        if texts and any(text.strip() for text in texts):
+            print(texts)
+            embedd_transcriptions(texts, speakers)
+
         for seg in filtered_segments:
             print(
                 f"[{seg['start']:.2f}s – {seg['end']:.2f}s] "
                 f"{seg['speaker']}: {seg['text']}"
             )
         # print(f"Removed intro (first {intro_duration_s:.2f} seconds). Remaining segments: {len(filtered_segments)}")
+
+
+
 
         return filtered_segments
 

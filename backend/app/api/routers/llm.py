@@ -45,8 +45,12 @@ async def run_llm(req: LLMRequest):
             full_path = doc.metadata.get("path")
             filename = os.path.basename(full_path).replace(".md", "")
             context += "-filename-" + filename + "-End filename- \n"
-        context += doc.page_content + "\n\n"
+        if doc.metadata.get("source") == "transcriptions":
+            context += "Player: " + doc.metadata.get("player_id") + "; Content: " + doc.page_content + "\n\n"
+        else:
+            context += doc.page_content + "\n\n"
 
+    context += "The player asking questions is: " + player.name + " and has role " + player.role + "\n\n"
 
     #context = "\n\n".join([doc.page_content for doc in retrieved_docs])
     system_message = get_system_prompt(context)

@@ -24,7 +24,7 @@ async def run_custom_model(chat_history: list[dict]) -> AsyncGenerator[str, None
     timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=None)
 
     try:
-        async with httpx.AsyncClient(timeout = timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as resp:
                 async for line in resp.aiter_lines():
                     if line:
