@@ -154,11 +154,14 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
         # 6. Assign speaker labels
         print("Assigning speakers...")
 
-        # Max players is guaranteed to be available based on the user's requirement.
-        max_players = store.group.max_size
+        # Min players is guaranteed to be available based on the user's requirement.
+        min_players = max(len(speaker_order), 1)
+        max_players = max(min_players + 2, store.group.max_size)
+        print(f"min players: {min_players}")
+        print(f"max players: {max_players}")
 
         # Perform diarization with constraints
-        diarizeSegments = diarize_model(audio, min_speakers=1, max_speakers=max_players)
+        diarizeSegments = diarize_model(audio, min_speakers=min_players, max_speakers=max_players)
 
         # Assign speakers to the aligned segments
         resultB = whisperx.assign_word_speakers(diarizeSegments, resultA)
@@ -171,15 +174,19 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
             original_speaker = segment.get("speaker", "unknown")
             print(original_speaker)
             player_name = speaker_map.get(original_speaker, "unknown")
-            # print("segment playername:", segment["player_name"])
             segment["player_name"] = player_name
             print("playername:", player_name)
             segment["speaker"] = player_name
 
-        final_segments = resultB["segments"]
+        # print results
+        for seg in resultB.get("segments", []):
+            print(
+                f"[{seg['start']:.2f}s – {seg['end']:.2f}s] "
+                f"{seg['speaker']}: {seg['text']}"
+            )
+
         # remove voice notes
         filtered_segments = [seg for seg in resultB["segments"] if seg["start"] > intro_duration_s]
-        # print("Final segments (Diarized):", filtered_segments)
 
         # 7. Embed the resulting text
         texts = []

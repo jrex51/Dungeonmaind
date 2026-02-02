@@ -22,6 +22,10 @@ class ChatStore:
         async with self._lock:
             self._by_player[player_id].clear()
 
+    async def clear_all(self) -> None:
+        async with self._lock:
+            self._by_player = defaultdict(list)
+
 chat_store = ChatStore()
 
 

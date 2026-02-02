@@ -34,7 +34,7 @@ def embedding_search(query: str, source=False, persist_directory=None):
     if source_db == "rulebook":
         results = vectorstore.similarity_search(
             query,
-            k=settings.embedding_top_k,
+            k=min(settings.embedding_top_k, 6),
             filter={"source": source_db}
         )
     # If LLM is asked use the transcriptions and the rulebook information

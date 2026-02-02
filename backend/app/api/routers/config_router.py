@@ -25,7 +25,7 @@ VALID_EMBEDDING_MODELS = {
     "paraphrase-multilingual-MiniLM-L12-v2"
 }
 
-VALID_EMBEDDING_Top_K = {2, 4, 6, 8}
+VALID_EMBEDDING_Top_K = {3, 6, 9, 12}
 
 @router.post("/changeConfig", response_model=ConfigChangeResponse)
 async def change_config(request: ConfigRequest):
@@ -57,7 +57,7 @@ async def change_config(request: ConfigRequest):
                 player = store.group.get_player(request.player_id)
             except KeyError:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
-            await chat_store.clear(player.id)
+            await chat_store.clear_all()
             print("[CONFIG] Chat Verlauf gelöscht.")
 
         if request.delete_transcriptions:
