@@ -11,6 +11,8 @@ import torch
 import whisperx
 import tempfile
 import os
+from pydub import AudioSegment
+from io import BytesIO
 
 from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
@@ -22,22 +24,26 @@ def load_transcription_model():
         settings.transcription_model,
         device,
         compute_type=compute_type,
-        download_root=model_dir # If None, uses default HF cache
+        download_root=model_dir  # If None, uses default HF cache
     )
     if device == "cuda":
         torch.cuda.empty_cache()
     return new_model
 
+
 def reload_transcription_model():
     global transcription_model
     transcription_model = load_transcription_model()
 
+
 def load_diarize_model():
-    # created an HF token and then added it
-    new_model = (DiarizationPipeline(
-        use_auth_token="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",
+    if not settings.hf_token:
+        raise RuntimeError("HF_TOKEN is not set. Please add it to your .env file.")
+
+    new_model = DiarizationPipeline(
+        use_auth_token=settings.hf_token,
         device=device
-    ))
+    )
     return new_model
 
 
@@ -64,7 +70,8 @@ transcription_model = load_transcription_model()
 diarize_model = load_diarize_model()
 print("Models loaded successfully.")
 
-def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
+
+async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
     # Robust content type parsing and saving bytes to a temporary file
     file_extension_map = {
         'ogg': 'ogg',
@@ -79,10 +86,40 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
             fileExtension = file_extension_map[key]
             break
 
+    players = await store.list_players()
+    print(len(players))
+
+    combined_audio = AudioSegment.silent(duration=1000)
+    speaker_order = []  # Kombiniere alle Voiceprints von den Spieler
+    for p in players:
+        if p.voiceprint is None:
+            continue  # Spieler ohne Voiceprint überspringen
+
+        voice_bytes = p.voiceprint.audio_bytes
+        note = AudioSegment.from_file(BytesIO(voice_bytes))
+        combined_audio += note + AudioSegment.silent(duration=500)
+        speaker_order.append(p.name)  # Kombiniere die Session-Aufnahme
+
+    session_audio = AudioSegment.from_file(BytesIO(audio_bytes))
+    intro_duration_ms = len(combined_audio)
+    combined_audio += session_audio
+    # export
+    output_buffer = BytesIO()
+    combined_audio.export(output_buffer, format="wav")
+    output_buffer.seek(0)
+
+    print("Combining player voice notes with session audio...")
+    combined_audio_buffer = output_buffer
+    intro_duration_s = intro_duration_ms / 1000  # Umwandeln in Sekunden
+
+    speaker_map = {f"SPEAKER_{i:02d}": name for i, name in enumerate(speaker_order)}
+    print(speaker_map)
+
     print("Loading audio...")
+
     # 2. Save bytes to a temporary file (required by whisperx.load_audio)
     with tempfile.NamedTemporaryFile(suffix=f".{fileExtension}", delete=False) as tempAudio:
-        tempAudio.write(audio_bytes)
+        tempAudio.write(combined_audio_buffer.read())
         tempAudio.flush()
         tempAudioPath = tempAudio.name
 
@@ -92,9 +129,9 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
 
         # 3. Transcribe using the cached model
         result = transcription_model.transcribe(audio, batch_size=batch_size)
-        print("Transcription segments:", result["segments"])
+        # print("Transcription segments:", result["segments"])
 
-        # 4. Align whisper output to improve the word-level timestamps in your transcription.
+        # 4. Align whisper output to improve the word-level timestamps in transcription.
         language_code = result["language"]
         if language_code not in alignment_models_cache:
             print(f"Loading alignment model for language: {language_code}...")
@@ -111,36 +148,69 @@ def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16):
         print("Aligning...")
         resultA = whisperx.align(result["segments"], alignment_model, metadata, audio, device,
                                  return_char_alignments=False)
-        print("Aligned segments:", resultA["segments"])
+        # print("Aligned segments:", resultA["segments"])
 
-        texts = [segment['text'] for segment in resultA["segments"]]
 
-        # 6. Embed the resulting text
-        if texts and any(text.strip() for text in texts):
-            print(texts)
-            embedd_transcriptions(texts)
-
-        # 7. Assign speaker labels
+        # 6. Assign speaker labels
         print("Assigning speakers...")
 
-        # Max players is guaranteed to be available based on the user's requirement.
-        max_players = store.group.max_size
+        # Min players is guaranteed to be available based on the user's requirement.
+        min_players = max(len(speaker_order), 1)
+        max_players = max(min_players + 2, store.group.max_size)
+        print(f"min players: {min_players}")
+        print(f"max players: {max_players}")
 
         # Perform diarization with constraints
-        diarizeSegments = diarize_model(audio, min_speakers=1, max_speakers=max_players)
+        diarizeSegments = diarize_model(audio, min_speakers=min_players, max_speakers=max_players)
 
         # Assign speakers to the aligned segments
         resultB = whisperx.assign_word_speakers(diarizeSegments, resultA)
 
-        print("Diarization segments:", diarizeSegments)
-        print("Final segments (Diarized):", resultB["segments"])
+        # print("Diarization segments:", diarizeSegments)
 
         # The final segments are the diarized result
-        final_segments = resultB["segments"]
 
-        # Return the diarized segments
-        return final_segments
+        for segment in resultB.get("segments", []):
+            original_speaker = segment.get("speaker", "unknown")
+            print(original_speaker)
+            player_name = speaker_map.get(original_speaker, "unknown")
+            segment["player_name"] = player_name
+            print("playername:", player_name)
+            segment["speaker"] = player_name
 
+        # print results
+        for seg in resultB.get("segments", []):
+            print(
+                f"[{seg['start']:.2f}s – {seg['end']:.2f}s] "
+                f"{seg['speaker']}: {seg['text']}"
+            )
+
+        # remove voice notes
+        filtered_segments = [seg for seg in resultB["segments"] if seg["start"] > intro_duration_s]
+
+        # 7. Embed the resulting text
+        texts = []
+        speakers = []
+
+        for seg in filtered_segments:
+            text = seg.get("text", "").strip()
+            if not text:
+                continue
+
+            texts.append(text)
+            speakers.append(seg.get("speaker", "unknown"))
+
+        if texts:
+            embedd_transcriptions(
+                embedding_text=texts,
+                speakers=speakers
+            )
+        # print(f"Removed intro (first {intro_duration_s:.2f} seconds). Remaining segments: {len(filtered_segments)}")
+
+        return filtered_segments
+
+        # # Return the diarized segments
+        # return final_segments
 
     except Exception as e:
         print(f"An error occurred during transcription: {e}")

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
+import HomeView from '../views/HomeView/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useConfigStore } from "@/stores/backendConfig.ts"
@@ -34,11 +34,6 @@ const router = createRouter({
       path: '/rulebook',
       name: 'rulebook',
       component: () => import('../views/RulebookView.vue'),
-    },
-    {
-      path: '/players',
-      name: 'players',
-      component: () => import('../views/PlayersView.vue'),
     },
   ],
 });

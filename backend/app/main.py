@@ -5,14 +5,15 @@ import sys, asyncio
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import logging
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.core.config import settings
-from app.functions.embedding.embedding_model import embedd_rulebook, read_text_files, delete_chromadb
-from app.routers import root, llm, process_audio_data, config_router, health, players, ws_players, rulebook_markdown, export_import_session
+from app.functions.embedding.embedding_model import (embedd_rulebook, read_text_files, delete_chromadb,
+                                                     delete_transcription_embeddings, has_rulebook_embeddings)
+from app.api.routers import players, llm, root, health, config_router, ws_players, process_audio_data, \
+    export_import_session, rulebook_markdown
 from contextlib import asynccontextmanager
 from app.core.bus import bus
 
@@ -31,34 +32,40 @@ all_routers = [
 
 # 192.168.x.x und beliebige localhost-Ports zulassen
 LAN_REGEX = (
-    r"^https?://("                         # http:// oder https://
-    r"192\.168\.\d{1,3}\.\d{1,3}"          # 192.168.*.*
-    r"|localhost"                          # localhost
-    r"|127\.0\.0\.1"                       # 127.0.0.1
-    r")(?::\d+)?$"                         # optional :Port
+    r"^https?://("                                      # http:// oder https://
+    r"192\.168\.\d{1,3}\.\d{1,3}"                       # 192.168.*.*
+    r"|10\.d{1,3}\.\d{1,3}\.\d{1,3}"                    # 10.*.*.*
+    r"|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"    # 172.16-31.*.*
+    r"|localhost"                                       # localhost
+    r"|127\.0\.0\.1"                                    # 127.0.0.1
+    r")(?::\d+)?$"                                      # optional :Port
 )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
     logging.info("Server starting: deleting old ChromaDB and re-embedding rulebook...")
-    delete_chromadb()
-
-    logging.getLogger("app.bus").info("Starting PresenceBus GC task…")
-    await bus.start()
+    # Check if this deletes everything. Should just delete the tmp folders and for the main db just delete transcriptions
+    delete_chromadb(True, False)
 
     # Rulebook embedding
-    texts, txt_paths = read_text_files()
-    embedd_rulebook(texts, txt_paths)
-    logging.info("Rulebook successfully embedded.")
-    print("Rulebook successfully embedded.")
+    # Here check first if the rulebook embeddings are still present in the main db. If not for some reason we add them again. This will also happen
+    # on the very first start up of the application
+    if not has_rulebook_embeddings():
+        texts, txt_paths = read_text_files()
+        embedd_rulebook(texts, txt_paths)
+        logging.info("Rulebook successfully embedded.")
+        print("Rulebook successfully embedded.")
+    delete_transcription_embeddings()
+    # Save original chroma_db path for shutdown
+    chroma_db_path = settings.chroma_db_path
 
     try:
         yield  # Server running
     finally:
         # Shutdown logic
-        logging.getLogger("app.bus").info("Stopping PresenceBus GC task…")
-        await bus.stop()
+        # Keep the main db, just delete the tmp bases
+        delete_chromadb(True, True, chroma_db_path)
         logging.info("Server Dungeonmaind shutting down...")
 
 def create_app() -> FastAPI:
@@ -77,7 +84,6 @@ def create_app() -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[],
         allow_origin_regex=LAN_REGEX,
         allow_credentials=True,
         allow_methods=["*"],
@@ -98,6 +104,9 @@ if __name__ == "__main__":
         app,
         host=settings.host,
         port=settings.port,
+        ws="websockets",
+        ws_ping_interval=10,
+        ws_ping_timeout=10,
         reload=settings.debug,
         log_config=None,
     )

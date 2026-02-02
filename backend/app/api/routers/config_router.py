@@ -11,9 +11,10 @@ router = APIRouter()
 
 VALID_MODELS = {
     "hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
-    "hf.co/bartowski/Qwen_Qwen3-1.7B-GGUF:Q5_K_M",
     "hf.co/bartowski/google_gemma-3-1b-it-qat-GGUF:Q5_K_M",
-    "hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M"
+    "hf.co/bartowski/google_gemma-3-12b-it-qat-GGUF:Q5_K_M",
+    "hf.co/bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF:Q5_K_M",
+    "hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M"
 }
 
 VALID_TRANS_MODELS = {"base", "medium", "large-v3"}
@@ -24,10 +25,10 @@ VALID_EMBEDDING_MODELS = {
     "paraphrase-multilingual-MiniLM-L12-v2"
 }
 
-VALID_EMBEDDING_Top_K = {1, 2, 3, 4}
+VALID_EMBEDDING_Top_K = {3, 6, 9, 12}
 
 @router.post("/changeConfig", response_model=ConfigChangeResponse)
-async def submit_config(request: ConfigRequest):
+async def change_config(request: ConfigRequest):
     """
     Receives a selected config option and returns confirmation.
     """
@@ -56,7 +57,7 @@ async def submit_config(request: ConfigRequest):
                 player = store.group.get_player(request.player_id)
             except KeyError:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Player not found")
-            await chat_store.clear(player.id)
+            await chat_store.clear_all()
             print("[CONFIG] Chat Verlauf gelöscht.")
 
         if request.delete_transcriptions:

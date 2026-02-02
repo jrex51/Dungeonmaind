@@ -9,6 +9,10 @@ import * as api from '@/api/playersAPI.ts'
 const store = useSessionStore();
 const router = useRouter();
 
+const isLocalhost =
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1'
+
 // Logik für checkConnection
 
 type Status = "idle" | "checking" | "ok" | "error";
@@ -73,7 +77,7 @@ const baseUrl = ref<string>(`http://${window.location.hostname}:8000`);
 const status = ref<Status>("idle");
 const message = ref<string>("");
 const lastStatus = ref<number | null>(null);
-let setConnection = ref(false);
+const setConnection = ref(false);
 
 const networkIPs = __NETWORK_IPS__
 const selectedNetworkIP = ref(networkIPs[0] || "")
@@ -86,10 +90,18 @@ type CheckResult = {
   error?: string;
 };
 
+interface SessionList {
+  folders: string[]
+}
+interface CampaignsWithSessions {
+  campaigns: Record<string, SessionList>
+}
 // For session import
 const showImportModal = ref(false)
-const sessions = ref([])
+//const sessions = ref([])
 const selectedSession = ref("")
+const campaigns = ref<CampaignsWithSessions | null>(null)
+const selectedCampaign = ref<string | null>(null)
 
 const octet = '(?:25[0-5]|2[0-4]\\d|1?\\d{1,2})';
 const localIPRegex = new RegExp(
@@ -191,39 +203,25 @@ async function onSubmit(e: Event) {
     role.value = selectedPlayer.value.role;
     playerName.value = selectedPlayer.value.name;
   }
-  if (!canSubmit.value || !role.value) return;
+
+  if (!canSubmit.value || role.value == null) return;
+
+  const effectiveRole: Role =
+    (!isLocalhost && role.value === 'leader') ? 'member' : role.value;
+
+  if (!isLocalhost && role.value === 'leader') {
+    window.alert('Ledaer kann nur über localhost beitreten. Du trittst als Member bei.');
+  }
+
+  if (nameError.value) return;
 
   submitting.value = true;
   try {
-    await preflightAndJoin(backendUrl, playerName.value.trim(), role.value);
+    await preflightAndJoin(backendUrl, playerName.value.trim(), effectiveRole);
     store.setLocalNetworkIP(lastValidIP)
     await router.push({ name: "home" });
   } catch (err: any) {
     console.error("Join error:", err);
-
-  // Fehler auslesen
-  if (err?.response) {
-    // Axios-Format
-    const data = err.response.data;
-    serverError.value =
-      typeof data === "object" && data.detail
-        ? data.detail
-        : JSON.stringify(data);
-  } else if (err instanceof Error) {
-    try {
-      // versuchen JSON aus err.message zu parsen
-      const data = JSON.parse(err.message);
-      serverError.value =
-        typeof data === "object" && data.detail
-          ? data.detail
-          : err.message;
-    } catch {
-      // fallback: plain Error message
-      serverError.value = err.message;
-    }
-    } else {
-      serverError.value = String(err);
-    }
   } finally {
     submitting.value = false;
   }
@@ -246,17 +244,21 @@ async function confirmImport() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
+        campaign_name: selectedCampaign.value,
         session_name: selectedSession.value,
       }),
     })
+
     if (!res.ok) throw new Error("Import failed")
       const leader = await res.json();
 
     if (!leader) throw new Error("No leader returned from backend");
 
     store.setCurrentPlayer(leader);
+    store.setLocalNetworkIP(lastValidIP);
 
     await router.push({ name: "home" });
+
     showImportModal.value = false
     alert(`Session "${selectedSession.value}" imported successfully!`)
   } catch (err) {
@@ -271,21 +273,33 @@ async function confirmImport() {
 
 async function onImport() {
   try {
-    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.GET_SESSIONS}`)
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.GET_CAMPAIGNS}`)
     if (!res.ok) throw new Error("Failed to fetch sessions")
 
-    const data = await res.json()
-    sessions.value = data.folders
+    campaigns.value = await res.json()
+    //sessions.value = data.folders
     showImportModal.value = true
   } catch (err) {
     console.error(err)
   }
 }
 
+function selectSession(campaignName: string, sessionName: string) {
+  selectedCampaign.value = campaignName
+  selectedSession.value = sessionName
+}
+
+function deselectSession() {
+  selectedCampaign.value = ""
+  selectedSession.value = ""
+}
+
 const showNewPlayerModal = ref(false);
 
 function JoinNewPlayer() {
-  // bisher passiert hier nichts, außer das das modal getriggert wird
+  selectedPlayer.value = undefined;
+  serverError.value = '';
+  touched.value = false;
   showNewPlayerModal.value = true;
 }
 
@@ -294,8 +308,9 @@ const allPlayers = ref<PlayerOut[]>([]);
 const selectedPlayer = ref<PlayerOut>();
 
 async function JoinExistingPlayer() {
-  if (!setConnection) await onCheck();
-  if (setConnection) {
+  selectedPlayer.value = undefined;
+  if (!setConnection.value) await onCheck();
+  if (setConnection.value) {
     allPlayers.value = await api.listPlayers(true);
     if (allPlayers.value.filter(p => p.status === "inactive").length === 0) {
       window.alert(
@@ -314,106 +329,227 @@ async function JoinExistingPlayer() {
 
 <template>
   <div class="login-page">
-    <h1>Login Page</h1>
+    <div class="rail-panel login-card">
+      <h1>Login Page</h1>
 
-    <div class="check-card">
-      <label for="baseUrl">Backend-Adresse</label>
-      <input
-        class = "input-field"
-        id="baseUrl"
-        v-model.trim="baseUrl"
-        placeholder="z.B. http://localhost:8080"
-        :disabled="status === 'checking'"
-      />
+      <div class="check-card">
+        <label for="baseUrl">Backend-Adresse</label>
+        <input
+          class = "input-field"
+          id="baseUrl"
+          v-model.trim="baseUrl"
+          placeholder="z.B. http://localhost:8080"
+          :disabled="status === 'checking'"
+        />
 
-      <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
-        {{ status === 'checking' ? 'Checking...' : 'Check/Set Connection' }}
-      </button>
+        <button class="done-button" @click="onCheck" :disabled="!baseUrl || status === 'checking'">
+          {{ status === 'checking' ? 'Checking...' : 'Check/Set Connection' }}
+        </button>
 
-      <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
-      <p v-else-if="status === 'error'">Not available: {{ message }}</p>
-    </div>
+        <p v-if="status === 'ok'">Erreichbar{{ lastStatus ? ` (HTTP ${lastStatus})` : '' }}</p>
+        <p v-else-if="status === 'error'">Not available: {{ message }}</p>
+      </div>
 
 
-    <hr style="margin: 1rem 0" />
+      <hr v-if="isLocalhost" style="margin: 1rem 0" />
 
-    <div>
-      <button class="done-button" @click="onImport">Import Session</button>
-    </div>
-    <div v-if="showImportModal" class="modal-overlay">
-      <div class="modal">
-        <h2>Select a session to import</h2>
+      <div v-if="isLocalhost">
+        <button class="done-button" @click="onImport">Import Session</button>
+      </div>
+      <div v-if="showImportModal" class="modal-overlay">
+        <div class="modal">
+          <h2>Select a session to import</h2>
 
-        <div class="session-list">
-          <div
-            v-for="(folder, index) in sessions"
-            :key="index"
-            class="session-item"
-            :class="{ selected: selectedSession === folder }"
-            @click="selectedSession = folder"
-          >
-            {{ folder }}
+          <div class="session-list">
+            <div v-if="campaigns && Object.keys(campaigns.campaigns).length">
+              <div v-for="(sessionList, campaignName) in campaigns.campaigns" :key="campaignName">
+                <h3 class="campaign-name">{{ campaignName }}</h3>
+                <ul>
+                  <li class="session-name-font session-clickable"
+                    v-for="session in sessionList.folders"
+                    :key="session"
+                    :class="{ selected: selectedSession === session && selectedCampaign === campaignName }"
+                    @click="selectSession(campaignName, session)"
+                  >
+                    {{ session }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div v-else class="no-sessions-text">
+              No loadable sessions available.
+            </div>
+          </div>
+          <div>
+              <div v-if="networkIPs.length > 1">
+              <label for="networkIP">Select your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
+              </div>
+              <div v-else>
+                <label for="networkIP">Enter your local network IP:</label>
+                <div style="margin-top: 1px;"></div>
+                <input
+                  id="networkIP"
+                  type="text"
+                  v-model="selectedNetworkIP"
+                  placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                  style="width: 100%; max-width: 200px;"
+                />
+              </div>
+              <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+          </div>
+          <div style="margin-top: 8px;"></div>
+          <div class="modal-buttons">
+            <button class="btn-cancel" @click="showImportModal = false; deselectSession()">Cancel</button>
+            <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
+              Import
+            </button>
           </div>
         </div>
+      </div>
 
-        <div class="modal-buttons">
-          <button class="btn-cancel" @click="showImportModal = false">Cancel</button>
-          <button class="btn-save" :disabled="!selectedSession" @click="confirmImport">
-            Import
-          </button>
+
+      <hr style="margin: 1rem 0" />
+
+      <div class="button-row">
+        <button class="button" @click="JoinNewPlayer">Join as new Player</button>
+        <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
+      </div>
+
+      <hr v-if="!isLocalhost" style="margin: 1rem 0" />
+      <label
+        v-if="!isLocalhost"
+        style="display: block; max-width: 410px;"
+      >
+        Joining as leader and importing a session are only possible
+        if the server is running locally on your device and the page
+        is opened via localhost or 127.0.0.1</label>
+
+      <div v-if="showNewPlayerModal" class="modal-overlay">
+        <div class="modal">
+          <h2>Select a Role and a Name for your Player</h2>
+          <form class="join-card" @submit="onSubmit">
+            <!-- 1) select role-->
+            <fieldset>
+              <legend>Choose a role</legend>
+
+              <label>
+                <input
+                  type="radio"
+                  name="role"
+                  :value="'leader'"
+                  v-model="role"
+                  :disabled="!isLocalhost"
+                  />
+                Leader
+              </label>
+
+              <label>
+                <input
+                  type="radio"
+                  name="role"
+                  :value="'member'"
+                  v-model="role"
+                  />
+                Member
+              </label>
+
+              <p v-if="touched && !role" class="error">Please select a role.</p>
+            </fieldset>
+
+            <!-- 2) local network IP -->
+            <div v-if="role === 'leader'">
+              <div style="margin-top: 4px;"></div>
+              <div v-if="networkIPs.length > 1">
+              <label for="networkIP">Select your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
+              </div>
+              <div v-else>
+                <label for="networkIP">Enter your local network IP:</label>
+                <div style="margin-top: 1px;"></div>
+                <input
+                  id="networkIP"
+                  type="text"
+                  v-model="selectedNetworkIP"
+                  placeholder="e.g. FRITZ!Box: 192.168.178.x"
+                  style="width: 100%; max-width: 200px;"
+                />
+              </div>
+              <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+            </div>
+
+            <!-- 3) player name -->
+            <div style="margin-top: 4px;"></div>
+            <!-- 2) Spielernamen -->
+            <label for="playerName">Your Name</label>
+            <input
+              class = "input-field"
+              id="playerName"
+              type="text"
+              v-model.trim="playerName"
+              maxlength="20"
+              placeholder="z.B. Alex"
+              @blur="touched = true"
+              autocomplete="name"
+              />
+            <p v-if="touched && nameError" class="error">{{ nameError }}</p>
+            <p v-if="serverError" class="error">{{ serverError }}</p>
+
+            <!-- 4) join or cancel -->
+            <div class="modal-buttons">
+              <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
+                {{ submitting ? "Join ..." : "Join" }}
+              </button>
+              <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       </div>
-    </div>
+      <div v-if="showExistingPlayerModal" class="modal-overlay">
+        <div class="modal">
+          <h2>Select your player</h2>
 
-    <hr style="margin: 1rem 0" />
+          <div class="player-list">
+            <div
+              v-for="player in allPlayers.filter(p => p.status === 'inactive')"
+              :key="player.id ?? player.name"
+              class="player-item"
+              :class="{
+                selected: selectedPlayer === player,
+                disabled: !isLocalhost && player.role === 'leader'
+              }"
+              @click="() => {
+                if (!isLocalhost && player.role === 'leader') return
+                selectedPlayer = player
+              }"
+            >
+              {{ player.name }} ({{ player.role }})
+              <span v-if="!isLocalhost && player.role === 'leader'"> 🔒</span>
+            </div>
+          </div>
 
-    <div>
-      <button class="button" @click="JoinNewPlayer">Join as new Player</button>
-      <button class="button" @click="JoinExistingPlayer">Join as existing Player</button>
-    </div>
-
-    <div v-if="showNewPlayerModal" class="modal-overlay">
-      <div class="modal">
-        <h2>Select a Role and a Name for your Player</h2>
-        <form class="join-card" @submit="onSubmit">
-          <!-- 1) select role-->
-          <fieldset>
-            <legend>Choose a role</legend>
-
-            <label>
-              <input
-                type="radio"
-                name="role"
-                :value="'leader'"
-                v-model="role"
-                />
-              Leader
-            </label>
-
-            <label>
-              <input
-                type="radio"
-                name="role"
-                :value="'member'"
-                v-model="role"
-                />
-              Member
-            </label>
-
-            <p v-if="touched && !role" class="error">Please select a role.</p>
-          </fieldset>
-
-          <!-- 2) local network IP -->
-          <div v-if="role === 'leader'">
-            <div style="margin-top: 4px;"></div>
+          <!-- IP nur anzeigen, wenn ein Leader ausgewählt ist -->
+          <div v-if="selectedPlayer?.role === 'leader'">
             <div v-if="networkIPs.length > 1">
-            <label for="networkIP">Select your local network IP:</label>
-            <div style="margin-top: 1px;"></div>
-            <select id="networkIP" v-model="selectedNetworkIP">
-              <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
-                {{ networkIP }}
-              </option>
-            </select>
+              <label for="networkIP">Select your local network IP:</label>
+              <div style="margin-top: 1px;"></div>
+              <select id="networkIP" v-model="selectedNetworkIP">
+                <option v-for="networkIP in networkIPs" :key="networkIP" :value="networkIP">
+                  {{ networkIP }}
+                </option>
+              </select>
             </div>
             <div v-else>
               <label for="networkIP">Enter your local network IP:</label>
@@ -427,69 +563,40 @@ async function JoinExistingPlayer() {
               />
             </div>
             <p v-if="!isValidIP">No valid local IP address<br>according to RFC 1918</p>
+            <div style="margin-bottom: 12px;"></div>
           </div>
 
-          <!-- 3) player name -->
-          <div style="margin-top: 4px;"></div>
-          <!-- 2) Spielernamen -->
-          <label for="playerName">Your Name</label>
-          <input
-            class = "input-field"
-            id="playerName"
-            type="text"
-            v-model.trim="playerName"
-            maxlength="20"
-            placeholder="z.B. Alex"
-            @blur="touched = true"
-            autocomplete="name"
-            />
-          <p v-if="touched && nameError" class="error">{{ nameError }}</p>
-          <p v-if="serverError" class="error">{{ serverError }}</p>
-
-          <!-- 4) join or cancel -->
-          <button class="done-button" type="submit" :disabled="!canSubmit || submitting">
-            {{ submitting ? "Join ..." : "Join" }}
-          </button>
-          <button class="button" type="button" :disabled="submitting" @click="showNewPlayerModal = false">
-            Cancel
-          </button>
-        </form>
-      </div>
-    </div>
-    <div v-if="showExistingPlayerModal" class="modal-overlay">
-      <div class="modal">
-        <h2>Select your player</h2>
-
-        <div class="player-list">
-          <div
-            v-for="player in allPlayers.filter(p => p.status === 'inactive')"
-            :key="player.name"
-            class="player-item"
-            :class="{ selected: selectedPlayer === player }"
-            @click="selectedPlayer = player"
-          >
-            {{ player.name }}
+          <div class="modal-buttons">
+            <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
+              {{ submitting ? "Join ..." : "Join" }}
+            </button>
+            <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
           </div>
-        </div>
-
-        <div class="modal-buttons">
-          <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
-          <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
-            {{ submitting ? "Join ..." : "Join" }}
-          </button>
         </div>
       </div>
     </div>
-
   </div>
 </template>
 
+<style src="@/assets/styles.css"></style>
 <style scoped>
 .config-page {
   max-width: 600px;
   margin: 2rem auto;
   padding: 1rem;
   text-align: center;
+}
+
+.login-page {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+
+.login-card {
+  /* rail-panel liefert Hintergrund, Rahmen etc. */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 select {
@@ -577,13 +684,12 @@ select {
 }
 
 /* Session list */
-.player-list,
-.session-list {
+.player-list {
   max-height: 220px;
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 6px;
-  margin-bottom: 1rem;
+  margin-bottom: 12px;
   padding: 4px;
 }
 
@@ -603,15 +709,48 @@ select {
 
 .player-item.selected,
 .session-item.selected {
-  background: #2563eb; /* blue-600 */
-  color: white;
+  background: #8b5a2b;   /* muted leather brown */
+  color: #fdf6e3;
+}
+
+.player-item.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Buttons */
 .modal-buttons {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: center;
+  gap: 12px;
+}
+
+.session-name-font {
+  cursor: pointer;
+  display: block;
+  color: black;
+  font-family: 'MedievalSharp', cursive;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+
+.session-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 4px;
+}
+
+.selected {
+  background: rgba(53, 73, 94, 0.35);
+  border-radius: 4px;
+}
+
+.session-name-font:hover {
+  background: rgba(0,0,0,0.1);
 }
 
 .btn-cancel,
@@ -633,7 +772,7 @@ select {
 }
 
 .btn-save {
-  background: #4a575e;
+  background-color: rgba(53, 73, 94, 0.9);
   color: white;
 }
 
@@ -644,5 +783,25 @@ select {
 .btn-save:disabled {
   background: #9ca3af;
   cursor: not-allowed;
+}
+
+.campaign-name {
+  color: black;
+}
+
+.session-clickable:hover {
+  text-decoration: underline;
+}
+
+.no-sessions-text {
+  color: #555;
+  font-family: 'MedievalSharp', cursive;
+  font-style: italic;
+  padding: 0.5rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
 }
 </style>

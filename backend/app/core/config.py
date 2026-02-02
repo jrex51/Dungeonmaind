@@ -26,8 +26,14 @@ class Settings(BaseSettings):
         description="Listening port"
     )
 
+    hf_token: str | None = Field(
+        default=None,
+        alias="HF_TOKEN",
+        description="Hugging Face access token"
+    )
+
     llm_model: str = Field(
-        default="hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
+        default="hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M",
         validation_alias="LLM_MODEL",
         description="The default LLM model used by the backend"
     )
@@ -45,9 +51,9 @@ class Settings(BaseSettings):
     )
 
     embedding_top_k: int = Field(
-        default=2,
+        default=6,
         validation_alias="EMBEDDING_TOP_K",
-        description="Number of top_k embeddings (1-4)"
+        description="Number of top_k embeddings (2-8)"
     )
 
     backend_root_path: str = Field(
@@ -55,9 +61,20 @@ class Settings(BaseSettings):
         description="Root directory of the backend"
     )
 
+    #@property
+    #def chroma_db_path(self) -> str:
+    #    return os.path.join(self.backend_root_path, "data", "chroma_db")
+
+    _chroma_db_path: str | None = None
+
     @property
     def chroma_db_path(self) -> str:
-        return os.path.join(self.backend_root_path, "data", "chroma_db")
+        # If a custom path was set, return it; otherwise return default
+        return self._chroma_db_path or os.path.join(self.backend_root_path, "data", "chroma_db")
+
+    @chroma_db_path.setter
+    def chroma_db_path(self, value: str):
+        self._chroma_db_path = value
 
 
 settings = Settings()

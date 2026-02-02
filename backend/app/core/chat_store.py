@@ -7,9 +7,11 @@ class ChatStore:
         self._lock = asyncio.Lock()
         self._by_player = defaultdict(list)  # UUID -> List[dict]
 
-    async def append(self, player_id: UUID, role: str, content: str) -> None:
+    async def append(self, player_id: UUID, role: str, content: str, embedded_content: list[float]) -> None:
         async with self._lock:
-            self._by_player[player_id].append({"role": role, "content": content})
+            self._by_player[player_id].append({"role": role,
+                                               "content": content,
+                                               "embedded_content": embedded_content})
 
     async def history(self, player_id: UUID) -> list[dict]:
         # Nur Kopie rausgeben
@@ -19,6 +21,10 @@ class ChatStore:
     async def clear(self, player_id: UUID) -> None:
         async with self._lock:
             self._by_player[player_id].clear()
+
+    async def clear_all(self) -> None:
+        async with self._lock:
+            self._by_player = defaultdict(list)
 
 chat_store = ChatStore()
 

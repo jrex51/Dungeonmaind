@@ -21,7 +21,10 @@ export const useRecorderStore = defineStore('recorder', () => {
   const currentRecordingTime = ref(0)
   const recordingStartTime = ref<number | null>(null)
   const recordingDuration = ref<number>(0)
-  
+
+  const transcriptionStatus = ref<string>('')
+  const canExportSession = ref<boolean>(false)
+
   let cleanupDone = false
 
   function baseUrl(): string {
@@ -40,6 +43,7 @@ export const useRecorderStore = defineStore('recorder', () => {
       'audio/ogg;codecs=opus',
       'audio/webm;codecs=opus',
       'audio/webm',
+      'audio/mp4',
     ]
     for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t
     return undefined
@@ -50,7 +54,7 @@ export const useRecorderStore = defineStore('recorder', () => {
     const seconds = Math.floor(elapsed / 1000)
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
-    
+
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   })
 
@@ -58,7 +62,7 @@ export const useRecorderStore = defineStore('recorder', () => {
     stopTimer()
   currentRecordingTime.value = 0
   recordingStartTime.value = Date.now()
-  
+
   timerInterval.value = window.setInterval(() => {
     if (recordingStartTime.value && isRecording.value) {
       currentRecordingTime.value = Date.now() - recordingStartTime.value
@@ -94,7 +98,7 @@ export const useRecorderStore = defineStore('recorder', () => {
     }
   }
 
-  function immediateShutdown() { // hard stop recorder if still active 
+  function immediateShutdown() { // hard stop recorder if still active
     try {
       if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
         mediaRecorder.value.stop()
@@ -113,6 +117,9 @@ export const useRecorderStore = defineStore('recorder', () => {
   async function startRecording() {
     if (isRecording.value) return
     micPermissionStatus.value = ''
+    transcriptionStatus.value = ''
+    canExportSession.value = false
+
 
     resetTimer()
     recordingStartTime.value = Date.now()
@@ -143,15 +150,15 @@ export const useRecorderStore = defineStore('recorder', () => {
         isRecording.value = !isFinalStop.value
         const chunks = audioChunks.value
         audioChunks.value = []
-        
+
         queueMicrotask(async () => {
           if (chunks.length > 0) {
             const last = new Blob(chunks, { type: mediaRecorder.value?.mimeType })
-            void sendAudioChunk(last)
+            void sendAudioChunk(last, isFinalStop.value)
           }
 
           if (isFinalStop.value) {
-            try { audioStream.value?.getTracks().forEach(t => t.stop()) } 
+            try { audioStream.value?.getTracks().forEach(t => t.stop()) }
             catch (err) {
               console.warn('Audio track stop failed during finalization:', err)
             }
@@ -170,7 +177,7 @@ export const useRecorderStore = defineStore('recorder', () => {
 
       mediaRecorder.value.start()
       isRecording.value = true
-      
+
       startTimer()
 
       setTimeout(() => {  //early flush
@@ -179,8 +186,8 @@ export const useRecorderStore = defineStore('recorder', () => {
         }
       }, 250)
 
-      //rotate every 5 min
-      const spliceTime = 1 * 10 * 1000
+      //rotate every 30 sek
+      const spliceTime = 3 * 10 * 1000
       if (audioRecorderInterval.value) clearInterval(audioRecorderInterval.value)
       audioRecorderInterval.value = window.setInterval(rotateRecording, spliceTime)
 
@@ -197,7 +204,7 @@ export const useRecorderStore = defineStore('recorder', () => {
   function rotateRecording() {
     const mr = mediaRecorder.value
     if (!mr || mr.state !== 'recording' || isStopping.value) return
-    
+
     requestAnimationFrame(() => {
       try { mr.requestData() } catch (err) {
         console.warn('Failed to request audio data during rotation:', err)
@@ -213,6 +220,9 @@ export const useRecorderStore = defineStore('recorder', () => {
 
   isStopping.value = true
   isFinalStop.value = true
+
+  transcriptionStatus.value = 'Transcribing the audio recording currently.'
+  canExportSession.value = false
 
   if (audioRecorderInterval.value) {
     clearInterval(audioRecorderInterval.value)
@@ -233,21 +243,35 @@ export const useRecorderStore = defineStore('recorder', () => {
   })
 }
 
-  async function sendAudioChunk(chunk: Blob) {
-    const form = new FormData() 
+  async function sendAudioChunk(chunk: Blob, isFinalSegment = false) {
+    const form = new FormData()
     const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg'
     form.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`)
-    try { //upload recorded audio chunks to sever for transcription 
+
+    try { //upload recorded audio chunks to sever for transcription
       const res = await fetch(
         endpoint(SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE),
         { method: 'POST', body: form }
       )
       if (!res.ok) {
         console.error('Chunk upload failed with status:', res.status)
+
+        if (isFinalSegment) {
+          transcriptionStatus.value = 'Transcription failed.'
+          canExportSession.value = true
+      }
         return
       }
+
       const result = await res.json()
       console.log('Chunk transcribed successfully:', result)
+
+      if (isFinalSegment) {
+        transcriptionStatus.value =
+          'Transcription completed. This session can now be saved.'
+        canExportSession.value = true
+      }
+
     } catch (e) {
       console.error('Error sending audio chunk:', e)
     }
@@ -283,6 +307,8 @@ export const useRecorderStore = defineStore('recorder', () => {
     currentAudio,
     isStopping,
     formattedRecordingTime,
+    transcriptionStatus,
+    canExportSession,
     startRecording,
     stopRecording,
     rotateRecording,

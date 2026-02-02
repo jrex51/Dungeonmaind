@@ -1,6 +1,7 @@
 import httpx
 import os
 import json
+from typing import AsyncGenerator
 
 from app.core.config import settings
 
@@ -10,7 +11,7 @@ from app.core.config import settings
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 
-async def run_custom_model(chat_history: list[dict]) -> str:
+async def run_custom_model(chat_history: list[dict]) -> AsyncGenerator[str, None]:  # -> str:
     """
     Sends a chat history to the Ollama model and returns the assistant's reply.
     """
@@ -23,7 +24,7 @@ async def run_custom_model(chat_history: list[dict]) -> str:
     timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=None)
 
     try:
-        async with httpx.AsyncClient(timeout = timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as resp:
                 async for line in resp.aiter_lines():
                     if line:
