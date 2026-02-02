@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     )
 
     embedding_top_k: int = Field(
-        default=4,
+        default=6,
         validation_alias="EMBEDDING_TOP_K",
         description="Number of top_k embeddings (2-8)"
     )
