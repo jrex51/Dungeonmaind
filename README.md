@@ -67,6 +67,7 @@ and receive accurate answers based on real transcriptions of their sessions.
 	```
 For GPU support you need to install CUDA (CUDA Toolkit 12.8.1), cuDNN (cuDNN 9.10.2), ctranslate2 (4.6.0) and:
 	```text
+	
 	pip uninstall torch torchaudio
 	
 	pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
