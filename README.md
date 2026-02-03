@@ -70,7 +70,7 @@ For GPU support you need to install CUDA (CUDA Toolkit 12.8.1), cuDNN (cuDNN 9.1
 	
 	pip uninstall torch torchaudio
 	
-	pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+	pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 	```
 
 ### 4. Download the latest instance of ffmpeg (url https://www.ffmpeg.org/download.html)
