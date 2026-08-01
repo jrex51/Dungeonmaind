@@ -12,6 +12,7 @@ export const SERVER_CONFIG = {
   ENDPOINTS: {
     RUN_LLM: '/llm/run',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
+    TIMELINE: '/timeline',
     CHANGE_CONFIG: '/config/changeConfig',
     GET_CONFIG: '/config/getConfig',
     CHECK_CONNECTION: '/health/checkConnection',

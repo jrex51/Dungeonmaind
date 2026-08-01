@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRecorderStore } from '@/stores/recorder.ts'
@@ -21,6 +22,7 @@ interface CampaignsWithSessions {
 const store = useSessionStore()
 const recorder = useRecorderStore()
 const configStore = useConfigStore()
+const router = useRouter()
 
 const showNameModal = ref(false)
 const sessionName = ref("")
@@ -37,6 +39,10 @@ const deleteTargetName = ref("")
 
 const showConfigModal = ref(false)
 const showRulebookModal = ref(false)
+
+function openTimeline() {
+  router.push({ name: 'timeline' })
+}
 
 
 const openConfig = async () => {
@@ -390,6 +396,7 @@ async function confirmDeletion() {
     <h1>Dungeonmaind</h1>
     <div class="header-right">
       <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
+      <button class="timeline-button" @click="openTimeline">Timeline</button>
       <button v-if="store.isLeader" class="config-button" @click="openConfig">Config</button>
       <button
         v-if="store.isLeader"
@@ -568,6 +575,7 @@ async function confirmDeletion() {
 }
 
 .rulebook-button,
+.timeline-button,
 .config-button,
 .export-button {
   padding: 0.5rem 1rem;
@@ -582,12 +590,14 @@ async function confirmDeletion() {
 }
 
 .rulebook-button:hover,
+.timeline-button:hover,
 .config-button:hover,
 .export-button:hover {
   background-color: #4a575e;
 }
 
 .rulebook-button:disabled,
+.timeline-button:disabled,
 .config-button:disabled,
 .export-button:disabled {
   opacity: 0.7;

@@ -35,6 +35,12 @@ const router = createRouter({
       name: 'rulebook',
       component: () => import('../views/RulebookView.vue'),
     },
+    {
+      path: '/timeline',
+      name: 'timeline',
+      component: () => import('../views/TimelineView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 });
 
