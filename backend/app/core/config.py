@@ -4,7 +4,7 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file="../.env", case_sensitive=False)
+    model_config = SettingsConfigDict(env_file="../../.env", case_sensitive=False)
     app_name: str = Field(
         default="Awesome API",
         validation_alias="APP_NAME",
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     hf_token: str | None = Field(
         default=None,
-        alias="HF_TOKEN",
+        validation_alias="HF_TOKEN",
         description="Hugging Face access token"
     )
 

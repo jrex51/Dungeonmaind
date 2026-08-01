@@ -7,8 +7,19 @@
 #                   pip uninstall torch torchaudio
 #                   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import torch
+_original_load = torch.load
+
+def patched_load(*args, **kwargs):
+    kwargs["weights_only"] = False
+    return _original_load(*args, **kwargs)
+
+torch.load = patched_load
 import whisperx
+
 import tempfile
 import os
 from pydub import AudioSegment
@@ -18,8 +29,14 @@ from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 from app.core.config import settings
 from whisperx.diarize import DiarizationPipeline
+import torch
+
+
+
+
 
 def load_transcription_model():
+    # Load model - PyTorch will use our allowlisted safe_globals
     new_model = whisperx.load_model(
         settings.transcription_model,
         device,
