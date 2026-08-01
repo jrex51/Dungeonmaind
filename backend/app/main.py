@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.functions.embedding.embedding_model import (embedd_rulebook, read_text_files, delete_chromadb,
                                                      delete_transcription_embeddings, has_rulebook_embeddings)
 from app.api.routers import players, llm, root, health, config_router, ws_players, process_audio_data, \
-    export_import_session, rulebook_markdown
+    export_import_session, rulebook_markdown, timeline
 from contextlib import asynccontextmanager
 from app.core.bus import bus
 
@@ -28,6 +28,7 @@ all_routers = [
     (ws_players.router, "/ws", ["ws"]),
     (rulebook_markdown.router, "/rulebook", ["rulebook"]),
     (export_import_session.router, "/exportImport", ["exportImport"]),
+    (timeline.router, "/timeline", ["timeline"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen

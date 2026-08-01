@@ -28,6 +28,7 @@ from io import BytesIO
 from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.domain.store import store
 from app.core.config import settings
+from app.functions.timeline.timeline_extractor import append_timeline_events
 from whisperx.diarize import DiarizationPipeline
 import torch
 
@@ -222,6 +223,8 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str, batch_size=16)
                 embedding_text=texts,
                 speakers=speakers
             )
+
+        await append_timeline_events(filtered_segments)
         # print(f"Removed intro (first {intro_duration_s:.2f} seconds). Remaining segments: {len(filtered_segments)}")
 
         return filtered_segments
