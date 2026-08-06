@@ -1,0 +1,8 @@
+.idea/
+
+**/.idea/
+**/.venv/
+**/.env.txt
+
+**/backend/data/chroma_db/
+**/backend/data/SavedSessions/
