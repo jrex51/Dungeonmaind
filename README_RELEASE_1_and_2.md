@@ -182,22 +182,29 @@ cd Dungeonmaind
 
 ## Configure Environment
 
-Create:
+Before running the project, create a file named `.env` inside the `backend` folder.
 
-```
-backend/.env
+Example:
+
+```text
+Dungeonmaind_Mevil_Release2/
+│
+├── backend/
+│   ├── .env
+│   ├── app/
+│   ├── data/
+│   └── ...
+├── frontend/
+└── dockerCompose.yml
 ```
 
-Add:
+Add the following line to the `.env` file:
 
 ```env
-HF_TOKEN=your_huggingface_token
+HF_TOKEN=your_huggingface_token_here
 ```
 
-The Hugging Face account must have access to:
-
-- pyannote/speaker-diarization-3.1
-- pyannote/segmentation
+Replace `your_huggingface_token_here` with your own Hugging Face access token before running the project.
 
 ---
 
