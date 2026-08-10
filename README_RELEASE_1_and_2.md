@@ -206,23 +206,61 @@ HF_TOKEN=your_huggingface_token_here
 
 Replace `your_huggingface_token_here` with your own Hugging Face access token before running the project.
 
----
+## First-Time Setup
 
-## Start the Application
-
-First build:
+### CPU
 
 ```bash
 docker compose -f dockerCompose.yml up --build
 ```
 
-Subsequent runs:
+### NVIDIA GPU
+
+First, verify that Docker can access the GPU:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu22.04 nvidia-smi
+```
+
+Then build and start with GPU support:
+
+```bash
+docker compose -f dockerCompose.yml -f dockerCompose.gpu.yml up --build
+```
+
+## Starting the Project Later
+
+After the first successful build, you normally do not need to rebuild.
+
+### CPU
 
 ```bash
 docker compose -f dockerCompose.yml up
 ```
 
----
+### NVIDIA GPU
+
+```bash
+docker compose -f dockerCompose.yml -f dockerCompose.gpu.yml up
+```
+
+## Stopping the Project
+
+Press `Ctrl + C`, then run:
+
+### CPU
+
+```bash
+docker compose -f dockerCompose.yml down
+```
+
+### GPU
+
+```bash
+docker compose -f dockerCompose.yml -f dockerCompose.gpu.yml down
+```
+
+
 
 ## Open the Application
 
@@ -237,15 +275,3 @@ Backend API
 ```
 http://localhost:8000/docs
 ```
-
----
-
-# Example Workflow
-
-1. Join the session.
-2. Register a voiceprint.
-3. Record or upload a D&D session.
-4. Generate the transcription.
-5. Generate the interactive timeline.
-6. Browse events and inspect details.
-7. Ask AI questions about the session.
