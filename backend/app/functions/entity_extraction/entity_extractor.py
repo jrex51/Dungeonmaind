@@ -1046,10 +1046,7 @@ def extract_entities(
     text: str,
 ) -> tuple[list[ExtractedEntity], list[ExtractedEntity]]:
     temporal_entities = _remove_temporal_overlaps(
-        _extract_regex_entities(
-            text,
-            TEMPORAL_PATTERNS,
-        )
+        _extract_temporal_entities(text)
     )
 
     temporal_entities = _remove_duplicates(
