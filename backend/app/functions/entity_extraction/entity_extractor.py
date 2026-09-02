@@ -3,97 +3,133 @@ import re
 from app.base_models.entity_extraction_models import ExtractedEntity
 
 
-# ============================================================
-# TEMPORAL CONFIGURATION
-# ============================================================
-
-NUMBER_WORDS = (
-    r"one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve|\d+"
+_NUMBER_WORDS = (
+    "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    "thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+    "twenty|thirty|forty|fifty|sixty"
+)
+_QUANTITY = rf"(?:an?|{_NUMBER_WORDS}|\d+)"
+_APPROX_QUANTITY = rf"(?:{_QUANTITY}|a\s+couple\s+of|a\s+few|several)"
+_TIME_UNIT = (
+    r"(?:rounds?|turns?|seconds?|minutes?|hours?|days?|nights?|weeks?|"
+    r"fortnights?|months?|seasons?|years?)"
+)
+_DAY_PART = r"(?:morning|afternoon|evening|night|day|week|month|season|year)"
+_SOLAR_TIME = r"(?:sunrise|sunset|dawn|dusk|midnight|noon)"
+_WEEKDAY = (
+    r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+)
+_MONTH = (
+    r"(?:january|february|march|april|may|june|july|august|september|"
+    r"october|november|december)"
 )
 
-TIME_UNITS = (
-    r"seconds?|minutes?|hours?|days?|weeks?|months?|years?"
+# Forgotten Realms / Calendar of Harptos months. Keeping these explicit avoids
+# interpreting arbitrary fantasy proper nouns (for example "the 12th of
+# Waterdeep") as calendar dates.
+_FANTASY_MONTH = (
+    r"(?:hammer|alturiak|ches|tarsakh|mirtul|kythorn|flamerule|eleasis|"
+    r"eleint|marpenoth|uktar|nightal)"
 )
 
-DAY_PARTS = (
-    r"morning|afternoon|evening|night"
-)
-
-SUN_TIMES = (
-    r"sunrise|sunset|dawn|dusk|midnight|noon"
-)
-
-
+# Ordered from the most specific expressions to more general ones.  This makes
+# overlap removal deterministic and keeps complete phrases such as
+# "the next morning" instead of returning the nested "next morning".
 TEMPORAL_PATTERNS: list[tuple[str, str]] = [
 
     # today / tomorrow / yesterday / tonight
     (
-        r"\b(?:today|tomorrow|yesterday|tonight)\b",
+        rf"\b(?:at|by|before|after|around|near|from|until)\s+(?:the\s+)?{_SOLAR_TIME}\b",
+        "relative_time",
+    ),
+    (
+        rf"\b(?:tomorrow|yesterday|today)\s+"
+        rf"(?:morning|afternoon|evening|night)\b",
+        "relative_date",
+    ),
+    (
+        rf"\b(?:by|before|after|until)\s+(?:the\s+)?"
+        rf"(?:next|following|previous)\s+{_DAY_PART}\b",
+        "relative_time",
+    ),
+    (
+        r"\b(?:before|after|during)\s+(?:a|the)\s+(?:short|long)\s+rest\b",
+        "relative_time",
+    ),
+    (
+        rf"\b(?:at\s+)?(?:the\s+)?end\s+of\s+(?:your|his|her|their|the)?\s*"
+        rf"(?:next|current|this)\s+(?:round|turn)\b",
+        "relative_time",
+    ),
+    (
+        rf"\b(?:the\s+)?(?:next|last|this|previous|following)\s+{_DAY_PART}\b",
+        "relative_date",
+    ),
+    (
+        rf"\b(?:later|earlier)\s+(?:that|this|the\s+same)\s+{_DAY_PART}\b",
         "relative_date",
     ),
 
     # the following morning / the next day / previous week
     (
-        rf"\b(?:the\s+)?(?:next|following|previous)\s+"
-        rf"(?:{DAY_PARTS}|day|week|month|year)\b",
+        rf"\b(?:that|the\s+same)\s+(?:morning|afternoon|evening|night|day)\b",
         "relative_date",
     ),
 
     # this morning / last night
     (
-        rf"\b(?:this|last|next)\s+"
-        rf"(?:{DAY_PARTS}|day|week|month|year)\b",
+        r"\b(?:today|tomorrow|yesterday|tonight|now|right\s+now)\b",
         "relative_date",
     ),
-
-    # later that evening / earlier that morning
     (
-        rf"\b(?:later|earlier)\s+that\s+"
-        rf"(?:{DAY_PARTS})\b",
+        r"\bhalf\s+(?:an?\s+)?(?:hour|day)\s+"
+        r"(?:later|earlier|ago|from\s+now)\b",
         "relative_time",
     ),
 
     # before sunrise / after sunset / at midnight
     (
-        rf"\b(?:before|after|at)\s+"
-        rf"(?:{SUN_TIMES})\b",
+        rf"\b{_APPROX_QUANTITY}\s+{_TIME_UNIT}\s+"
+        rf"(?:later|earlier|ago|from\s+now)\b",
         "relative_time",
     ),
 
     # three days later / two hours later / a week later
     (
-        rf"\b(?:a|an|{NUMBER_WORDS})\s+"
-        rf"(?:{TIME_UNITS})\s+later\b",
+        rf"\b(?:in|within)\s+{_APPROX_QUANTITY}\s+{_TIME_UNIT}\b",
         "relative_time",
     ),
-
-    # three days earlier
     (
-        rf"\b(?:a|an|{NUMBER_WORDS})\s+"
-        rf"(?:{TIME_UNITS})\s+earlier\b",
-        "relative_time",
-    ),
-
-    # for two hours / after three days
-    (
-        rf"\b(?:for|after|before)\s+"
-        rf"(?:a|an|{NUMBER_WORDS})\s+"
-        rf"(?:{TIME_UNITS})\b",
+        rf"\b(?:for|over)\s+(?:the\s+)?next\s+{_APPROX_QUANTITY}\s+"
+        rf"{_TIME_UNIT}\b",
         "duration",
     ),
-
-    # in two hours / within three days
     (
-        rf"\b(?:in|within)\s+"
-        rf"(?:a|an|{NUMBER_WORDS})\s+"
-        rf"(?:{TIME_UNITS})\b",
+        rf"\b(?:for|after|before|within|up\s+to)\s+{_APPROX_QUANTITY}\s+"
+        rf"{_TIME_UNIT}\b",
         "duration",
     ),
 
     # 12:30 / 12:30 PM
     (
-        r"\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b",
+        rf"\b(?:for\s+)?half\s+(?:an?\s+)?(?:hour|day)\b",
+        "duration",
+    ),
+    (
+        rf"\b(?:every|each)\s+(?:other\s+)?(?:{_DAY_PART}|{_WEEKDAY}|{_SOLAR_TIME})\b",
+        "recurrence",
+    ),
+    (
+        rf"\b(?:once|twice)\s+(?:a|per)\s+(?:day|night|week|month|year)\b",
+        "recurrence",
+    ),
+    (
+        r"\b(?:at|around|about|by|before|after)\s+"
+        r"(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*(?:a\.?m\.?|p\.?m\.?)\b",
+        "clock_time",
+    ),
+    (
+        r"\b(?:1[0-2]|0?[1-9]):[0-5]\d(?:\s*(?:a\.?m\.?|p\.?m\.?))?\b",
         "clock_time",
     ),
 
@@ -105,9 +141,25 @@ TEMPORAL_PATTERNS: list[tuple[str, str]] = [
 
     # weekdays
     (
-        r"\b(?:monday|tuesday|wednesday|thursday|"
-        r"friday|saturday|sunday)\b",
+        r"\b(?:1[0-2]|0?[1-9])\s+o['’]?clock\b",
+        "clock_time",
+    ),
+    (
+        rf"\b(?:on\s+)?(?:next|last|this)?\s*{_WEEKDAY}\b",
         "weekday",
+    ),
+    (
+        rf"\b(?:on\s+)?{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,\s*\d{{4}})?\b",
+        "calendar_date",
+    ),
+    (
+        rf"\b(?:on\s+)?(?:the\s+)?\d{{1,2}}(?:st|nd|rd|th)\s+of\s+"
+        rf"{_FANTASY_MONTH}\b",
+        "calendar_date",
+    ),
+    (
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        "calendar_date",
     ),
 ]
 
@@ -939,25 +991,65 @@ def _remove_duplicates(
     )
 
 
-# ============================================================
-# PUBLIC API
-# ============================================================
+def _remove_temporal_overlaps(
+    entities: list[ExtractedEntity],
+) -> list[ExtractedEntity]:
+    """Keep the most informative temporal entity when regexes overlap.
+
+    Temporal patterns intentionally overlap so broad forms can remain easy to
+    extend.  Returning nested fragments (for example both "next morning" and
+    "the next morning") is noisy for timeline consumers, so the longest match
+    wins.  Pattern order is used as the stable tie-breaker.
+    """
+
+    candidates = _remove_duplicates(entities)
+    ranked = sorted(
+        enumerate(candidates),
+        key=lambda pair: (
+            -(
+                (pair[1].end_character or 0)
+                - (pair[1].start_character or 0)
+            ),
+            pair[0],
+        ),
+    )
+
+    selected: list[ExtractedEntity] = []
+
+    for _, candidate in ranked:
+        if candidate.start_character is None or candidate.end_character is None:
+            selected.append(candidate)
+            continue
+
+        overlaps = any(
+            existing.start_character is not None
+            and existing.end_character is not None
+            and candidate.start_character < existing.end_character
+            and existing.start_character < candidate.end_character
+            for existing in selected
+        )
+
+        if not overlaps:
+            selected.append(candidate)
+
+    return sorted(
+        selected,
+        key=lambda entity: (
+            entity.start_character
+            if entity.start_character is not None
+            else 0
+        ),
+    )
+
 
 def extract_entities(
     text: str,
-) -> tuple[
-    list[ExtractedEntity],
-    list[ExtractedEntity],
-]:
-
-    text = _normalize_text(text)
-
-    # --------------------------------------------------------
-    # Temporal entities
-    # --------------------------------------------------------
-
-    temporal_entities = (
-        _extract_temporal_entities(text)
+) -> tuple[list[ExtractedEntity], list[ExtractedEntity]]:
+    temporal_entities = _remove_temporal_overlaps(
+        _extract_regex_entities(
+            text,
+            TEMPORAL_PATTERNS,
+        )
     )
 
     temporal_entities = _remove_duplicates(
@@ -1021,11 +1113,7 @@ def extract_entities(
         )
     )
 
-    location_entities = _remove_duplicates(
-        location_entities
-    )
-
     return (
         temporal_entities,
-        location_entities,
+        _remove_duplicates(location_entities),
     )
