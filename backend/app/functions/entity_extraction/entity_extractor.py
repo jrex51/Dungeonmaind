@@ -36,6 +36,8 @@ _FANTASY_MONTH = (
 # overlap removal deterministic and keeps complete phrases such as
 # "the next morning" instead of returning the nested "next morning".
 TEMPORAL_PATTERNS: list[tuple[str, str]] = [
+
+    # today / tomorrow / yesterday / tonight
     (
         rf"\b(?:at|by|before|after|around|near|from|until)\s+(?:the\s+)?{_SOLAR_TIME}\b",
         "relative_time",
@@ -67,10 +69,14 @@ TEMPORAL_PATTERNS: list[tuple[str, str]] = [
         rf"\b(?:later|earlier)\s+(?:that|this|the\s+same)\s+{_DAY_PART}\b",
         "relative_date",
     ),
+
+    # the following morning / the next day / previous week
     (
         rf"\b(?:that|the\s+same)\s+(?:morning|afternoon|evening|night|day)\b",
         "relative_date",
     ),
+
+    # this morning / last night
     (
         r"\b(?:today|tomorrow|yesterday|tonight|now|right\s+now)\b",
         "relative_date",
@@ -80,11 +86,15 @@ TEMPORAL_PATTERNS: list[tuple[str, str]] = [
         r"(?:later|earlier|ago|from\s+now)\b",
         "relative_time",
     ),
+
+    # before sunrise / after sunset / at midnight
     (
         rf"\b{_APPROX_QUANTITY}\s+{_TIME_UNIT}\s+"
         rf"(?:later|earlier|ago|from\s+now)\b",
         "relative_time",
     ),
+
+    # three days later / two hours later / a week later
     (
         rf"\b(?:in|within)\s+{_APPROX_QUANTITY}\s+{_TIME_UNIT}\b",
         "relative_time",
@@ -99,6 +109,8 @@ TEMPORAL_PATTERNS: list[tuple[str, str]] = [
         rf"{_TIME_UNIT}\b",
         "duration",
     ),
+
+    # 12:30 / 12:30 PM
     (
         rf"\b(?:for\s+)?half\s+(?:an?\s+)?(?:hour|day)\b",
         "duration",
@@ -120,6 +132,14 @@ TEMPORAL_PATTERNS: list[tuple[str, str]] = [
         r"\b(?:1[0-2]|0?[1-9]):[0-5]\d(?:\s*(?:a\.?m\.?|p\.?m\.?))?\b",
         "clock_time",
     ),
+
+    # 8 PM
+    (
+        r"\b\d{1,2}\s*(?:am|pm)\b",
+        "clock_time",
+    ),
+
+    # weekdays
     (
         r"\b(?:1[0-2]|0?[1-9])\s+o['’]?clock\b",
         "clock_time",
@@ -143,175 +163,826 @@ TEMPORAL_PATTERNS: list[tuple[str, str]] = [
     ),
 ]
 
-SPATIAL_RELATIONS = [
-    "north of",
-    "south of",
-    "east of",
-    "west of",
-    "north-east of",
-    "northeast of",
-    "north-west of",
-    "northwest of",
-    "south-east of",
-    "southeast of",
-    "south-west of",
-    "southwest of",
-    "near",
+
+# ============================================================
+# LOCATION NOUNS
+# ============================================================
+
+GENERIC_LOCATION_WORDS = {
+    # Settlements
+    "village",
+    "town",
+    "city",
+    "settlement",
+    "hamlet",
+    "capital",
+
+    # Buildings
+    "building",
+    "house",
+    "home",
+    "hut",
+    "cottage",
+    "inn",
+    "tavern",
+    "shop",
+    "market",
+    "warehouse",
+    "stable",
+
+    # Fortifications
+    "castle",
+    "keep",
+    "fort",
+    "fortress",
+    "tower",
+    "palace",
+    "citadel",
+    "stronghold",
+    "outpost",
+    "gate",
+
+    # Religious / magical
+    "temple",
+    "shrine",
+    "chapel",
+    "monastery",
+    "sanctuary",
+
+    # Underground / dungeon
+    "dungeon",
+    "cave",
+    "caves",
+    "cavern",
+    "caverns",
+    "crypt",
+    "tomb",
+    "tombs",
+    "catacomb",
+    "catacombs",
+    "chamber",
+    "chambers",
+    "room",
+    "rooms",
+    "corridor",
+    "corridors",
+    "hall",
+    "hallway",
+    "passage",
+    "tunnel",
+    "tunnels",
+    "cellar",
+    "basement",
+    "vault",
+
+    # Nature
+    "forest",
+    "woods",
+    "jungle",
+    "swamp",
+    "marsh",
+    "mountain",
+    "mountains",
+    "hill",
+    "hills",
+    "valley",
+    "cliff",
+    "canyon",
+    "desert",
+    "field",
+    "meadow",
+    "plain",
+    "plains",
+    "grove",
+
+    # Water
+    "river",
+    "lake",
+    "sea",
+    "ocean",
+    "pond",
+    "stream",
+    "waterfall",
+    "shore",
+    "coast",
+    "harbor",
+    "harbour",
+    "dock",
+    "docks",
+    "port",
+
+    # Travel
+    "road",
+    "path",
+    "trail",
+    "bridge",
+    "crossroad",
+    "crossroads",
+
+    # General
+    "area",
+    "place",
+    "location",
+    "camp",
+    "campsite",
+    "ruins",
+    "landmark",
+    "island",
+}
+
+
+# ============================================================
+# LOCATION DESCRIPTORS
+# ============================================================
+
+LOCATION_DESCRIPTORS = {
+    # Relative / positional
+    "current",
+    "nearby",
+    "nearest",
+    "distant",
+    "remote",
+
+    # Direction
+    "northern",
+    "southern",
+    "eastern",
+    "western",
+    "north",
+    "south",
+    "east",
+    "west",
+
+    # Position
+    "upper",
+    "lower",
+    "inner",
+    "outer",
+    "central",
+
+    # Size / shape
+    "small",
+    "large",
+    "huge",
+    "tiny",
+    "narrow",
+    "wide",
+    "long",
+    "deep",
+
+    # Age / condition
+    "old",
+    "ancient",
+    "new",
+    "abandoned",
+    "ruined",
+    "broken",
+    "destroyed",
+    "collapsed",
+    "damaged",
+    "forgotten",
+    "lost",
+    "hidden",
+    "secret",
+
+    # Environment
+    "dark",
+    "underground",
+    "subterranean",
+    "flooded",
+    "frozen",
+    "snowy",
+    "icy",
+    "rocky",
+    "misty",
+    "foggy",
+    "swampy",
+    "wooded",
+    "overgrown",
+
+    # Material
+    "stone",
+    "wooden",
+
+    # Fantasy
+    "cursed",
+    "haunted",
+    "enchanted",
+    "magical",
+    "sacred",
+    "holy",
+    "unholy",
+    "forbidden",
+    "mysterious",
+
+    # Common fantasy name adjectives
+    "ashen",
+    "black",
+    "white",
+    "red",
+    "green",
+    "blue",
+    "silver",
+    "golden",
+}
+
+
+# ============================================================
+# LOCATION CONTEXT
+# ============================================================
+
+LOCATION_ACTIONS = [
+    "travelled to",
+    "traveled to",
+    "travelled from",
+    "traveled from",
+    "went back to",
+    "went back into",
+    "went back inside",
+    "returned to",
+    "returned from",
+    "descended into",
+    "walked through",
+    "walked across",
+    "walked into",
+    "walked to",
+    "arrived at",
+    "arrived in",
+    "headed to",
+    "headed toward",
+    "headed towards",
+    "moved to",
+    "moved into",
+    "camped at",
+    "rested at",
+    "went to",
+    "entered",
+    "reached",
+    "crossed",
+    "left",
+    "approached",
+    "visited",
+    "explored",
+    "discovered",
+    "found",
+    "noticed",
+    "searched",
+]
+
+
+LOCATION_PREPOSITIONS = [
     "inside",
     "outside",
+    "beneath",
     "behind",
     "beside",
-    "between",
+    "beyond",
+    "within",
+    "through",
+    "towards",
+    "toward",
     "under",
     "above",
     "below",
-    "in front of",
-    "next to",
-    "across from",
-]
-
-GENERIC_LOCATIONS = [
-    "castle",
-    "village",
-    "city",
-    "town",
-    "forest",
-    "mountain",
-    "river",
-    "cave",
-    "dungeon",
-    "temple",
-    "tavern",
-    "harbour",
-    "harbor",
-    "road",
-    "bridge",
-    "tower",
-    "kingdom",
-    "island",
-    "valley",
-    "camp",
+    "across",
+    "near",
+    "around",
+    "from",
+    "into",
+    "at",
+    "in",
+    "to",
 ]
 
 
-def _extract_regex_entities(
+CAPITALIZED_STOP_WORDS = {
+    "A",
+    "An",
+    "The",
+    "At",
+    "After",
+    "Before",
+    "Later",
+    "Earlier",
+    "Then",
+    "Next",
+    "Following",
+    "Previous",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "Today",
+    "Tomorrow",
+    "Yesterday",
+    "Tonight",
+    "Everyone",
+    "Someone",
+    "Somebody",
+    "Anyone",
+    "Nobody",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+}
+
+
+# ============================================================
+# GENERAL HELPERS
+# ============================================================
+
+def _normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _make_entity(
     text: str,
-    patterns: list[tuple[str, str]],
-) -> list[ExtractedEntity]:
-    entities: list[ExtractedEntity] = []
-
-    for pattern, entity_type in patterns:
-        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            entities.append(
-                ExtractedEntity(
-                    text=match.group(0),
-                    entity_type=entity_type,
-                    start_character=match.start(),
-                    end_character=match.end(),
-                )
-            )
-
-    return entities
-
-
-def _extract_terms(
-    text: str,
-    terms: list[str],
     entity_type: str,
-) -> list[ExtractedEntity]:
-    entities: list[ExtractedEntity] = []
-
-    ordered_terms = sorted(terms, key=len, reverse=True)
-
-    for term in ordered_terms:
-        pattern = rf"\b{re.escape(term)}\b"
-
-        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            entities.append(
-                ExtractedEntity(
-                    text=match.group(0),
-                    entity_type=entity_type,
-                    start_character=match.start(),
-                    end_character=match.end(),
-                )
-            )
-
-    return entities
-
-
-def _extract_proper_place_candidates(
-    text: str,
-) -> list[ExtractedEntity]:
-    """
-    Simple Release 1 heuristic.
-
-    It finds capitalized words that may represent fantasy place names,
-    such as Neverwinter, Waterdeep or Blackwood Forest.
-
-    This is only a prototype and may also find some non-location names.
-    """
-
-    pattern = (
-        r"\b(?:Mount|Lake|River|Fort|Castle|Kingdom|Forest|City|Village)?"
-        r"\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b"
+    start: int,
+    end: int,
+) -> ExtractedEntity:
+    return ExtractedEntity(
+        text=text,
+        entity_type=entity_type,
+        start_character=start,
+        end_character=end,
     )
 
-    ignored_words = {
-        "The",
-        "A",
-        "An",
-        "We",
-        "They",
-        "He",
-        "She",
-        "I",
-        "After",
-        "Before",
-        "Later",
-        "Then",
-        "Next",
-    }
+
+def _span_overlaps(
+    start: int,
+    end: int,
+    entities: list[ExtractedEntity],
+) -> bool:
+
+    for entity in entities:
+
+        if (
+            entity.start_character is None
+            or entity.end_character is None
+        ):
+            continue
+
+        if (
+            start < entity.end_character
+            and end > entity.start_character
+        ):
+            return True
+
+    return False
+
+
+# ============================================================
+# TEMPORAL EXTRACTION
+# ============================================================
+
+def _extract_temporal_entities(
+    text: str,
+) -> list[ExtractedEntity]:
 
     entities: list[ExtractedEntity] = []
 
-    for match in re.finditer(pattern, text):
-        value = match.group(0).strip()
+    for pattern, entity_type in TEMPORAL_PATTERNS:
 
-        if value in ignored_words:
+        for match in re.finditer(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        ):
+
+            entities.append(
+                _make_entity(
+                    match.group(0),
+                    entity_type,
+                    match.start(),
+                    match.end(),
+                )
+            )
+
+    return entities
+
+
+# ============================================================
+# PROPER NAMED LOCATION AFTER ACTION
+# ============================================================
+
+def _extract_named_locations_after_actions(
+    text: str,
+    temporal_entities: list[ExtractedEntity],
+) -> list[ExtractedEntity]:
+
+    entities: list[ExtractedEntity] = []
+
+    actions = "|".join(
+        re.escape(action)
+        for action in sorted(
+            LOCATION_ACTIONS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    capital_word = r"[A-Z][A-Za-zÀ-ÖØ-öø-ÿ'-]*"
+
+    connector = (
+        r"(?:of|the|and|de|del|la|le|von|van)"
+    )
+
+    proper_name = (
+        rf"{capital_word}"
+        rf"(?:"
+        rf"\s+{capital_word}"
+        rf"|"
+        rf"\s+{connector}\s+{capital_word}"
+        rf"){{0,5}}"
+    )
+
+    pattern = re.compile(
+        rf"""
+        \b(?:{actions})\b
+        \s+
+        (?:a\s+|an\s+|the\s+)?
+        (?P<location>{proper_name})
+        """,
+        re.VERBOSE,
+    )
+
+    for match in pattern.finditer(text):
+
+        value = _normalize_text(
+            match.group("location")
+        )
+
+        if value in CAPITALIZED_STOP_WORDS:
+            continue
+
+        start = match.start("location")
+        end = match.end("location")
+
+        if _span_overlaps(
+            start,
+            end,
+            temporal_entities,
+        ):
             continue
 
         entities.append(
-            ExtractedEntity(
-                text=value,
-                entity_type="place_candidate",
-                start_character=match.start(),
-                end_character=match.end(),
+            _make_entity(
+                value,
+                "place_candidate",
+                start,
+                end,
             )
         )
 
     return entities
 
+
+# ============================================================
+# PROPER LOCATION COMPOUNDS
+# ============================================================
+
+def _extract_named_location_compounds(
+    text: str,
+    temporal_entities: list[ExtractedEntity],
+) -> list[ExtractedEntity]:
+
+    entities: list[ExtractedEntity] = []
+
+    location_words = "|".join(
+        re.escape(word)
+        for word in sorted(
+            GENERIC_LOCATION_WORDS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    #
+    # Examples:
+    #
+    # Whispering Crypt
+    # Blackstone Keep
+    # Ashen Forest
+    # Silver Tower
+    #
+    pattern = re.compile(
+        rf"""
+        \b
+        (?P<location>
+            [A-Z][A-Za-zÀ-ÖØ-öø-ÿ'-]*
+            \s+
+            (?i:{location_words})
+        )
+        \b
+        """,
+        re.VERBOSE,
+    )
+
+    for match in pattern.finditer(text):
+
+        value = _normalize_text(
+            match.group("location")
+        )
+
+        start = match.start("location")
+        end = match.end("location")
+
+        if _span_overlaps(
+            start,
+            end,
+            temporal_entities,
+        ):
+            continue
+
+        entities.append(
+            _make_entity(
+                value,
+                "place_candidate",
+                start,
+                end,
+            )
+        )
+
+    return entities
+
+
+# ============================================================
+# GENERIC LOCATIONS
+# ============================================================
+
+def _extract_generic_locations(
+    text: str,
+    temporal_entities: list[ExtractedEntity],
+) -> list[ExtractedEntity]:
+
+    entities: list[ExtractedEntity] = []
+
+    location_words = "|".join(
+        re.escape(word)
+        for word in sorted(
+            GENERIC_LOCATION_WORDS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    descriptors = "|".join(
+        re.escape(word)
+        for word in sorted(
+            LOCATION_DESCRIPTORS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    #
+    # Example captures:
+    #
+    # village
+    # current cave
+    # hidden chamber
+    # northern corridor
+    # abandoned village
+    # dark forest
+    #
+    generic_phrase = (
+        rf"(?:(?:{descriptors})\s+)*"
+        rf"(?:{location_words})"
+    )
+
+    #
+    # We only require location context.
+    # The context itself is NOT captured.
+    #
+    contexts = (
+        LOCATION_ACTIONS
+        + LOCATION_PREPOSITIONS
+    )
+
+    context_pattern = "|".join(
+        re.escape(value)
+        for value in sorted(
+            contexts,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    pattern = re.compile(
+        rf"""
+        \b(?:{context_pattern})\b
+        \s+
+        (?:a\s+|an\s+|the\s+)?
+        (?P<location>{generic_phrase})
+        \b
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    )
+
+    for match in pattern.finditer(text):
+
+        value = _normalize_text(
+            match.group("location")
+        )
+
+        start = match.start("location")
+        end = match.end("location")
+
+        if _span_overlaps(
+            start,
+            end,
+            temporal_entities,
+        ):
+            continue
+
+        entities.append(
+            _make_entity(
+                value,
+                "generic_location",
+                start,
+                end,
+            )
+        )
+
+    return entities
+
+
+# ============================================================
+# SECONDARY LOCATION CONTEXT
+# ============================================================
+
+def _extract_secondary_locations(
+    text: str,
+    temporal_entities: list[ExtractedEntity],
+) -> list[ExtractedEntity]:
+    """
+    Finds additional locations later in the same sentence.
+
+    Example:
+
+        he went back to the village after sunrise
+        from the current cave
+
+    Returns:
+        village
+        current cave
+    """
+
+    entities: list[ExtractedEntity] = []
+
+    location_words = "|".join(
+        re.escape(word)
+        for word in sorted(
+            GENERIC_LOCATION_WORDS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    descriptors = "|".join(
+        re.escape(word)
+        for word in sorted(
+            LOCATION_DESCRIPTORS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    prepositions = "|".join(
+        re.escape(value)
+        for value in sorted(
+            LOCATION_PREPOSITIONS,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    generic_phrase = (
+        rf"(?:(?:{descriptors})\s+)*"
+        rf"(?:{location_words})"
+    )
+
+    pattern = re.compile(
+        rf"""
+        \b(?:{prepositions})\b
+        \s+
+        (?:a\s+|an\s+|the\s+)?
+        (?P<location>{generic_phrase})
+        \b
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    )
+
+    for match in pattern.finditer(text):
+
+        value = _normalize_text(
+            match.group("location")
+        )
+
+        start = match.start("location")
+        end = match.end("location")
+
+        if _span_overlaps(
+            start,
+            end,
+            temporal_entities,
+        ):
+            continue
+
+        entities.append(
+            _make_entity(
+                value,
+                "generic_location",
+                start,
+                end,
+            )
+        )
+
+    return entities
+
+
+# ============================================================
+# DEDUPLICATION
+# ============================================================
 
 def _remove_duplicates(
     entities: list[ExtractedEntity],
 ) -> list[ExtractedEntity]:
-    unique: list[ExtractedEntity] = []
-    seen: set[tuple[str, str, int | None, int | None]] = set()
 
-    for entity in entities:
-        key = (
-            entity.text.lower(),
-            entity.entity_type,
-            entity.start_character,
-            entity.end_character,
-        )
+    if not entities:
+        return []
 
-        if key not in seen:
-            seen.add(key)
-            unique.append(entity)
+    #
+    # Prefer longer entities.
+    #
+    ordered = sorted(
+        entities,
+        key=lambda entity: (
+            -len(entity.text),
+            entity.start_character
+            if entity.start_character is not None
+            else 0,
+        ),
+    )
+
+    selected: list[ExtractedEntity] = []
+
+    for entity in ordered:
+
+        if (
+            entity.start_character is None
+            or entity.end_character is None
+        ):
+            continue
+
+        duplicate = False
+
+        for existing in selected:
+
+            if (
+                existing.start_character is None
+                or existing.end_character is None
+            ):
+                continue
+
+            same_text = (
+                entity.text.casefold()
+                == existing.text.casefold()
+            )
+
+            contained = (
+                entity.start_character
+                >= existing.start_character
+                and entity.end_character
+                <= existing.end_character
+            )
+
+            overlaps = (
+                entity.start_character
+                < existing.end_character
+                and entity.end_character
+                > existing.start_character
+            )
+
+            if same_text or contained or overlaps:
+                duplicate = True
+                break
+
+        if not duplicate:
+            selected.append(entity)
 
     return sorted(
-        unique,
+        selected,
         key=lambda entity: (
             entity.start_character
             if entity.start_character is not None
@@ -375,32 +1046,68 @@ def extract_entities(
     text: str,
 ) -> tuple[list[ExtractedEntity], list[ExtractedEntity]]:
     temporal_entities = _remove_temporal_overlaps(
-        _extract_regex_entities(
+        _extract_temporal_entities(text)
+    )
+
+    temporal_entities = _remove_duplicates(
+        temporal_entities
+    )
+
+    # --------------------------------------------------------
+    # Location entities
+    # --------------------------------------------------------
+
+    location_entities: list[ExtractedEntity] = []
+
+    #
+    # Named locations after movement/actions:
+    #
+    # travelled to Neverwinter
+    # entered Temple of the Moon
+    #
+    location_entities.extend(
+        _extract_named_locations_after_actions(
             text,
-            TEMPORAL_PATTERNS,
+            temporal_entities,
         )
     )
 
-    location_entities = []
-
+    #
+    # Named compounds:
+    #
+    # Blackstone Keep
+    # Ashen Forest
+    #
     location_entities.extend(
-        _extract_terms(
+        _extract_named_location_compounds(
             text,
-            SPATIAL_RELATIONS,
-            "spatial_relation",
+            temporal_entities,
         )
     )
 
+    #
+    # Generic places:
+    #
+    # hidden chamber
+    # northern corridor
+    #
     location_entities.extend(
-        _extract_terms(
+        _extract_generic_locations(
             text,
-            GENERIC_LOCATIONS,
-            "generic_location",
+            temporal_entities,
         )
     )
 
+    #
+    # Additional locations appearing later:
+    #
+    # from the current cave
+    #
     location_entities.extend(
-        _extract_proper_place_candidates(text)
+        _extract_secondary_locations(
+            text,
+            temporal_entities,
+        )
     )
 
     return (

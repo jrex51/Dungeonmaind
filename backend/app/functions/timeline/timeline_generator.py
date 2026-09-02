@@ -24,6 +24,8 @@ from app.functions.embedding.embedding_model import (
 from app.functions.entity_extraction.entity_extractor import (
     extract_entities,
 )
+from app.functions.timeline.event_detector import semantic_event_decision
+from app.functions.timeline.timeline_ai import analyze_timeline_event
 
 
 MAX_SEGMENT_GAP_SECONDS = 30.0
@@ -1537,6 +1539,14 @@ def _build_title(
 def _is_meaningful_group(
     group: list[TimelineSourceSegment],
 ) -> bool:
+    """Keep only real, memorable campaign events.
+
+    Stage 1 performs cheap structural checks. Stage 2 uses semantic similarity
+    against story-change and non-event concepts. Stage 3 asks the already
+    configured local Ollama model for the final decision when it is available.
+    This makes jokes, filler, OOC/table talk and trivial dialogue disappear
+    without maintaining a giant list of trigger keywords.
+    """
     combined_text = _normalize_text(
         " ".join(
             segment.text
@@ -1566,12 +1576,32 @@ def _is_meaningful_group(
     if len(words) < 4:
         return False
 
-    # Production / sponsor / show-host chatter is never an in-game event, so
-    # reject it before this group can become a timeline event.
-    if _is_out_of_character(combined_text):
+    semantic = semantic_event_decision(combined_text)
+
+    # Obvious chatter can be rejected before an expensive LLM call.
+    if (
+        semantic.non_event_score >= 0.64
+        and semantic.margin < -0.08
+    ):
         return False
 
-    return True
+    speakers = _unique_strings(
+        [
+            segment.speaker
+            for segment in group
+            if segment.speaker.casefold() != "unknown"
+        ]
+    )
+    ai_analysis = analyze_timeline_event(
+        combined_text,
+        " | ".join(speakers),
+    )
+
+    if ai_analysis is not None:
+        return ai_analysis.keep
+
+    # Offline/Ollama-failure fallback remains fully semantic.
+    return semantic.keep
 
 
 def _create_event_from_group(
@@ -1600,13 +1630,31 @@ def _create_event_from_group(
             != "unknown"
         ]
     )
-    
-    temporal_entities, locations = (
-        _extract_event_entities(
-            combined_text,
-            speakers,
-        )
+
+    ai_analysis = analyze_timeline_event(
+        combined_text,
+        " | ".join(speakers),
     )
+
+    if ai_analysis is not None:
+        try:
+            category = TimelineCategory(ai_analysis.category)
+        except ValueError:
+            category = _detect_category(combined_text)
+
+        # When AI analysis succeeds, trust only exact transcript spans that
+        # survived validation in timeline_ai.py. This avoids the older
+        # capital-letter heuristic mistaking character names for locations.
+        temporal_entities = list(ai_analysis.temporal_entities)
+        locations = list(ai_analysis.locations)
+    else:
+        category = _detect_category(combined_text)
+        temporal_entities, locations = (
+            _extract_event_entities(
+                combined_text,
+                speakers,
+            )
+        )
 
     start_time = min(
         segment.start_time
@@ -1618,11 +1666,14 @@ def _create_event_from_group(
         for segment in group
     )
 
-    title = _build_title(
-        category,
-        combined_text,
-        locations,
-    )
+    if ai_analysis is not None and ai_analysis.title:
+        title = ai_analysis.title
+    else:
+        title = _build_title(
+            category,
+            combined_text,
+            locations,
+        )
 
     description = _shorten_text(
         combined_text,
@@ -1943,9 +1994,11 @@ def generate_timeline_from_embeddings(
     1. Read every transcription document from ChromaDB.
     2. Convert documents into timestamped segments.
     3. Group related nearby segments.
-    4. Ignore weak or meaningless groups.
-    5. Extract entities and detect event categories.
-    6. Merge similar adjacent events.
+    4. Reject jokes, chatter, OOC talk and non-events semantically.
+    5. Use the local LLM to validate importance and automatically extract
+       exact location/time entities when available.
+    6. Fall back to semantic classification/heuristics if Ollama is offline.
+    7. Merge similar adjacent events.
     """
 
     documents = get_all_transcription_documents()
