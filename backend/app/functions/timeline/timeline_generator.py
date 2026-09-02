@@ -81,12 +81,10 @@ CATEGORY_KEYWORDS: dict[
         "combat": 3,
         "fight": 3,
         "fighting": 3,
-        "initiative": 4,
-        "roll for initiative": 5,
         "damage": 2,
         "hit": 1,
         "critical hit": 3,
-        "weapon": 1,
+        "weapon": 2,
         "sword": 2,
         "arrow": 2,
         "spell": 2,
@@ -95,8 +93,6 @@ CATEGORY_KEYWORDS: dict[
         "orc": 2,
         "dragon": 2,
         "monster": 2,
-        "armor class": 3,
-        "saving throw": 2,
         "defeated": 3,
         "killed": 3,
     },
@@ -125,7 +121,7 @@ CATEGORY_KEYWORDS: dict[
     TimelineCategory.discovery: {
         "discover": 3,
         "discovered": 4,
-        "found": 3,
+        "found": 2,
         "hidden": 3,
         "secret": 3,
         "clue": 3,
@@ -173,8 +169,6 @@ CATEGORY_KEYWORDS: dict[
         "scroll": 3,
         "key": 3,
         "artifact": 4,
-        "weapon": 2,
-        "armor": 2,
         "inventory": 2,
         "picked up": 3,
         "received": 2,
@@ -287,6 +281,31 @@ def _get_category_embedding_data(
         categories,
         description_embeddings,
     )
+
+
+# ---------------------------------------------------------------------------
+# False-positive reduction. Production / sponsor / show-host chatter is never
+# part of the in-game story, so a cheap regex rejects it before a candidate
+# group can become a timeline event.
+# ---------------------------------------------------------------------------
+
+# Cheap hard reject for content that is never part of the in-game story.
+# Only unambiguous production / streaming markers are listed here. Phrases that
+# also occur in-game (e.g. "welcome back", "take a break", "subscribe") are
+# deliberately excluded so real events are never dropped.
+OOC_PATTERN = re.compile(
+    r"\b(?:"
+    r"sponsor(?:ed|s)?|patreon|geek\s*&?\s*sundry|twitch|youtube|"
+    r"brought\s+to\s+you|audio\s+(?:bottleneck|issue|problem)|"
+    r"we'?ll\s+be\s+right\s+back|voice\s+actor"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_out_of_character(text: str) -> bool:
+    """Cheap regex reject for production / sponsor / show-host chatter."""
+    return bool(OOC_PATTERN.search(text))
 
 
 EVENT_BOUNDARY_KEYWORDS = {
@@ -725,7 +744,8 @@ def _keyword_score(
             * weight
         )
 
-    pattern = rf"\b{re.escape(normalized_keyword)}\b"
+    # Match common inflections so "attacks"/"attacking" count as "attack".
+    pattern = rf"\b{re.escape(normalized_keyword)}(?:s|es|ed|ing|d)?\b"
 
     return (
         len(re.findall(pattern, normalized_text))
@@ -1544,6 +1564,11 @@ def _is_meaningful_group(
     )
 
     if len(words) < 4:
+        return False
+
+    # Production / sponsor / show-host chatter is never an in-game event, so
+    # reject it before this group can become a timeline event.
+    if _is_out_of_character(combined_text):
         return False
 
     return True
