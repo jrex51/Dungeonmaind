@@ -86,7 +86,6 @@ CATEGORY_KEYWORDS: dict[
         "damage": 2,
         "hit": 1,
         "critical hit": 3,
-        "weapon": 2,
         "sword": 2,
         "arrow": 2,
         "spell": 2,
