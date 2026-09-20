@@ -1,9 +1,9 @@
 """Local-LLM analysis for high-quality timeline events.
 
 The existing Ollama model acts as a second-stage judge after the cheap semantic
-filter.  One cached call can decide importance, classify the event, and extract
-exact location/temporal spans.  If Ollama is unavailable, callers simply fall
-back to the semantic/heuristic pipeline.
+filter. One cached call decides importance, classifies the event, and extracts
+exact event evidence and location/temporal spans. If Ollama is unavailable,
+callers use semantic filtering with conservative source-derived titles.
 """
 
 from __future__ import annotations
@@ -46,6 +46,63 @@ class TimelineAIAnalysis:
     locations: tuple[str, ...]
     temporal_entities: tuple[str, ...]
     reason: str | None
+    evidence: str | None = None
+
+
+def item_event_sentences(text: str) -> list[str]:
+    """Return sentences with item-action evidence for AI and offline validation."""
+    candidates = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        # Check individual clauses so an unrelated modal/negation does not
+        # suppress a completed transfer elsewhere in the sentence.
+        clauses = re.split(r"[,;]|\b(?:and|but|so)\b", sentence, flags=re.IGNORECASE)
+        for clause in clauses:
+            if clause.rstrip().endswith("?") or re.search(
+                r"\b(?:going to|gonna|will|would|could|should|might|may|if|"
+                r"want(?:s|ed)? to|plan(?:s|ned)? to|intend(?:s|ed)? to|try to|"
+                r"not|never|no|didn't|doesn't|don't|wasn't|weren't|can't|cannot|"
+                r"attacks?|great weapon master|dice|rolls?|modifier|damage|"
+                r"spell slots?|actions?|saving throws?|proficiency bonus|advantage|"
+                r"disadvantage|d\d+|rerolls?|ability checks?)\b",
+                clause, re.IGNORECASE,
+            ):
+                continue
+            if re.search(
+                r"\b(?:obtained|acquired|received|picked up|took|bought|purchased|"
+                r"looted|stole|sold|gave|handed|lost|destroyed|used|identified|"
+                r"obtain|obtains|acquire|acquires|receive|receives|pick up|picks up|"
+                r"take|takes|buy|buys|give|gives|use|uses)\s+\S+",
+                clause, re.IGNORECASE,
+            ):
+                candidates.append(sentence)
+                break
+    return candidates
+
+
+def _grounded_evidence(text: str, evidence: object) -> str | None:
+    """Match a whole source sentence without removing surrounding qualifiers."""
+    if not isinstance(evidence, str) or not evidence.strip():
+        return None
+    source = " ".join(text.split()).strip()
+    candidate = " ".join(evidence.split()).strip()
+    return next((sentence for sentence in re.split(r"(?<=[.!?])\s+", source)
+                 if sentence.casefold() == candidate.casefold()), None)
+
+
+def grounded_event_title(text: str, category: str, evidence: object = None) -> str | None:
+    """Ground wording, not event semantics; keep/occurred decide AI validity.
+
+    Long evidence stays intact in the analysis. Its title is explicitly marked
+    as a transcript excerpt, rather than presenting a truncated assertion as a
+    complete sentence. Category selection belongs to the fallback caller.
+    """
+    sentence = _grounded_evidence(text, evidence if evidence is not None else text)
+    if sentence is None:
+        return None
+    if len(sentence) <= 120:
+        return sentence
+    prefix = sentence[:107].rsplit(" ", 1)[0]
+    return f'Excerpt: “{prefix}…”'
 
 
 def _extract_json_object(value: str) -> dict | None:
@@ -131,9 +188,18 @@ Dialogue is a timeline event ONLY when the conversation itself creates an import
 Extract locations and temporal expressions automatically from meaning/context. Fantasy names are valid locations. Return ONLY exact text spans that appear in the transcript; never invent a place or time. If none is explicitly stated, use an empty list.
 
 Return JSON only with this schema:
-{"keep":true,"importance":0.0,"category":"travel|combat|dialogue|discovery|rest|quest|item|other","title":"short factual title","locations":[],"temporal_entities":[],"reason":"short reason"}
+{"keep":true,"occurred":true,"importance":0.0,"category":"travel|combat|dialogue|discovery|rest|quest|item|other","evidence":"complete exact transcript sentence","locations":[],"temporal_entities":[],"reason":"short reason"}
 
-Use importance >= 0.55 only for events that genuinely deserve a timeline entry. If keep is false, title/locations/temporal_entities may be empty."""
+Evidence must describe the actual event, including its subject, action and any qualifiers.
+Copy a complete sentence exactly; do not remove negation, conditions or intentions.
+Set occurred to true ONLY when the evidence establishes an actual in-world event.
+An item mention is not an acquisition. "I am going to take all three attacks at
+Great Weapon Master at him" is mechanics/intent, not obtaining an item.
+If no suitable evidence exists, set keep and occurred to false. The evidence itself
+will supply the title (long evidence is displayed as an excerpt); do not generate
+a paraphrase or invented outcome. Evidence length does not determine event validity.
+
+Use importance >= 0.55 only for events that genuinely deserve a timeline entry. If keep is false, evidence/locations/temporal_entities may be empty."""
 
     user_prompt = f"Speakers: {speakers_key or 'unknown'}\nTranscript: {cleaned}"
 
@@ -165,7 +231,7 @@ Use importance >= 0.55 only for events that genuinely deserve a timeline entry. 
     except (requests.RequestException, ValueError, TypeError):
         return None
 
-    keep = bool(data.get("keep", False))
+    keep = data.get("keep") is True and data.get("occurred") is True
     importance = _safe_importance(data.get("importance"))
     category = str(data.get("category", "other")).strip().lower()
     if category not in VALID_CATEGORIES:
@@ -174,10 +240,14 @@ Use importance >= 0.55 only for events that genuinely deserve a timeline entry. 
     # The keep flag and minimum importance jointly prevent chatty output.
     keep = keep and importance >= 0.55
 
-    raw_title = data.get("title")
-    title = None
-    if isinstance(raw_title, str):
-        title = " ".join(raw_title.split()).strip(" \t\n\r.,;:-")[:120] or None
+    raw_evidence = data.get("evidence")
+    evidence = _grounded_evidence(cleaned, raw_evidence)
+    title = grounded_event_title(cleaned, category, evidence) if evidence else None
+    keep = keep and evidence is not None
+    # Exact quotation alone cannot turn mechanics or an item mention into
+    # an item event, even if the model incorrectly confirms occurrence.
+    if keep and category == "item":
+        keep = bool(item_event_sentences(evidence))
 
     reason = data.get("reason")
     if isinstance(reason, str):
@@ -193,4 +263,5 @@ Use importance >= 0.55 only for events that genuinely deserve a timeline entry. 
         locations=_exact_spans(data.get("locations"), cleaned),
         temporal_entities=_exact_spans(data.get("temporal_entities"), cleaned),
         reason=reason,
+        evidence=evidence,
     )

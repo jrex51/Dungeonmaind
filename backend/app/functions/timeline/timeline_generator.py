@@ -25,7 +25,11 @@ from app.functions.entity_extraction.entity_extractor import (
     extract_entities,
 )
 from app.functions.timeline.event_detector import semantic_event_decision
-from app.functions.timeline.timeline_ai import analyze_timeline_event
+from app.functions.timeline.timeline_ai import (
+    analyze_timeline_event,
+    grounded_event_title,
+    item_event_sentences,
+)
 
 
 MAX_SEGMENT_GAP_SECONDS = 30.0
@@ -1470,70 +1474,24 @@ def _build_title(
     category: TimelineCategory,
     combined_text: str,
     locations: list[str],
-) -> str:
-    location = _main_location(
-        locations,
-        combined_text,
+) -> str | None:
+    sentences = (
+        item_event_sentences(combined_text)
+        if category == TimelineCategory.item
+        else re.split(r"(?<=[.!?])\s+", combined_text)
     )
-
-    if category == TimelineCategory.combat:
-        return (
-            f"Battle near {location}"
-            if location
-            else "A Battle Begins"
-        )
-
-    if category == TimelineCategory.travel:
-        if "arrived" in combined_text.casefold():
-            return (
-                f"Arrival at {location}"
-                if location
-                else "The Party Arrives"
-            )
-
-        return (
-            f"Journey through {location}"
-            if location
-            else "The Party Continues Its Journey"
-        )
-
-    if category == TimelineCategory.discovery:
-        return (
-            f"Discovery at {location}"
-            if location
-            else "An Important Discovery"
-        )
-
-    if category == TimelineCategory.rest:
-        return (
-            f"Rest near {location}"
-            if location
-            else "The Party Takes a Rest"
-        )
-
-    if category == TimelineCategory.quest:
-        return "A New Quest Is Accepted"
-
-    if category == TimelineCategory.item:
-        return "An Important Item Is Obtained"
-
-    if category == TimelineCategory.dialogue:
-        return (
-            f"Conversation at {location}"
-            if location
-            else "An Important Conversation"
-        )
-
-    first_sentence = re.split(
-        r"[.!?]",
-        combined_text,
-        maxsplit=1,
-    )[0]
-
-    return _shorten_text(
-        first_sentence or combined_text,
-        80,
-    )
+    if not sentences:
+        return None
+    # Rank source sentences using the existing category vocabulary. If it has
+    # no matches, reuse semantic category scores rather than choosing filler.
+    scores = [sum(_keyword_score(sentence, keyword, weight)
+                  for keyword, weight in CATEGORY_KEYWORDS.get(category, {}).items())
+              for sentence in sentences]
+    if len(sentences) > 1 and not any(scores):
+        scores = [_semantic_category_scores(sentence).get(category, 0.0)
+                  for sentence in sentences]
+    evidence = sentences[max(range(len(sentences)), key=lambda index: scores[index])]
+    return grounded_event_title(combined_text, category.value, evidence)
 
 
 def _is_meaningful_group(
@@ -1600,14 +1558,18 @@ def _is_meaningful_group(
     if ai_analysis is not None:
         return ai_analysis.keep
 
-    # Offline/Ollama-failure fallback remains fully semantic.
+    if not semantic.keep:
+        return False
+    # Only item events need the additional offline action-evidence check.
+    if _detect_category(combined_text) == TimelineCategory.item:
+        return bool(item_event_sentences(combined_text))
     return semantic.keep
 
 
 def _create_event_from_group(
     group: list[TimelineSourceSegment],
     category_override: TimelineCategory | None = None,
-) -> TimelineEvent:
+) -> TimelineEvent | None:
     combined_text = _normalize_text(
         " ".join(
             segment.text
@@ -1637,6 +1599,8 @@ def _create_event_from_group(
     )
 
     if ai_analysis is not None:
+        if not ai_analysis.keep:
+            return None
         try:
             category = TimelineCategory(ai_analysis.category)
         except ValueError:
@@ -1674,6 +1638,9 @@ def _create_event_from_group(
             combined_text,
             locations,
         )
+
+    if title is None:
+        return None
 
     description = _shorten_text(
         combined_text,
@@ -1750,7 +1717,7 @@ def _events_are_similar(
 def _merge_two_events(
     first: TimelineEvent,
     second: TimelineEvent,
-) -> TimelineEvent:
+) -> TimelineEvent | None:
     merged_segments = (
         first.source_segments
         + second.source_segments
@@ -1778,10 +1745,11 @@ def _merge_similar_events(
             previous,
             event,
         ):
-            merged[-1] = _merge_two_events(
-                previous,
-                event,
-            )
+            combined = _merge_two_events(previous, event)
+            if combined is not None:
+                merged[-1] = combined
+            else:
+                merged.append(event)
         else:
             merged.append(event)
 
@@ -2053,6 +2021,8 @@ def generate_timeline_from_embeddings(
         _create_event_from_group(group, category_override=category)
         for group, category in zip(event_groups, event_categories)
     ]
+
+    events = [event for event in events if event is not None]
 
     events.sort(
         key=lambda event: (
