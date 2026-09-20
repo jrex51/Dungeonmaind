@@ -57,6 +57,8 @@ jobs:
             "pydantic-settings==2.10.1"
             "requests>=2.32.5"
             "numpy>=2.0.0"
+            "fastapi==0.119.0"
+            "httpx==0.28.1"
 
       - name: Check Python syntax
         run: python -m compileall -q backend/app backend/tests
