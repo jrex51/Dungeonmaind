@@ -1,14 +1,16 @@
 """Local-LLM analysis for high-quality timeline events.
 
 The existing Ollama model acts as a second-stage judge after the cheap semantic
-filter. One cached call decides importance, classifies the event, and extracts
-exact event evidence and location/temporal spans. If Ollama is unavailable,
+filter. Bounded batches decide importance, classify events, and extract exact
+evidence and location/temporal spans using the same validator as single-event
+analysis. If Ollama is unavailable,
 callers use semantic filtering with conservative source-derived titles.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -167,16 +169,7 @@ def _safe_importance(value: object) -> float:
     return max(0.0, min(1.0, score))
 
 
-@lru_cache(maxsize=512)
-def analyze_timeline_event(text: str, speakers_key: str = "") -> TimelineAIAnalysis | None:
-    if not TIMELINE_AI_ENABLED:
-        return None
-
-    cleaned = " ".join(text.split()).strip()
-    if not cleaned:
-        return None
-
-    system_prompt = """You are the campaign-event extractor for a Dungeons & Dragons timeline.
+SYSTEM_PROMPT = """You are the campaign-event extractor for a Dungeons & Dragons timeline.
 Decide whether the supplied transcript describes a MAIN IN-WORLD EVENT worth remembering.
 
 KEEP events that change campaign state, including: travel/arrival/departure; combat start/result; danger/traps; discoveries/clues/secrets/lore; quest acceptance/progress/failure/completion; important items gained/lost/used; important NPC information, promises, threats or deals; major decisions that are committed to; rest/recovery; character injury/death/rescue/status changes; puzzles solved/failed; faction/relationship/world-state changes; important trade/rewards/resources; major magic/environment changes.
@@ -201,12 +194,22 @@ a paraphrase or invented outcome. Evidence length does not determine event valid
 
 Use importance >= 0.55 only for events that genuinely deserve a timeline entry. If keep is false, evidence/locations/temporal_entities may be empty."""
 
+
+@lru_cache(maxsize=512)
+def analyze_timeline_event(text: str, speakers_key: str = "") -> TimelineAIAnalysis | None:
+    if not TIMELINE_AI_ENABLED:
+        return None
+
+    cleaned = " ".join(text.split()).strip()
+    if not cleaned:
+        return None
+
     user_prompt = f"Speakers: {speakers_key or 'unknown'}\nTranscript: {cleaned}"
 
     payload = {
         "model": settings.llm_model,
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
         "stream": False,
@@ -231,6 +234,10 @@ Use importance >= 0.55 only for events that genuinely deserve a timeline entry. 
     except (requests.RequestException, ValueError, TypeError):
         return None
 
+    return _validate_analysis(cleaned, data)
+
+
+def _validate_analysis(cleaned: str, data: dict) -> TimelineAIAnalysis:
     keep = data.get("keep") is True and data.get("occurred") is True
     importance = _safe_importance(data.get("importance"))
     category = str(data.get("category", "other")).strip().lower()
@@ -265,3 +272,81 @@ Use importance >= 0.55 only for events that genuinely deserve a timeline entry. 
         reason=reason,
         evidence=evidence,
     )
+
+
+logger = logging.getLogger(__name__)
+TIMELINE_AI_BATCH_SIZE = 8
+TIMELINE_AI_BATCH_CHARS = 12000
+
+
+def analyze_timeline_events(
+    candidates: list[tuple[str, str]],
+) -> list[TimelineAIAnalysis | None]:
+    """Validate bounded batches against each candidate's own source.
+
+    None selects local fallback. Missing/duplicate IDs never shift results.
+    Transport failures stop AI work for this run. Oversized candidates use
+    local fallback rather than truncating evidence.
+    """
+    results: list[TimelineAIAnalysis | None] = [None] * len(candidates)
+    if not TIMELINE_AI_ENABLED:
+        return results
+    batches: list[list[dict]] = []
+    batch: list[dict] = []
+    size = 0
+    for index, (text, speakers) in enumerate(candidates):
+        cleaned = " ".join(text.split()).strip()
+        item = dict(id=index, transcript=cleaned, speakers=speakers)
+        item_size = len(json.dumps(item))
+        if not cleaned or item_size > TIMELINE_AI_BATCH_CHARS:
+            continue
+        if batch and (len(batch) >= TIMELINE_AI_BATCH_SIZE
+                      or size + item_size > TIMELINE_AI_BATCH_CHARS):
+            batches.append(batch)
+            batch, size = [], 0
+        batch.append(item)
+        size += item_size
+    if batch:
+        batches.append(batch)
+
+    for number, batch in enumerate(batches, 1):
+        logger.info("Timeline AI batch %d/%d (%d candidates)", number, len(batches), len(batch))
+        try:
+            response = requests.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": settings.llm_model,
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT +
+                         '\nAnalyze each candidate independently. Return {"results": [...]} '
+                         'with one object using the schema above plus the exact integer id '
+                         'for each candidate. Never borrow evidence or entities from another candidate.'},
+                        {"role": "user", "content": json.dumps(batch)},
+                    ],
+                    "stream": False, "format": "json",
+                    "options": {"temperature": 0.0},
+                },
+                timeout=TIMELINE_AI_TIMEOUT,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            logger.warning("Timeline AI unavailable; using local fallback for remaining candidates: %s", error)
+            break
+        try:
+            content = response.json()["message"]["content"]
+            data = _extract_json_object(content) if isinstance(content, str) else None
+            rows = data.get("results") if data else None
+            if not isinstance(rows, list):
+                raise ValueError("missing results list")
+        except (ValueError, TypeError, KeyError):
+            logger.warning("Timeline AI batch %d malformed; using local fallback", number)
+            continue
+        by_id: dict[int, list[dict]] = {}
+        for row in rows:
+            if isinstance(row, dict) and type(row.get("id")) is int:
+                by_id.setdefault(row["id"], []).append(row)
+        for item in batch:
+            matches = by_id.get(item["id"], [])
+            if len(matches) == 1:
+                results[item["id"]] = _validate_analysis(item["transcript"], matches[0])
+    return results

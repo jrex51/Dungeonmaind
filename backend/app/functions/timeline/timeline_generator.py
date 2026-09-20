@@ -1,4 +1,5 @@
 import re
+import logging
 from collections import Counter
 from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid5
@@ -26,7 +27,8 @@ from app.functions.entity_extraction.entity_extractor import (
 )
 from app.functions.timeline.event_detector import semantic_event_decision
 from app.functions.timeline.timeline_ai import (
-    analyze_timeline_event,
+    TimelineAIAnalysis,
+    analyze_timeline_events,
     grounded_event_title,
     item_event_sentences,
 )
@@ -34,9 +36,10 @@ from app.functions.timeline.timeline_ai import (
 
 MAX_SEGMENT_GAP_SECONDS = 30.0
 MAX_EVENT_DURATION_SECONDS = 120.0
-MAX_SEGMENTS_PER_EVENT = 6
 MIN_EVENT_TEXT_LENGTH = 20
 MIN_EVENT_DURATION_SECONDS = 2.0
+
+logger = logging.getLogger(__name__)
 
 EVENT_TRANSITION_PATTERN = re.compile(
     r"""
@@ -642,18 +645,6 @@ def _contains_boundary_phrase(text: str) -> bool:
     )
 
 
-def _group_duration(
-    group: list[TimelineSourceSegment],
-) -> float:
-    if not group:
-        return 0.0
-
-    return max(
-        0.0,
-        group[-1].end_time - group[0].start_time,
-    )
-
-
 def _group_segments(
     segments: list[TimelineSourceSegment],
 ) -> list[list[TimelineSourceSegment]]:
@@ -685,10 +676,6 @@ def _group_segments(
             segment.start_time - previous.end_time,
         )
 
-        duration = _group_duration(
-            current_group
-        )
-
         category_changed = (
             current_category is not None
             and segment_category != current_category
@@ -706,8 +693,8 @@ def _group_segments(
 
         should_split = (
             gap > MAX_SEGMENT_GAP_SECONDS
-            or duration >= MAX_EVENT_DURATION_SECONDS
-            or len(current_group) >= MAX_SEGMENTS_PER_EVENT
+            or max(s.end_time for s in current_group + [segment])
+            - current_group[0].start_time > MAX_EVENT_DURATION_SECONDS
             or meaningful_category_change
             or _contains_boundary_phrase(segment.text)
         )
@@ -1497,14 +1484,7 @@ def _build_title(
 def _is_meaningful_group(
     group: list[TimelineSourceSegment],
 ) -> bool:
-    """Keep only real, memorable campaign events.
-
-    Stage 1 performs cheap structural checks. Stage 2 uses semantic similarity
-    against story-change and non-event concepts. Stage 3 asks the already
-    configured local Ollama model for the final decision when it is available.
-    This makes jokes, filler, OOC/table talk and trivial dialogue disappear
-    without maintaining a giant list of trigger keywords.
-    """
+    """Apply local structural, semantic and item-action filtering only."""
     combined_text = _normalize_text(
         " ".join(
             segment.text
@@ -1543,21 +1523,6 @@ def _is_meaningful_group(
     ):
         return False
 
-    speakers = _unique_strings(
-        [
-            segment.speaker
-            for segment in group
-            if segment.speaker.casefold() != "unknown"
-        ]
-    )
-    ai_analysis = analyze_timeline_event(
-        combined_text,
-        " | ".join(speakers),
-    )
-
-    if ai_analysis is not None:
-        return ai_analysis.keep
-
     if not semantic.keep:
         return False
     # Only item events need the additional offline action-evidence check.
@@ -1568,7 +1533,7 @@ def _is_meaningful_group(
 
 def _create_event_from_group(
     group: list[TimelineSourceSegment],
-    category_override: TimelineCategory | None = None,
+    ai_analysis: TimelineAIAnalysis | None = None,
 ) -> TimelineEvent | None:
     combined_text = _normalize_text(
         " ".join(
@@ -1578,12 +1543,6 @@ def _create_event_from_group(
         )
     )
 
-    category = (
-        category_override
-        if category_override is not None
-        else _detect_category(combined_text)
-    )
-    
     speakers = _unique_strings(
         [
             segment.speaker
@@ -1591,11 +1550,6 @@ def _create_event_from_group(
             if segment.speaker.casefold()
             != "unknown"
         ]
-    )
-
-    ai_analysis = analyze_timeline_event(
-        combined_text,
-        " | ".join(speakers),
     )
 
     if ai_analysis is not None:
@@ -1718,14 +1672,23 @@ def _merge_two_events(
     first: TimelineEvent,
     second: TimelineEvent,
 ) -> TimelineEvent | None:
-    merged_segments = (
-        first.source_segments
-        + second.source_segments
-    )
-
-    return _create_event_from_group(
-        merged_segments
-    )
+    start = min(first.start_time, second.start_time)
+    end = max(first.end_time, second.end_time)
+    if end - start > MAX_EVENT_DURATION_SECONDS:
+        return None
+    segments = first.source_segments + second.source_segments
+    text = _normalize_text(" ".join(segment.text for segment in segments))
+    # Retain a validated title/category and union only validated source spans.
+    return first.model_copy(update={
+        "id": str(uuid5(NAMESPACE_URL, f"{start:.3f}|{end:.3f}|{text}")),
+        "description": _shorten_text(text, 600),
+        "start_time": start, "end_time": end,
+        "source_segments": segments,
+        "speakers": _unique_strings(first.speakers + second.speakers),
+        "locations": _unique_strings(first.locations + second.locations),
+        "temporal_entities": _unique_strings(first.temporal_entities + second.temporal_entities),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 def _merge_similar_events(
@@ -1754,203 +1717,6 @@ def _merge_similar_events(
             merged.append(event)
 
     return merged
-
-
-# ---------------------------------------------------------------------------
-# Event detection + classification (issue #10): "did a significant event
-# happen?" is decided separately from "what kind of event is it?".
-#   1. A cheap structural filter runs first (skips obvious non-events).
-#   2. The LLM detector answers EVENT / NOISE on each candidate, dropping
-#      rules/mechanics talk, backstory narration and banter.
-#   3. The LLM classifier labels ONLY the survivors, so it never adds events;
-#      _detect_category is the fallback when it returns no confident category.
-# ---------------------------------------------------------------------------
-
-_LLM_DETECT_PROMPT = (
-    "You review moments from a Dungeons & Dragons play session and decide, for "
-    "each one, whether a SIGNIFICANT in-story event actually happens in it.\n"
-    "For each numbered excerpt reply on its own line as: <number>: <EVENT|NOISE>\n"
-    "EVENT = something significant happens in the story now: a fight, arriving "
-    "somewhere, a discovery, obtaining an important item, a key decision or plot "
-    "development.\n"
-    "NOISE = not a story event: discussing dice/rules/mechanics, a character's "
-    "backstory being narrated, out-of-character or sponsor/production talk, "
-    "planning what to do next, or jokes and banter.\n"
-    "Examples:\n1: EVENT\n2: NOISE\n\nExcerpts:\n"
-)
-
-_LLM_DETECT_BATCH = 12
-
-
-def _llm_detect_events(texts: list[str]) -> list[bool]:
-    """
-    Detection gate (issue #10): ask the local LLM whether each candidate scene
-    contains a significant in-story event. Returns one bool per input.
-
-    This ONLY answers "did an event happen?"; the survivors are labelled
-    separately by _llm_classify_events. Fail-open: if the LLM is unreachable or a
-    line cannot be parsed, the scene is kept, so a model outage never silently
-    empties the timeline.
-    """
-    import os
-    import httpx
-
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    results: list[bool] = [True for _ in texts]
-
-    for start in range(0, len(texts), _LLM_DETECT_BATCH):
-        batch = texts[start:start + _LLM_DETECT_BATCH]
-
-        numbered_lines = []
-        for index, text in enumerate(batch):
-            cleaned = re.sub(r"\s+", " ", text)[:220]
-            numbered_lines.append(f"{index + 1}. {cleaned}")
-        numbered = "\n".join(numbered_lines)
-
-        try:
-            response = httpx.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": settings.llm_model,
-                    "stream": False,
-                    "options": {"temperature": 0},
-                    "messages": [
-                        {"role": "user", "content": _LLM_DETECT_PROMPT + numbered}
-                    ],
-                },
-                timeout=httpx.Timeout(
-                    connect=20.0, read=300.0, write=20.0, pool=None
-                ),
-            )
-            content = response.json()["message"]["content"]
-        except Exception as error:
-            print(f"LLM event detector failed for a batch, keeping it: {error}")
-            continue
-
-        # Prefer explicit "<n>: EVENT/NOISE"; fall back to line order when the
-        # model emits labels without usable numbers.
-        by_number: dict[int, bool] = {}
-        in_order: list[bool] = []
-        for line in content.splitlines():
-            match = re.search(
-                r"(?:(\d+)\s*[:.\)\-]\s*)?\b(EVENT|NOISE)\b",
-                line,
-                re.IGNORECASE,
-            )
-            if not match:
-                continue
-            is_event = match.group(2).upper() == "EVENT"
-            in_order.append(is_event)
-            if match.group(1) is not None:
-                by_number[int(match.group(1)) - 1] = is_event
-
-        for index in range(len(batch)):
-            if index in by_number:
-                results[start + index] = by_number[index]
-            elif index < len(in_order):
-                results[start + index] = in_order[index]
-
-    return results
-
-
-_LLM_CATEGORY_MAP = {
-    "combat": TimelineCategory.combat,
-    "travel": TimelineCategory.travel,
-    "discovery": TimelineCategory.discovery,
-    "rest": TimelineCategory.rest,
-    "quest": TimelineCategory.quest,
-    "item": TimelineCategory.item,
-    "dialogue": TimelineCategory.dialogue,
-}
-
-_LLM_CLASSIFY_PROMPT = (
-    "Each numbered excerpt below is a confirmed significant moment from a "
-    "Dungeons & Dragons play session. Assign the single best category to each.\n"
-    "For each numbered excerpt reply on its own line as: <number>: <category>\n"
-    "Categories and what they mean:\n"
-    "  combat = a fight, attack, spell or damage during a battle\n"
-    "  travel = moving, arriving or journeying between places\n"
-    "  discovery = finding a clue, secret, hidden thing or key information\n"
-    "  rest = resting, camping, sleeping or recovering\n"
-    "  quest = receiving, accepting or advancing a mission or objective\n"
-    "  item = obtaining or gaining an important object\n"
-    "  dialogue = a significant conversation or social exchange\n"
-    "Examples:\n1: combat\n2: discovery\n\nExcerpts:\n"
-)
-
-_LLM_CLASSIFY_BATCH = 24
-
-
-def _llm_classify_events(
-    texts: list[str],
-) -> list[TimelineCategory | None]:
-    """
-    Classification step (issue #10): assign a category to each already-confirmed
-    event. Runs ONLY on scenes the detection gate kept, so it never changes which
-    scenes become events -- only their label.
-
-    Returns one category (or None) per input; None means "no confident label" and
-    the caller falls back to the keyword/semantic _detect_category.
-    """
-    import os
-    import httpx
-
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    results: list[TimelineCategory | None] = [None for _ in texts]
-
-    for start in range(0, len(texts), _LLM_CLASSIFY_BATCH):
-        batch = texts[start:start + _LLM_CLASSIFY_BATCH]
-
-        numbered_lines = []
-        for index, text in enumerate(batch):
-            cleaned = re.sub(r"\s+", " ", text)[:220]
-            numbered_lines.append(f"{index + 1}. {cleaned}")
-        numbered = "\n".join(numbered_lines)
-
-        try:
-            response = httpx.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": settings.llm_model,
-                    "stream": False,
-                    "options": {"temperature": 0},
-                    "messages": [
-                        {"role": "user", "content": _LLM_CLASSIFY_PROMPT + numbered}
-                    ],
-                },
-                timeout=httpx.Timeout(
-                    connect=20.0, read=300.0, write=20.0, pool=None
-                ),
-            )
-            content = response.json()["message"]["content"]
-        except Exception as error:
-            print(f"LLM event classifier failed for a batch, using fallback: {error}")
-            continue
-
-        # Prefer explicit "<n>: <category>"; fall back to line order otherwise.
-        by_number: dict[int, TimelineCategory | None] = {}
-        in_order: list[TimelineCategory | None] = []
-        for line in content.splitlines():
-            match = re.search(
-                r"(?:(\d+)\s*[:.\)\-]\s*)?"
-                r"\b(combat|travel|discovery|rest|quest|item|dialogue)\b",
-                line,
-                re.IGNORECASE,
-            )
-            if not match:
-                continue
-            category = _LLM_CATEGORY_MAP.get(match.group(2).lower())
-            in_order.append(category)
-            if match.group(1) is not None:
-                by_number[int(match.group(1)) - 1] = category
-
-        for index in range(len(batch)):
-            if index in by_number:
-                results[start + index] = by_number[index]
-            elif index < len(in_order):
-                results[start + index] = in_order[index]
-
-    return results
 
 
 def generate_timeline_from_embeddings(
@@ -1984,9 +1750,6 @@ def generate_timeline_from_embeddings(
 
     groups = _group_segments(segments)
 
-    # Detection then classification (#10): decide which candidate scenes are real
-    # events BEFORE labelling them. A cheap structural filter runs first, then the
-    # two LLM steps below -- detect, then classify only the survivors.
     candidate_groups = [
         group
         for group in groups
@@ -1999,27 +1762,17 @@ def generate_timeline_from_embeddings(
         )
         for group in candidate_groups
     ]
-    # Step 1 -- detection: keep only groups the LLM judges to be real events.
-    is_event_flags = _llm_detect_events(candidate_texts)
-    event_groups = [
-        group
-        for group, is_event in zip(candidate_groups, is_event_flags)
-        if is_event
-    ]
-    event_texts = [
-        text
-        for text, is_event in zip(candidate_texts, is_event_flags)
-        if is_event
-    ]
-
-    # Step 2 -- classification: label the confirmed events. This runs only on
-    # survivors, so it cannot add events; _detect_category is the fallback when
-    # the LLM returns no confident category.
-    event_categories = _llm_classify_events(event_texts)
-
+    logger.info("Timeline: %d segments, %d groups, %d candidates",
+                len(segments), len(groups), len(candidate_groups))
+    analyses = analyze_timeline_events([
+        (text, " | ".join(_unique_strings([
+            s.speaker for s in group if s.speaker.casefold() != "unknown"
+        ])))
+        for text, group in zip(candidate_texts, candidate_groups)
+    ])
     events = [
-        _create_event_from_group(group, category_override=category)
-        for group, category in zip(event_groups, event_categories)
+        _create_event_from_group(group, ai_analysis=analysis)
+        for group, analysis in zip(candidate_groups, analyses)
     ]
 
     events = [event for event in events if event is not None]
