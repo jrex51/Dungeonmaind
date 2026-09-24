@@ -182,3 +182,4 @@ cython_debug/
 
 # Chroma DB
 data/chroma_db/
+data/savedSessions/

@@ -5,6 +5,7 @@
 **/.vscode/
 **/.venv/
 **/.env.txt
+.env
 
 **/backend/data/chroma_db/
-**/backend/data/SavedSessions/
+**/backend/data/SavedSessions/git 
