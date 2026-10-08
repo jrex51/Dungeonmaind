@@ -16,6 +16,19 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push, replace }),
 }))
 
+vi.mock('cytoscape', async (importOriginal) => {
+  const { default: cytoscape } = await importOriginal<{ default: typeof import('cytoscape') }>()
+  return {
+    default: (options: import('cytoscape').CytoscapeOptions) =>
+      cytoscape({
+        ...options,
+        container: undefined,
+        headless: true,
+        layout: { name: 'preset' },
+      }),
+  }
+})
+
 const fetchMock = vi.fn<typeof fetch>()
 
 beforeEach(() => {
@@ -152,6 +165,40 @@ describe('map page modes', () => {
     await wrapper.get('.generate-button').trigger('click')
     await flushPromises()
     expect(fetchMock.mock.calls[2]?.[1]?.method).toBe('POST')
+    wrapper.unmount()
+  })
+
+  it('replaces selected sample data with real results and resets details on mode changes', async () => {
+    route.query = { demo: 'sample' }
+    const realData = {
+      nodes: [
+        {
+          id: 'real-place',
+          name: 'Real session place',
+          mentions: 2,
+          first_seen: 3601,
+          last_seen: 3661,
+        },
+      ],
+      edges: [],
+      source_segment_count: 2,
+    }
+    fetchMock.mockImplementation(async () => Response.json(realData))
+    const wrapper = mount(MapView)
+    await wrapper.findAll('li button')[0]!.trigger('click')
+    expect(wrapper.get('[aria-label="Selection details"]').text()).toContain('Willowbrook')
+    await wrapper.get('.mode-panel button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Real session place')
+    expect(wrapper.text()).not.toContain('Willowbrook')
+    expect(wrapper.get('[aria-label="Selection details"]').text()).toContain('Select a location')
+    expect(useMapStore().mapData).toEqual(realData)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await wrapper.get('.mode-panel button').trigger('click')
+    expect(wrapper.text()).toContain('Willowbrook')
+    expect(wrapper.text()).not.toContain('Real session place')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(useMapStore().mapData).toEqual(realData)
     wrapper.unmount()
   })
 

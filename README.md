@@ -4,11 +4,7 @@ Dungeon M-AI-nd is a local AI-assisted application for recording, transcribing, 
 
 The system records or imports session audio, transcribes it using WhisperX, stores searchable transcript data, and uses local AI components to help players and Dungeon Masters revisit previous sessions.
 
-The project is currently being extended with:
-
-* an interactive event timeline,
-* geographic mapping of locations and party movement,
-* an advanced character management system.
+The current implementation includes an interactive timeline and a geographic relationship graph frontend. Geographic map extraction and API integration are still in progress; the graph can already be explored using an explicitly labeled sample demo. Advanced character management and timeline/map integration remain planned.
 
 ---
 
@@ -34,7 +30,7 @@ Timeline and other Visualizations
 Local LLM Question Answering
 ```
 
-The application is designed to run locally. Session data and AI processing remain on the machine running the system, apart from model/dependency downloads required during setup.
+The application is designed to run with a local backend and Ollama. The frontend connects to the backend address selected at login, so other players can join over the local network. Setup downloads dependencies and models; the frontend also loads a web font from Google Fonts.
 
 ---
 
@@ -52,7 +48,7 @@ Current implementation includes prototype extraction of:
 * locations,
 * spatial information.
 
-Remaining work includes improving extraction quality and adding proper evaluation and automated tests.
+Automated tests cover temporal extraction, realistic transcript examples, timeline event detection, grounding, and the timeline API. Extraction quality and broader evaluation remain work in progress.
 
 ### Release 2 — Interactive Timeline
 
@@ -76,15 +72,23 @@ The main remaining problem is **event detection accuracy**. Real D&D recordings 
 
 ### Release 3 — Geographic Mapping I
 
-**Status: Not started**
+**Status: Interactive frontend implemented; geographic backend integration pending**
+
+The `/map` page includes a validated API client, Pinia store, and reusable Cytoscape.js graph. It supports directed relationship labels, zoom/pan, Fit to View, selection details, elapsed-session timestamps, and keyboard-accessible location and relationship lists.
+
+The backend in this checkout does not yet register GET `/map` or POST `/map/generate`. Session mode reports unavailable APIs explicitly. `/map?demo=sample` displays invented sample data without map API requests; it still uses the existing player/session authentication guard.
 
 ### Release 4 — Geographic Mapping II
 
-**Status: Not started**
+**Status: Planned**
+
+Timeline/map integration and a dedicated party journey visualization remain planned.
 
 ### Release 5 — Advanced Character Sheet
 
-**Status: Not started**
+**Status: Planned beyond existing basic character controls**
+
+Player health and ability controls already exist. The advanced sheet and dynamic inventory remain planned.
 
 ### Release 6 — Finalization & Submission
 
@@ -127,13 +131,24 @@ The main remaining problem is **event detection accuracy**. Real D&D recordings 
 * [x] Detailed transcript context
 * [ ] Reliable significant-event detection
 * [ ] Improved event classification
-* [ ] Regression test dataset
+* [x] Targeted regression tests and sanitized transcript fixtures
+* [ ] Broader evaluation dataset
 * [ ] Manual timeline correction/editing
+
+### Geographic Relationship Graph
+
+* [x] `/map` route and session navigation
+* [x] Cytoscape.js graph with directed, labeled relationships
+* [x] Automatic layout, zoom/pan, and Fit to View
+* [x] Node/edge selection, details, and elapsed-session timestamps
+* [x] Keyboard-accessible textual lists and responsive layout
+* [x] Explicit invented-data demo, isolated from session data and API requests
+* [x] Loading, generating, error, and empty states
+* [x] Graph conversion, selection, lifecycle, and mode-switching tests
+* [ ] Geographic extraction backend and live map API integration
 
 ### Planned Features
 
-* [ ] Geographic mapping of extracted locations
-* [ ] Spatial relationships between locations
 * [ ] Timeline/map integration
 * [ ] Party journey visualization
 * [ ] Advanced character sheet
@@ -166,6 +181,8 @@ The main remaining problem is **event detection accuracy**. Real D&D recordings 
 * Pinia
 * Vue Router
 * Vite
+* Cytoscape.js
+* Vitest / Vue Test Utils / Playwright
 
 ### Infrastructure
 
@@ -187,7 +204,9 @@ Dungeonmaind/
 │   └── dockerfile
 │
 ├── frontend/
-│   ├── src/
+│   ├── src/                 # Includes TimelineView and MapView
+│   ├── e2e/                 # Browser regression tests
+│   ├── README.md            # Frontend setup and verification
 │   ├── package.json
 │   └── dockerfile
 │
@@ -433,6 +452,51 @@ The timeline can be searched and filtered by event category.
 
 > **Current limitation:** event extraction is still under development. Some normal dialogue, combat terminology, planning, or D&D mechanics may be incorrectly detected as significant events.
 
+## Geographic Map
+
+1. Join a session, then choose **Geographic Map** alongside **Timeline**.
+2. Session mode loads GET `/map`; **Generate Map** explicitly requests POST `/map/generate`. Generation never runs automatically. These endpoints are pending in the backend in this checkout.
+3. Choose **Show sample demo**, or open `/map?demo=sample`, to explore the invented sample network without the map backend. Generation is disabled, and the sample is never stored as session results or sent to the backend. Login still requires the player/session backend.
+4. Select a location or relationship to inspect its details. Scroll/pinch to zoom, drag the background to pan, and use **Fit to View** to reset the viewport. The textual lists provide the same selection controls for keyboard users.
+5. Use **Clear selection** or press Escape while focus is within the map component to deselect. **Use session data** exits the demo and reloads the API.
+
+The graph is schematic: positions do not encode geographic direction, distance, or real-world coordinates. It draws only the relationships supplied in `MapData`. Missing endpoints are reported, and those relationships remain available in the textual list.
+
+See the [map README](frontend/src/views/MapView/README.md) for the provisional contract and detailed manual checks.
+
+## Local Frontend Development and Tests
+
+Use Node.js 22.12 or newer in the 22.x line, or a newer supported Node release, with npm. From the repository root:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+The frontend normally opens at `http://localhost:5173`. Select the browser-accessible backend address at login (default `http://localhost:8000`). See the [frontend README](frontend/README.md) for LAN startup and test configuration.
+
+Run frontend verification from `frontend/`:
+
+```sh
+npm run type-check
+npm run build
+npm run test:unit -- --run
+
+# Map browser regression: authentication and map responses are mocked.
+npx playwright install chromium --only-shell
+npm run test:e2e -- e2e/map.spec.ts --project=chromium --reporter=list
+```
+
+Backend tests are in `backend/tests/` and use both unittest-style and pytest-style tests. With the backend dependencies installed in your Python environment, install the development test runner and run from `backend/`:
+
+```sh
+python -m pip install pytest
+python -m pytest tests
+```
+
+Tests provide targeted regression coverage; passing them does not establish extraction accuracy on an entire campaign or verify Docker/GPU startup.
+
 ---
 
 # Development Workflow
@@ -492,7 +556,7 @@ Branches should describe the work being performed rather than the person working
 
 # Project Management
 
-The project is divided into six releases:
+The project is divided into six releases. The dates below are planning targets, not evidence that a release has shipped; implementation status is described above.
 
 | Release   | Goal                        | Deadline          |
 | --------- | --------------------------- | ----------------- |
@@ -516,7 +580,9 @@ Current known areas requiring improvement include:
 * limited contextual understanding during event detection,
 * prototype-level location extraction,
 * prototype-level temporal extraction,
-* insufficient automated regression testing,
+* targeted automated coverage without a comprehensive campaign evaluation dataset,
+* geographic map backend/API integration still pending,
+* no real-world coordinates, geographic scale, or timeline/map synchronization in the graph,
 * session/campaign isolation in parts of the timeline pipeline.
 
 These should be tracked through GitHub Issues rather than fixed directly without an associated task.
@@ -530,6 +596,8 @@ Project documentation will be maintained alongside the source code.
 Relevant documentation includes:
 
 * this README,
+* [frontend setup and verification](frontend/README.md),
+* [geographic map contract and manual checks](frontend/src/views/MapView/README.md),
 * contribution guidelines,
 * release documentation,
 * sprint meeting documentation,
