@@ -10,6 +10,7 @@ from app.functions.entity_extraction.entity_extractor import (
 from app.functions.geographic_mapping.spatial_relation_extractor import (
     extract_spatial_relations, normalize_location,
 )
+from app.functions.geographic_mapping.contextual_travel_extractor import ContextualTravelExtractor
 
 
 def _time(value, default=0.0):
@@ -30,6 +31,8 @@ def generate_map_from_documents(documents) -> MapData:
     Bare generic names are scoped to their segment to avoid merging unrelated caves.
     Capitalized compound place names share one identity across segments.
     Repeated relation assertions retain separate evidence across segments.
+    Consecutive confirmed travel sentences can supply contextual travel edges;
+    their timestamp is the destination segment's start and evidence spans the journey.
     """
     segments = []
     for document in documents:
@@ -53,10 +56,17 @@ def generate_map_from_documents(documents) -> MapData:
             words = name.split()
             if words and any(word[0].isupper() for word in words) and (len(words) > 1 or not all(word.casefold() in vocabulary for word in words)):
                 known_names.add(name.casefold())
+    context = ContextualTravelExtractor(known_names)
+    contextual_segments = []
+    for _, _, text in segments:
+        contextual = context.extract(text)
+        contextual_segments.append(contextual)
+        known_names.update(name.casefold() for name in contextual[1])
     nodes, edges = {}, {}
     for index, (start, end, text) in enumerate(segments):
-        relations = extract_spatial_relations(text)
-        names = {}
+        contextual_relations, contextual_locations = contextual_segments[index]
+        relations = extract_spatial_relations(text) + contextual_relations
+        names = {name.casefold(): name for name in contextual_locations}
         # Sentence-level calls retain repeated mentions that the existing
         # entity extractor deduplicates within a single input.
         for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
@@ -88,6 +98,10 @@ def generate_map_from_documents(documents) -> MapData:
             node_id = _stable_id("node", key)
             local_ids[normalized] = node_id
             occurrences = len(re.findall(r"(?<!\w)" + re.escape(name).replace(r"\ ", r"\s+") + r"(?!\w)", text, re.I))
+            # A contextual origin is referenced by the new edge but was actually
+            # mentioned in an earlier segment; do not count a fabricated mention.
+            if not occurrences and node_id in nodes:
+                continue
             count = max(1, occurrences)
             if node_id in nodes:
                 old = nodes[node_id]
