@@ -1,21 +1,534 @@
 [
   {
-    "title": "Arrival at Neverwinter",
-    "description": "The party reached Neverwinter.",
-    "category": "travel",
-    "start_time": 10.0,
-    "end_time": 20.0,
+    "title": "Approaches, bloodied, beaten, barely conscious.",
+    "description": "Approaches, bloodied, beaten, barely conscious",
+    "category": "other",
+    "start_time": 4450.874,
+    "end_time": 4453.437,
     "speakers": [
-      "Mevil"
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "Approaches, bloodied, beaten, barely conscious.",
+        "speaker": "Murtadha",
+        "start_time": 4450.874,
+        "end_time": 4453.437
+      }
+    ],
+    "created_automatically": true,
+    "id": "0f0d4daa-0859-40b2-a9f6-402db1370c26",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "Guys.",
+    "description": "One eye is like the lid is drooping a bit. And even though he's strong and is stride there's still a shake with his knees but he doesn't show that weakness. He keeps pushing towards you with a slight smile through his bearded face. Guys. if we could just like make our way out of here in as cool a way as possible. If our foe just picked me up like weekend at Bernice okay? Pike stands next to me and says don't worry he won't fall and she casts um cure whatever if I can kill him. Here, here things",
+    "category": "dialogue",
+    "start_time": 4453.578,
+    "end_time": 4489.258,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "One eye is like the lid is drooping a bit.",
+        "speaker": "Murtadha",
+        "start_time": 4453.578,
+        "end_time": 4456.08
+      },
+      {
+        "text": "And even though he's strong and is stride",
+        "speaker": "Murtadha",
+        "start_time": 4456.601,
+        "end_time": 4458.629952380952
+      },
+      {
+        "text": "there's still a shake with his knees",
+        "speaker": "Murtadha",
+        "start_time": 4458.629952380952,
+        "end_time": 4460.405285714285
+      },
+      {
+        "text": "but he doesn't show that weakness.",
+        "speaker": "Murtadha",
+        "start_time": 4460.405285714285,
+        "end_time": 4461.927
+      },
+      {
+        "text": "He keeps pushing towards you with a slight smile through his bearded face.",
+        "speaker": "Murtadha",
+        "start_time": 4462.448,
+        "end_time": 4465.431
+      },
+      {
+        "text": "Guys.",
+        "speaker": "Murtadha",
+        "start_time": 4465.952,
+        "end_time": 4467.133
+      },
+      {
+        "text": "if we could just like",
+        "speaker": "Murtadha",
+        "start_time": 4467.417,
+        "end_time": 4468.835888888889
+      },
+      {
+        "text": "make our way out of here in as cool a way as possible.",
+        "speaker": "Murtadha",
+        "start_time": 4468.835888888889,
+        "end_time": 4472.525
+      },
+      {
+        "text": "If our foe just picked me up like",
+        "speaker": "Murtadha",
+        "start_time": 4473.407,
+        "end_time": 4477.173
+      },
+      {
+        "text": "weekend at Bernice okay?",
+        "speaker": "Murtadha",
+        "start_time": 4477.173,
+        "end_time": 4479.056
+      },
+      {
+        "text": "Pike stands next to me and says don't worry",
+        "speaker": "Murtadha",
+        "start_time": 4479.076,
+        "end_time": 4481.600304347826
+      },
+      {
+        "text": "he won't fall and she casts um",
+        "speaker": "Murtadha",
+        "start_time": 4481.600304347826,
+        "end_time": 4483.5636521739125
+      },
+      {
+        "text": "cure whatever if I can kill him.",
+        "speaker": "Murtadha",
+        "start_time": 4483.5636521739125,
+        "end_time": 4485.527
+      },
+      {
+        "text": "Here, here things.",
+        "speaker": "Murtadha",
+        "start_time": 4487.195,
+        "end_time": 4489.258
+      }
+    ],
+    "created_automatically": true,
+    "id": "6ac7223c-ed43-41d6-b2cc-875368c26627",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "All righty, so you find a way back to the abundant terrace where you find a similar-sized tree to what you arrived in.",
+    "description": "All righty, so you find a way back to the abundant terrace where you find a similar-sized tree to what you arrived in",
+    "category": "travel",
+    "start_time": 6956.14,
+    "end_time": 6963.671,
+    "speakers": [
+      "Murtadha"
     ],
     "locations": [
-      "Neverwinter"
+      "abundant terrace"
     ],
     "temporal_entities": [],
-    "source_segments": [],
-    "created_automatically": false,
-    "id": "2897a285-ba69-4374-8343-9c365abbcb3a",
-    "created_at": "2026-08-01T20:53:40.753689+00:00",
-    "updated_at": "2026-08-01T20:53:40.753689+00:00"
+    "source_segments": [
+      {
+        "text": "All righty, so you find a way back to the abundant terrace where you find a similar-sized tree to what you arrived in.",
+        "speaker": "Murtadha",
+        "start_time": 6956.14,
+        "end_time": 6963.671
+      }
+    ],
+    "created_automatically": true,
+    "id": "35f9a52f-989f-4e49-ba50-c2a49d0432cb",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "It really has been fun to travel with six legends.",
+    "description": "It really has been fun to travel with six legends",
+    "category": "travel",
+    "start_time": 8203.851,
+    "end_time": 8209.798,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "It really has been fun to travel with six legends.",
+        "speaker": "Murtadha",
+        "start_time": 8203.851,
+        "end_time": 8209.798
+      }
+    ],
+    "created_automatically": true,
+    "id": "0476db8c-f3a0-4fab-a28c-713586718228",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "In the night we have to deal with it.",
+    "description": "Do you get a drink? We could always go back to Vasselheim and pick up on that little drinky. I don't want to go anywhere. Yeah. I don't want to go back to Vasselheim. I mean, we can drink anywhere. That Vasselheim doesn't have to be in that equation. Where else do we have to go? Well, away from here. I just want to be away from here. Pike. I have to go to the water. Sorry. I have to. before too long we have a demon who won't see you and I Dad. In the night we have to deal with it. All right. Anything else",
+    "category": "dialogue",
+    "start_time": 9116.879,
+    "end_time": 9160.905,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "Do you get a drink?",
+        "speaker": "Murtadha",
+        "start_time": 9116.879,
+        "end_time": 9117.58
+      },
+      {
+        "text": "We could always go back to Vasselheim and pick up on that little drinky.",
+        "speaker": "Murtadha",
+        "start_time": 9118.505,
+        "end_time": 9124.973
+      },
+      {
+        "text": "I don't want to go anywhere.",
+        "speaker": "Murtadha",
+        "start_time": 9125.073,
+        "end_time": 9126.234
+      },
+      {
+        "text": "Yeah.",
+        "speaker": "Murtadha",
+        "start_time": 9126.495,
+        "end_time": 9126.775
+      },
+      {
+        "text": "I don't want to go back to Vasselheim.",
+        "speaker": "Murtadha",
+        "start_time": 9127.997,
+        "end_time": 9131.861
+      },
+      {
+        "text": "I mean, we can drink anywhere.",
+        "speaker": "Murtadha",
+        "start_time": 9131.881,
+        "end_time": 9133.163
+      },
+      {
+        "text": "That Vasselheim doesn't have to be in that equation.",
+        "speaker": "Murtadha",
+        "start_time": 9133.183,
+        "end_time": 9135.786
+      },
+      {
+        "text": "Where else do we have to go?",
+        "speaker": "Murtadha",
+        "start_time": 9135.946,
+        "end_time": 9136.907
+      },
+      {
+        "text": "Well, away from here.",
+        "speaker": "Murtadha",
+        "start_time": 9138.409,
+        "end_time": 9139.431
+      },
+      {
+        "text": "I just want to be away from here.",
+        "speaker": "Murtadha",
+        "start_time": 9139.691,
+        "end_time": 9140.652
+      },
+      {
+        "text": "Pike.",
+        "speaker": "Murtadha",
+        "start_time": 9141.693,
+        "end_time": 9141.793
+      },
+      {
+        "text": "I have to go to the water.",
+        "speaker": "Murtadha",
+        "start_time": 9141.813,
+        "end_time": 9144.357
+      },
+      {
+        "text": "Sorry.",
+        "speaker": "Murtadha",
+        "start_time": 9144.517,
+        "end_time": 9144.877
+      },
+      {
+        "text": "I have to.",
+        "speaker": "Murtadha",
+        "start_time": 9145.458,
+        "end_time": 9146.419
+      },
+      {
+        "text": "before too long",
+        "speaker": "Murtadha",
+        "start_time": 9146.99,
+        "end_time": 9148.298642857142
+      },
+      {
+        "text": "we have a demon who won't see you and I Dad.",
+        "speaker": "Murtadha",
+        "start_time": 9148.298642857142,
+        "end_time": 9153.097
+      },
+      {
+        "text": "In the night",
+        "speaker": "Murtadha",
+        "start_time": 9155.299,
+        "end_time": 9155.746333333334
+      },
+      {
+        "text": "we have to deal with it.",
+        "speaker": "Murtadha",
+        "start_time": 9155.746333333334,
+        "end_time": 9156.641
+      },
+      {
+        "text": "All right.",
+        "speaker": "Murtadha",
+        "start_time": 9158.303,
+        "end_time": 9158.743
+      },
+      {
+        "text": "Anything else?",
+        "speaker": "Murtadha",
+        "start_time": 9160.385,
+        "end_time": 9160.905
+      }
+    ],
+    "created_automatically": true,
+    "id": "366c8126-9374-40f2-b7e8-f24472a7b51a",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "Excerpt: “You guys all individually find your way through the rest of the afternoon to discuss cope with and…”",
+    "description": "You guys all individually find your way through the rest of the afternoon to discuss cope with and ruminate on the separation of Scanlon",
+    "category": "rest",
+    "start_time": 9464.806,
+    "end_time": 9480.763,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "You guys all individually find your way through the rest of the afternoon to discuss cope with and ruminate on the separation of Scanlon.",
+        "speaker": "Murtadha",
+        "start_time": 9464.806,
+        "end_time": 9480.763
+      }
+    ],
+    "created_automatically": true,
+    "id": "dd752e6c-933d-47ca-bf86-d4a9e718848f",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "Should you chose to imbib with the rest of the party.",
+    "description": "Should you chose to imbib with the rest of the party",
+    "category": "rest",
+    "start_time": 9566.72,
+    "end_time": 9568.923,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "Should you chose to imbib with the rest of the party.",
+        "speaker": "Murtadha",
+        "start_time": 9566.72,
+        "end_time": 9568.923
+      }
+    ],
+    "created_automatically": true,
+    "id": "25e4972f-813b-4418-8570-f4bb52aa70af",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "Through this whole emotional circumstance he is walking through the parched wood forest that surrounds Whitestone.",
+    "description": "Through this whole emotional circumstance he is walking through the parched wood forest that surrounds Whitestone",
+    "category": "dialogue",
+    "start_time": 10169.075,
+    "end_time": 10178.434,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "Through this whole emotional circumstance",
+        "speaker": "Murtadha",
+        "start_time": 10169.075,
+        "end_time": 10171.9996875
+      },
+      {
+        "text": "he is walking through the parched wood forest that surrounds Whitestone.",
+        "speaker": "Murtadha",
+        "start_time": 10171.9996875,
+        "end_time": 10178.434
+      }
+    ],
+    "created_automatically": true,
+    "id": "72713378-97d3-436a-9779-2a114e58ce39",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "What plays the brain better than travel?",
+    "description": "What plays the brain better than travel",
+    "category": "travel",
+    "start_time": 10292.556,
+    "end_time": 10295.0,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "What plays the brain better than travel?",
+        "speaker": "Murtadha",
+        "start_time": 10292.556,
+        "end_time": 10295.0
+      }
+    ],
+    "created_automatically": true,
+    "id": "eb701e86-792e-4edc-9b75-b5aa1e0dad2b",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "Very travel and sex.",
+    "description": "Very travel and sex",
+    "category": "travel",
+    "start_time": 10304.817,
+    "end_time": 10307.5,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "Very travel and sex.",
+        "speaker": "Murtadha",
+        "start_time": 10304.817,
+        "end_time": 10307.5
+      }
+    ],
+    "created_automatically": true,
+    "id": "8971b304-53eb-4fbe-b6c5-e01be6c616e5",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "you watch the Sun Tree tear open the doorway and you step across.",
+    "description": "you watch the Sun Tree tear open the doorway and you step across",
+    "category": "travel",
+    "start_time": 10431.94125,
+    "end_time": 10435.565,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [
+      "Sun Tree"
+    ],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "you watch the Sun Tree tear open the doorway and you step across.",
+        "speaker": "Murtadha",
+        "start_time": 10431.94125,
+        "end_time": 10435.565
+      }
+    ],
+    "created_automatically": true,
+    "id": "ac9f6ab9-2158-4647-99f0-e067fb78dd12",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "And with that we embarked on our new adventure.",
+    "description": "So fucking watch it, all right? Or such dick. And with that we embarked on our new adventure",
+    "category": "dialogue",
+    "start_time": 11762.843,
+    "end_time": 11769.771,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "So fucking watch it, all right?",
+        "speaker": "Murtadha",
+        "start_time": 11762.843,
+        "end_time": 11764.184
+      },
+      {
+        "text": "Or such dick.",
+        "speaker": "Murtadha",
+        "start_time": 11765.646,
+        "end_time": 11767.008
+      },
+      {
+        "text": "And with that",
+        "speaker": "Murtadha",
+        "start_time": 11767.348,
+        "end_time": 11768.155666666667
+      },
+      {
+        "text": "we embarked on our new adventure.",
+        "speaker": "Murtadha",
+        "start_time": 11768.155666666667,
+        "end_time": 11769.771
+      }
+    ],
+    "created_automatically": true,
+    "id": "f1d8aeae-db93-4201-ae7c-4a3658ac7562",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
+  },
+  {
+    "title": "The adventures of what was it again?",
+    "description": "The adventures of what was it again",
+    "category": "discovery",
+    "start_time": 11770.792,
+    "end_time": 11774.937,
+    "speakers": [
+      "Murtadha"
+    ],
+    "locations": [],
+    "temporal_entities": [],
+    "source_segments": [
+      {
+        "text": "The adventures of what was it again?",
+        "speaker": "Murtadha",
+        "start_time": 11770.792,
+        "end_time": 11774.937
+      }
+    ],
+    "created_automatically": true,
+    "id": "8ce9bedc-b7c4-4907-865d-2d80440cfb1e",
+    "created_at": "2026-09-20T13:50:57.738523+00:00",
+    "updated_at": "2026-09-20T13:50:57.738523+00:00"
   }
 ]

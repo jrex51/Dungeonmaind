@@ -27,6 +27,9 @@ export const SERVER_CONFIG = {
     DELETE_SESSION_OR_CAMPAIGN: '/exportImport/deleteCampaignsOrSessions',
     RENAME_SESSION: '/exportImport/renameSession',
 
+    MAP: '/map',
+    MAP_GENERATE: '/map/generate',
+
     TIMELINE_EVENTS: '/timeline/events',
     TIMELINE_GENERATE: '/timeline/generate',
     TIMELINE_SEED_SAMPLE: '/timeline/dev/seed-sample',
