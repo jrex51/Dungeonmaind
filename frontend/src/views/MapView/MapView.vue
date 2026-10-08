@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { mapSample } from '@/fixtures/mapSample'
 import { useMapStore } from '@/stores/map'
+import MapGraph from './components/MapGraph.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,10 +29,6 @@ function setSampleMode(sample: boolean): void {
   if (sample) query.demo = 'sample'
   else delete query.demo
   void router.replace({ name: 'map', query })
-}
-
-function locationName(id: string): string {
-  return displayedMap.value?.nodes.find((node) => node.id === id)?.name ?? id
 }
 </script>
 
@@ -107,24 +104,7 @@ function locationName(id: string): string {
         {{ displayedMap.nodes.length }} locations · {{ displayedMap.edges.length }} relationships ·
         {{ displayedMap.source_segment_count }} source segments
       </p>
-      <p>Graph visualization will be added later. Map data is listed below.</p>
-      <h3>Locations</h3>
-      <ul v-if="displayedMap.nodes.length">
-        <li v-for="node in displayedMap.nodes" :key="node.id">
-          <strong>{{ node.name }}</strong> — {{ node.mentions }} mentions
-        </li>
-      </ul>
-      <p v-else>No locations found.</p>
-      <h3>Relationships</h3>
-      <ul v-if="displayedMap.edges.length">
-        <li v-for="edge in displayedMap.edges" :key="edge.id">
-          <strong>{{ locationName(edge.source) }}</strong>
-          {{ edge.relation.replace(/_/g, ' ') }}
-          <strong>{{ locationName(edge.target) }}</strong>
-          <p class="evidence">{{ edge.evidence }}</p>
-        </li>
-      </ul>
-      <p v-else>No geographic relationships found.</p>
+      <MapGraph :key="sampleMode ? 'sample' : 'session'" :data="displayedMap" />
     </section>
   </main>
 </template>
@@ -212,15 +192,6 @@ button:focus-visible {
 
 .error-panel {
   color: #7d1d18;
-}
-
-.data-panel li {
-  margin: 0.75rem 0;
-  overflow-wrap: anywhere;
-}
-
-.evidence {
-  margin: 0.25rem 0;
 }
 
 @media (max-width: 760px) {
