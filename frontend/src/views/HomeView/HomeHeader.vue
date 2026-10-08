@@ -436,6 +436,14 @@ async function confirmDeletion() {
 
       <button
         type="button"
+        class="map-button"
+        @click="router.push({ name: 'map' })"
+      >
+        Geographic Map
+      </button>
+
+      <button
+        type="button"
         class="new-session-button"
         :disabled="isStartingNewSession"
         @click="startNewSession"
@@ -626,6 +634,7 @@ async function confirmDeletion() {
 }
 
 .timeline-button,
+.map-button,
 .new-session-button,
 .rulebook-button,
 .config-button,
@@ -642,6 +651,7 @@ async function confirmDeletion() {
 }
 
 .timeline-button:hover,
+.map-button:hover,
 .new-session-button:hover,
 .rulebook-button:hover,
 .config-button:hover,
@@ -659,6 +669,7 @@ async function confirmDeletion() {
 }
 
 .timeline-button:disabled,
+.map-button:disabled,
 .new-session-button:disabled,
 .rulebook-button:disabled,
 .config-button:disabled,

@@ -112,6 +112,23 @@ Before opening a Pull Request:
 * Add or update automated tests where appropriate.
 * Do not commit `.env` files, passwords, API keys, tokens, or other secrets.
 
+Keep private experiments in `local-tests/`, `local/`, or `scratch/`, or use names
+such as `MapView.local.test.ts` or `test_local_audio.py`. Shared regression tests
+and sanitized test fixtures belong in Git; generated test reports do not.
+Only sanitized `.env.example`, `.env.sample`, and `.env.template` files should
+be committed. Ignore rules cannot detect secrets pasted into ordinary source files.
+
+`backend/data/` is local runtime data, except for the shared `markdowns/` and
+`rulebook/` directories and the empty `SavedSessions/.gitkeep` placeholder.
+Never commit generated timelines, databases, recordings,
+or saved sessions. Put intentional, sanitized fixtures under `backend/tests/data/`
+or `frontend/src/fixtures/` instead.
+
+Before committing, review `git status --short` and `git diff --cached`. Ignore
+rules do not affect files already tracked; use `git rm --cached -- <path>` to
+stop tracking a local file while keeping it on disk. This does not remove earlier
+copies from Git history.
+
 For AI-related changes, include realistic transcript examples where possible.
 
 When fixing a bug, add a regression test when practical so the same bug does not return later.
