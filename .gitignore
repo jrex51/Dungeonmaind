@@ -75,3 +75,5 @@ junit.xml
 recordings/
 uploads/
 models/
+
+.venv312/
