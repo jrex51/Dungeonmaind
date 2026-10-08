@@ -5,10 +5,32 @@
 # - No CUDA GPU exposed -> CPU + int8
 # Docker image uses PyTorch CUDA 12.6 and CTranslate2 4.6.3.
 
+# WhisperX requires Python 3.12 in this project.
+# ffmpeg is required.
+# Runtime device selection is automatic:
+# - NVIDIA GPU exposed by Docker -> CUDA + float16
+# - No CUDA GPU exposed -> CPU + int8
+# Docker image uses PyTorch CUDA 12.6 and CTranslate2 4.6.3.
+
 import torch
+import omegaconf
 import whisperx
 import tempfile
 import os
+
+# PyTorch 2.6+ changed torch.load() to default to weights_only=True.
+# Older Pyannote checkpoints contain Python/OmegaConf objects that
+# require the legacy loading behavior.
+_original_torch_load = torch.load
+
+
+def _torch_load_legacy(*args, **kwargs):
+    kwargs["weights_only"] = False
+    return _original_torch_load(*args, **kwargs)
+
+
+torch.load = _torch_load_legacy
+
 from pydub import AudioSegment
 from io import BytesIO
 from pydub.exceptions import CouldntDecodeError
