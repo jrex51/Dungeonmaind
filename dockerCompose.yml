@@ -29,6 +29,9 @@ services:
       - OLLAMA_URL=http://ollama:11434
     volumes:
       - ./backend:/app
+      # New volumes are seeded with the image's pre-downloaded models.
+      - backend_models:/models
+      - backend_huggingface:/root/.cache/huggingface
     env_file:
       - ./backend/.env
     command: >
@@ -48,5 +51,7 @@ services:
       - ollama_volume:/root/.ollama
 
 volumes:
+  backend_models:
+  backend_huggingface:
   ollama_volume:
   chroma_volume:
