@@ -36,6 +36,7 @@ data/*
 **/.idea
 **/.vscode
 **/.venv
+**/.venv*
 **/venv
 **/__pycache__
 **/*.py[cod]
@@ -58,3 +59,9 @@ data/*
 **/recordings
 **/uploads
 **/models
+**/node_modules
+**/.mypy_cache
+**/.ruff_cache
+**/test-results
+**/torch_cache
+**/huggingface
