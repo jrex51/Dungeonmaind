@@ -1,0 +1,36 @@
+{
+  "nodes": [
+    {"id": "waterdeep", "name": "Waterdeep", "kind": "named", "aliases": [],
+     "mentions": 2, "first_seen": 0.0, "last_seen": 12.5},
+    {"id": "blackwood-forest", "name": "Blackwood Forest", "kind": "named",
+     "aliases": ["forest"], "mentions": 2, "first_seen": 3.0, "last_seen": 41.0},
+    {"id": "river", "name": "river", "kind": "generic", "aliases": [],
+     "mentions": 2, "first_seen": 18.0, "last_seen": 52.0},
+    {"id": "old-bridge", "name": "old bridge", "kind": "generic", "aliases": [],
+     "mentions": 1, "first_seen": 18.0, "last_seen": 18.0},
+    {"id": "cave", "name": "cave", "kind": "generic", "aliases": [],
+     "mentions": 1, "first_seen": 52.0, "last_seen": 52.0},
+    {"id": "castle-ravenwatch", "name": "Castle Ravenwatch", "kind": "named",
+     "aliases": ["castle"], "mentions": 2, "first_seen": 9.0, "last_seen": 88.0},
+    {"id": "village", "name": "village", "kind": "generic", "aliases": [],
+     "mentions": 1, "first_seen": 88.0, "last_seen": 88.0}
+  ],
+  "edges": [
+    {"id": "waterdeep:travelled_to:blackwood-forest", "source": "waterdeep",
+     "target": "blackwood-forest", "relation": "travelled_to",
+     "evidence": "The party left Waterdeep at dawn and followed the road north of the city toward Blackwood Forest.",
+     "timestamp": 3.0, "confidence": null},
+    {"id": "old-bridge:near:river", "source": "old-bridge", "target": "river",
+     "relation": "near", "evidence": "they reached an old bridge beside the river",
+     "timestamp": 18.0, "confidence": null},
+    {"id": "cave:east_of:river", "source": "cave", "target": "river",
+     "relation": "east_of", "evidence": "They discovered a cave east of the river",
+     "timestamp": 52.0, "confidence": null},
+    {"id": "village:near:castle-ravenwatch", "source": "village",
+     "target": "castle-ravenwatch", "relation": "near",
+     "evidence": "they reached a village near the castle",
+     "timestamp": 88.0, "confidence": null}
+  ],
+  "source_segment_count": 9,
+  "generated_at": "2026-10-08T12:00:00+00:00"
+}
