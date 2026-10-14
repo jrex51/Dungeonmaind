@@ -1,4 +1,4 @@
-# Stable ML/audio runtime. Keep the CUDA wheel source in dockerfile.
+# Docker-only ML cache inputs. The canonical requirements.txt is unchanged.
 hf-xet==1.1.5
 whisperx==3.7.6
 torch==2.8.0

@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 # ---------------------------------------------------------
 # Python tooling
 # ---------------------------------------------------------
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
     pip install --upgrade pip wheel
 
 # ---------------------------------------------------------
@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ---------------------------------------------------------
 ARG TORCH_VARIANT=cpu
 
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
     if [ "$TORCH_VARIANT" = "cuda" ]; then \
         pip install \
             torch==2.8.0 \
@@ -38,23 +38,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         pip install \
             torch==2.8.0 \
             torchvision==0.23.0 \
-            torchaudio==2.8.0; \
+            torchaudio==2.8.0 \
+            --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
 # ---------------------------------------------------------
 # Stable ML dependencies
 # ---------------------------------------------------------
-COPY requirements-ml.txt .
+COPY docker/requirements-ml.txt ./docker/requirements-ml.txt
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements-ml.txt
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    pip install -r docker/requirements-ml.txt
 
 # ---------------------------------------------------------
 # Whisper / Faster-Whisper runtime
 #
 # CUDA runtime package is installed only for GPU builds.
 # ---------------------------------------------------------
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
     pip install --force-reinstall --no-deps ctranslate2==4.6.3 \
     && if [ "$TORCH_VARIANT" = "cuda" ]; then \
         pip install faster-whisper==1.2.1 nvidia-cudnn-cu12; \
@@ -73,29 +74,15 @@ RUN mkdir -p /models
 ENV SENTENCE_TRANSFORMERS_HOME=/models
 ENV WHISPERX_MODELS_DIR=/models/whisperx
 ENV TORCH_HOME=/models/torch_cache
+ENV HF_HOME=/root/.cache/huggingface
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
 RUN mkdir -p \
     /models/whisperx \
     /models/torch_cache/hub/checkpoints
 
-# ---------------------------------------------------------
-# Pre-download SentenceTransformer model
-# ---------------------------------------------------------
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/models')"
-
-# ---------------------------------------------------------
-# Pre-download WhisperX ASR model
-#
-# CPU is intentionally used during Docker BUILD.
-# Runtime code can still select GPU when available.
-# ---------------------------------------------------------
-RUN python -c "import whisperx; whisperx.load_model('base', language='en', device='cpu', compute_type='int8', download_root='/models/whisperx')"
-
-# ---------------------------------------------------------
-# Pre-download English alignment model
-# ---------------------------------------------------------
-RUN python -c "import torch.hub; torch.hub.download_url_to_file('https://download.pytorch.org/torchaudio/models/wav2vec2_fairseq_base_ls960_asr_ls960.pth', '/models/torch_cache/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth', progress=True)"
+# Models download at runtime into named volumes. Keeping them out of the
+# image avoids storing a second model copy in image layers.
 
 # ---------------------------------------------------------
 # Build-time version check
@@ -105,12 +92,12 @@ RUN python -c "import torch, ctranslate2; print('PyTorch:', torch.__version__); 
 # ---------------------------------------------------------
 # Application dependencies
 #
-# Changes here should leave all previous ML/model layers cached.
+# Changes here leave all previous ML installation layers cached.
 # ---------------------------------------------------------
 COPY requirements.txt .
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt -c requirements-ml.txt \
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    pip install -r requirements.txt -c docker/requirements-ml.txt \
     && pip check
 
 # ---------------------------------------------------------

@@ -243,10 +243,6 @@ For GPU acceleration you additionally need:
 
 The first build can take some time because Docker downloads dependencies and AI models.
 
-For daily development, Python source already uses a bind mount and hot reload.
-See [fast Docker development](docs/docker-development.md) for backend-only
-dependency rebuilds, cache behavior, model persistence, and validation commands.
-
 ---
 
 ## 1. Clone the Repository
