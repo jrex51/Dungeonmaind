@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12.1
 
 # ---------------------------------------------------------
@@ -13,48 +14,57 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------
-# Python dependencies
+# Python tooling
 # ---------------------------------------------------------
-COPY requirements.txt .
-
-RUN pip install --upgrade pip wheel
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Make sure the intended Whisper/Faster-Whisper runtime stays installed.
-RUN pip uninstall -y ctranslate2 || true
-RUN pip install --no-cache-dir --no-deps ctranslate2==4.6.3
-RUN pip install --no-cache-dir faster-whisper==1.2.1
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    pip install --upgrade pip wheel
 
 # ---------------------------------------------------------
-# CUDA-enabled PyTorch
+# PyTorch variant
 #
-# This image can still run on CPU when Docker does not expose a GPU.
-# In that case torch.cuda.is_available() returns False and the Python
-# code falls back to CPU.
+# Default: CPU-compatible build.
+# NVIDIA/GPU Compose can set TORCH_VARIANT=cuda.
 # ---------------------------------------------------------
-RUN pip uninstall -y torch torchaudio torchvision || true
+ARG TORCH_VARIANT=cpu
 
-RUN pip install --no-cache-dir \
-    torch==2.8.0 \
-    torchvision==0.23.0 \
-    torchaudio==2.8.0 \
-    --index-url https://download.pytorch.org/whl/cu126
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    if [ "$TORCH_VARIANT" = "cuda" ]; then \
+        pip install \
+            torch==2.8.0 \
+            torchvision==0.23.0 \
+            torchaudio==2.8.0 \
+            --index-url https://download.pytorch.org/whl/cu126; \
+    else \
+        pip install \
+            torch==2.8.0 \
+            torchvision==0.23.0 \
+            torchaudio==2.8.0 \
+            --index-url https://download.pytorch.org/whl/cpu; \
+    fi
 
 # ---------------------------------------------------------
-# cuDNN / CUDA runtime libraries
+# Stable ML dependencies
 # ---------------------------------------------------------
-RUN pip install --no-cache-dir nvidia-cudnn-cu12
+COPY docker/requirements-ml.txt ./docker/requirements-ml.txt
 
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    pip install -r docker/requirements-ml.txt
+
+# ---------------------------------------------------------
+# Whisper / Faster-Whisper runtime
+#
+# CUDA runtime package is installed only for GPU builds.
+# ---------------------------------------------------------
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    pip install --force-reinstall --no-deps ctranslate2==4.6.3 \
+    && if [ "$TORCH_VARIANT" = "cuda" ]; then \
+        pip install faster-whisper==1.2.1 nvidia-cudnn-cu12; \
+    else \
+        pip install faster-whisper==1.2.1; \
+    fi
+
+# CUDA paths are harmless on CPU builds when the directories do not exist.
 ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}
-
-# ---------------------------------------------------------
-# Copy application
-# ---------------------------------------------------------
-COPY app ./app
-
-# .env is supplied at runtime through dockerCompose.yml:
-# env_file:
-#   - ./backend/.env
 
 # ---------------------------------------------------------
 # Model cache configuration
@@ -64,34 +74,41 @@ RUN mkdir -p /models
 ENV SENTENCE_TRANSFORMERS_HOME=/models
 ENV WHISPERX_MODELS_DIR=/models/whisperx
 ENV TORCH_HOME=/models/torch_cache
+ENV HF_HOME=/root/.cache/huggingface
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
 RUN mkdir -p \
     /models/whisperx \
     /models/torch_cache/hub/checkpoints
 
-# ---------------------------------------------------------
-# Pre-download SentenceTransformer model
-# ---------------------------------------------------------
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/models')"
-
-# ---------------------------------------------------------
-# Pre-download WhisperX ASR model
-#
-# CPU is intentionally used during Docker BUILD. At runtime,
-# transcribe_audio.py automatically selects GPU when available.
-# ---------------------------------------------------------
-RUN python -c "import whisperx; whisperx.load_model('base', language='en', device='cpu', compute_type='int8', download_root='/models/whisperx')"
-
-# ---------------------------------------------------------
-# Pre-download English alignment model
-# ---------------------------------------------------------
-RUN python -c "import torch.hub; torch.hub.download_url_to_file('https://download.pytorch.org/torchaudio/models/wav2vec2_fairseq_base_ls960_asr_ls960.pth', '/models/torch_cache/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth', progress=True)"
+# Models download at runtime into named volumes. Keeping them out of the
+# image avoids storing a second model copy in image layers.
 
 # ---------------------------------------------------------
 # Build-time version check
 # ---------------------------------------------------------
-RUN python -c "import torch, ctranslate2; print('PyTorch:', torch.__version__); print('PyTorch CUDA build:', torch.version.cuda); print('cuDNN version:', torch.backends.cudnn.version()); print('CTranslate2:', ctranslate2.__version__)"
+RUN python -c "import torch, ctranslate2; print('PyTorch:', torch.__version__); print('PyTorch CUDA build:', torch.version.cuda); print('CUDA available:', torch.cuda.is_available()); print('cuDNN version:', torch.backends.cudnn.version()); print('CTranslate2:', ctranslate2.__version__)"
+
+# ---------------------------------------------------------
+# Application dependencies
+#
+# Changes here leave all previous ML installation layers cached.
+# ---------------------------------------------------------
+COPY requirements.txt .
+
+RUN --mount=type=cache,id=dungeonmaind-pip,target=/root/.cache/pip,sharing=locked \
+    pip install -r requirements.txt -c docker/requirements-ml.txt \
+    && pip check
+
+# ---------------------------------------------------------
+# Application source
+#
+# Keep source last so ordinary source changes invalidate
+# only this final layer.
+#
+# Compose bind-mounts /app during development for hot reload.
+# ---------------------------------------------------------
+COPY app ./app
 
 # ---------------------------------------------------------
 # FastAPI

@@ -3,7 +3,7 @@ services:
     build:
       context: ./frontend
       dockerfile: dockerfile
-      target: builder
+      target: development
     ports:
       - "5173:5173"
     depends_on:
@@ -23,12 +23,16 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     environment:
       - PYTHONUNBUFFERED=1
       - OLLAMA_URL=http://ollama:11434
     volumes:
       - ./backend:/app
+      # Runtime downloads persist here; models are not baked into the image.
+      - backend_models:/models
+      - backend_huggingface:/root/.cache/huggingface
     env_file:
       - ./backend/.env
     command: >
@@ -41,12 +45,21 @@ services:
     build:
       context: ./LLM
       dockerfile: dockerfile
-    container_name: ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama_volume:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ollama-ready && ollama list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      # Allow the initial model downloads to finish before declaring failure.
+      start_period: 60m
+      retries: 6
+    stop_grace_period: 30s
 
 volumes:
+  backend_models:
+  backend_huggingface:
   ollama_volume:
   chroma_volume:

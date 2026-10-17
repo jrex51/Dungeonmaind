@@ -1,26 +1,20 @@
-FROM node:latest AS builder
-
-# set working directory
+# syntax=docker/dockerfile:1
+FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,id=dungeonmaind-npm,target=/root/.npm,sharing=locked npm ci
 
-# install dependencies
-COPY package*.json ./
-RUN npm ci
+# Source is bind-mounted by Compose; skip production compilation in development.
+FROM dependencies AS development
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
-# copy source & build
+FROM dependencies AS builder
 COPY . .
 RUN npm run build
 
-FROM nginx:stable-alpine
-
-# remove default nginx content
+FROM nginx:stable-alpine AS production
 RUN rm -rf /usr/share/nginx/html/*
-
-# copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
-
-# expose port 80
 EXPOSE 80
-
-# start nginx
 CMD ["nginx", "-g", "daemon off;"]

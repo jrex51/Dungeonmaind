@@ -1,5 +1,8 @@
 services:
   backend:
+    build:
+      args:
+        TORCH_VARIANT: cuda
     gpus: all
 
   ollama:
