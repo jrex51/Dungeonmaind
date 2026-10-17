@@ -1,7 +1,10 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
+import asyncio
+import math
 from app.base_models.process_audio_data_base_models import UploadAudioFileToDBResponse, TranscriptionResponse
-from app.functions.process_audio_data.transcribe_audio import transcribe_audio
+from app.functions.process_audio_data.transcribe_audio import transcribe_audio, decode_audio_bytes
 from app.functions.process_audio_data.extract_audio_metadata import extract_audio_metadata
+from app.functions.geographic_mapping.session_integration import clear_views, get_lifecycle
 
 from app.functions.embedding.embedding_model import (
     delete_transcription_embeddings,
@@ -61,6 +64,9 @@ async def transcribe_audio_file(
             detail="The uploaded file must be an audio file.",
         )
 
+    if not math.isfinite(time_offset) or time_offset < 0:
+        raise HTTPException(400, "Time offset must be a finite, nonnegative number.")
+
     try:
         audio_bytes = await audio.read()
 
@@ -70,14 +76,25 @@ async def transcribe_audio_file(
                 detail="The uploaded audio file is empty.",
             )
 
-        if replace_existing:
-            delete_transcription_embeddings()
+        try:
+            decoded_audio = await asyncio.to_thread(
+                decode_audio_bytes, audio_bytes, content_type=audio.content_type,
+            )
+        except Exception as error:
+            raise HTTPException(400, "The uploaded audio could not be decoded.") from error
 
-        transcription = await transcribe_audio(
-            audio_bytes,
-            content_type=audio.content_type,
-            time_offset=time_offset,
-        )
+        async def transcribe_and_invalidate():
+            # Append also changes the evidence used by both generated views.
+            # Clear before calling code that can partially modify ChromaDB.
+            await asyncio.to_thread(clear_views)
+            if replace_existing:
+                await asyncio.to_thread(delete_transcription_embeddings)
+            return await transcribe_audio(
+                audio_bytes, content_type=audio.content_type, time_offset=time_offset,
+                decoded_audio=decoded_audio,
+            )
+
+        transcription = await get_lifecycle().run(transcribe_and_invalidate)
 
         return TranscriptionResponse(
             output=transcription,

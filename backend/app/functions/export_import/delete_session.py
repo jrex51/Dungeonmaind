@@ -3,13 +3,14 @@ import json
 import os
 import shutil
 from app.core.config import settings
+from app.functions.export_import.session_paths import saved_deletion_path
 
 
 BASE_DIR = os.path.join(settings.backend_root_path, "data", "SavedSessions")
 
 
 def delete_folder(folder: str) -> None:
-    folder_path = os.path.join(BASE_DIR, folder)
+    folder_path = saved_deletion_path(BASE_DIR, folder)
 
     if not os.path.exists(folder_path):
         raise HTTPException(

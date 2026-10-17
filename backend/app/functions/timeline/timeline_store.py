@@ -2,7 +2,10 @@ import json
 import os
 from datetime import datetime, timezone
 from threading import Lock
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from uuid import uuid4
+from pydantic import TypeAdapter
 
 from app.base_models.timeline_models import (
     TimelineEvent,
@@ -21,8 +24,8 @@ class TimelineStore:
     be replaced by a database without changing the API models.
     """
 
-    def __init__(self) -> None:
-        self.file_path = os.path.join(
+    def __init__(self, file_path: str | Path | None = None) -> None:
+        self.file_path = str(file_path) if file_path is not None else os.path.join(
             settings.backend_root_path,
             "data",
             "timeline_events.json",
@@ -65,24 +68,42 @@ class TimelineStore:
         self,
         events: list[TimelineEvent],
     ) -> None:
-        temporary_path = f"{self.file_path}.tmp"
+        temporary_path = None
+        try:
+            with NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=Path(self.file_path).parent,
+                prefix="timeline-", suffix=".tmp", delete=False,
+            ) as file:
+                temporary_path = Path(file.name)
+                json.dump([event.model_dump(mode="json") for event in events],
+                          file, indent=2, ensure_ascii=False)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary_path, self.file_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
-        with open(
-            temporary_path,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                [
-                    event.model_dump(mode="json")
-                    for event in events
-                ],
-                file,
-                indent=2,
-                ensure_ascii=False,
-            )
+    @staticmethod
+    def load_snapshot(file_path: str | Path) -> list[TimelineEvent]:
+        """Strictly validate saved data without constructing/writing a store."""
+        path = Path(file_path)
+        if not path.exists():
+            return []  # Legacy sessions have no timeline snapshot.
+        return TypeAdapter(list[TimelineEvent]).validate_json(path.read_text(encoding="utf-8"))
 
-        os.replace(temporary_path, self.file_path)
+    def snapshot(self) -> list[TimelineEvent]:
+        with self._lock:
+            return self.load_snapshot(self.file_path)
+
+    def replace_snapshot(self, events: list[TimelineEvent]) -> list[TimelineEvent]:
+        """Restore a validated snapshot, preserving IDs and both timestamps."""
+        validated = TypeAdapter(list[TimelineEvent]).validate_python(
+            [event.model_dump(mode="json") for event in events]
+        )
+        with self._lock:
+            self._write_events(validated)
+        return validated
 
     def list_events(self) -> list[TimelineEvent]:
         with self._lock:
