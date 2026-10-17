@@ -26,9 +26,11 @@ from app.api.routers import (
     rulebook_markdown,
     entity_extraction,
     timeline,
+    map,
 )
 from contextlib import asynccontextmanager
 from app.core.bus import bus
+from app.functions.geographic_mapping.session_integration import invalidate_imported_views_on_startup
 
 # List of available api endpoints
 all_routers = [
@@ -43,6 +45,7 @@ all_routers = [
     (export_import_session.router, "/exportImport", ["exportImport"]),
     (entity_extraction.router, "/entities", ["entities"]),
     (timeline.router, "/timeline", ["timeline"]),
+    (map.router, "/map", ["map"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen
@@ -59,6 +62,9 @@ LAN_REGEX = (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
+    # Imported DB paths are process-local; do not expose views after their
+    # temporary source is removed by the existing cleanup below.
+    await asyncio.to_thread(invalidate_imported_views_on_startup)
     logging.info("Server starting: deleting old ChromaDB and re-embedding rulebook...")
     # Check if this deletes everything. Should just delete the tmp folders and for the main db just delete transcriptions
     delete_chromadb(True, False)
