@@ -4,16 +4,15 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List
-from uuid import UUID
+from uuid import UUID, uuid4
 from app.domain.store import store
 from app.domain.models import Group, Role, Player, now_utc, PlayerStatus
 from app.core.config import settings
 from datetime import datetime
 
-def load_groups_from_json(file_path: str) -> Player:
+def read_group_from_json(file_path: str) -> Group:
     """
-    Loads group and player data from a JSON file into the store.
-    If the file does not exist, does nothing.
+    Validate saved group/player data without changing the active group.
     """
 
     path = Path(file_path)
@@ -54,36 +53,44 @@ def load_groups_from_json(file_path: str) -> Player:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Input file at {file_path} has invalid max_size "
                                                                     f"value for group members")
 
-        # Update global store
-        store.group = group
-
-        print(f"Loaded group data from {file_path} with {len(players)} players")
+        return group
 
     except Exception as e:
         print(f"Failed to load group data: {e}")
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Failed to load group data: {e}")
 
+def load_groups_from_json(file_path: str, group: Group | None = None) -> Player:
+    store.group = group if group is not None else read_group_from_json(file_path)
     leader_id = store.group.leader_id()
     leader = store.group.get_player(leader_id) if leader_id else None
 
     return leader
 
 
-def load_settings_from_json(file_path: str) -> None:
-    """
-    Reads settings properties from a JSON file and updates the settings-object.
-    """
+def read_settings_from_json(file_path: str) -> dict:
+    """Validate the exported settings before changing any active state."""
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Saved settings must be a JSON object")
+    fields = type(settings).model_fields
+    known = {key: value for key, value in data.items() if key in fields}
+    # Exports use field names; Settings accepts environment aliases.
+    validated = type(settings)(
+        _env_file=None,
+        **{fields[key].validation_alias or fields[key].alias or key: value
+           for key, value in known.items()},
+    )
+    # Storage roots belong to this installation, not the machine that exported
+    # the session. Chroma's active path is restored by replace_chroma_db below.
+    return {key: getattr(validated, key) for key in known if key != "backend_root_path"}
 
-    try:
-        for key, value in data.items():
-            if hasattr(settings, key):
-                setattr(settings, key, value)
-            else:
-                print(f"Warning: settings has no attribute '{key}', skipping.")
-    except KeyError:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Input file at {file_path} has invalid settings")
+
+def load_settings_from_json(file_path: str, values: dict | None = None) -> None:
+    if values is None:
+        values = read_settings_from_json(file_path)
+    for key, value in values.items():
+        setattr(settings, key, value)
 
 
 def replace_chroma_db(saved_sessions_path: str, data_path: str) -> None:
@@ -97,7 +104,7 @@ def replace_chroma_db(saved_sessions_path: str, data_path: str) -> None:
     """
     session_db_path = os.path.join(saved_sessions_path, "chroma_db")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target_db_path = os.path.join(data_path, "chroma_db", "tmp"+timestamp)
+    target_db_path = os.path.join(data_path, "chroma_db", "tmp" + timestamp + "_" + uuid4().hex)
 
     if not os.path.isdir(session_db_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND,

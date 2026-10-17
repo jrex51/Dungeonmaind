@@ -17,6 +17,9 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.base_models.timeline_models import TimelineEvent, TimelineEventCreate
 from app.core.config import settings
+from app.base_models.map_models import MapData
+from app.functions.geographic_mapping.map_store import MapStore
+from app.functions.geographic_mapping.session_integration import SessionLifecycle
 
 
 class TimelineAPITests(unittest.IsolatedAsyncioTestCase):
@@ -46,6 +49,11 @@ class TimelineAPITests(unittest.IsolatedAsyncioTestCase):
             'app.functions.timeline.timeline_store': store_module,
         }):
             spec.loader.exec_module(self.routes)
+
+        self.map_store = MapStore(Path(temporary.name) / 'data/geographic_map.json')
+        self.old_map = self.map_store.replace_map(MapData(source_segment_count=5))
+        self.enterContext(patch.object(self.routes, 'get_map_store', return_value=self.map_store))
+        self.enterContext(patch.object(self.routes, 'get_lifecycle', return_value=SessionLifecycle()))
 
         app = FastAPI()
         app.include_router(self.routes.router, prefix='/timeline')
@@ -82,6 +90,7 @@ class TimelineAPITests(unittest.IsolatedAsyncioTestCase):
             replace.assert_not_called()
         self.generate.assert_not_called()
         self.assertEqual(Path(self.store.file_path).read_bytes(), before)
+        self.assertEqual(self.map_store.get_map(), self.old_map)
 
     async def test_post_generates_once_replaces_and_returns_stored_events(self):
         with patch.object(self.store, 'replace_events', wraps=self.store.replace_events) as replace:
@@ -89,6 +98,7 @@ class TimelineAPITests(unittest.IsolatedAsyncioTestCase):
             replace.assert_called_once()
         self.generate.assert_called_once_with()
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.map_store.get_map(), MapData())
         body = response.json()
         self.assertEqual(body['generated_count'], 1)
         self.assertEqual(body['source_segment_count'], 12)
@@ -112,12 +122,14 @@ class TimelineAPITests(unittest.IsolatedAsyncioTestCase):
             'events': [], 'generated_count': 0, 'source_segment_count': 0,
         })
         self.assertEqual(self.store.list_events(), [])
+        self.assertEqual(self.map_store.get_map(), MapData())
 
     async def test_generation_failure_preserves_stored_events(self):
         self.generate.side_effect = RuntimeError('Generation failed')
         response = await self.client.post('/timeline/generate')
         self.assertEqual(response.status_code, 500)
         self.assertEqual(self.store.list_events(), self.old_events)
+        self.assertEqual(self.map_store.get_map(), self.old_map)
 
     async def test_generation_runs_off_event_loop_and_get_remains_responsive(self):
         started, release = Event(), Event()
