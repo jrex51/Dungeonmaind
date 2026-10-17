@@ -682,12 +682,8 @@ def _group_segments(
 
         meaningful_category_change = (
             category_changed
-            and (
-                segment_category
-                in MEANINGFUL_EVENT_CATEGORIES
-                or current_category
-                in MEANINGFUL_EVENT_CATEGORIES
-            )
+            and segment_category in MEANINGFUL_EVENT_CATEGORIES
+            and current_category in MEANINGFUL_EVENT_CATEGORIES
         )
 
         should_split = (
@@ -820,8 +816,6 @@ def _keyword_category_scores(
     }
 
 
-
-
 def _detect_category(
     text: str,
 ) -> TimelineCategory:
@@ -885,8 +879,6 @@ def _detect_segment_category(
     """
 
     return _detect_category(text)
-
-
 
 
 def _word_count(text: str) -> int:
@@ -1138,10 +1130,6 @@ def _expand_documents_into_segments(
         )
 
     return expanded_segments
-
-
-
-
 
 
 def _clean_location_value(
@@ -1482,16 +1470,22 @@ def _build_title(
 
 def _is_meaningful_group(
     group: list[TimelineSourceSegment],
+    *,
+    context_aware: bool = False,
 ) -> bool:
-    """Apply local structural, semantic and item-action filtering only."""
+    """Filter locally; allow ambiguous fragments only for grounded AI review."""
     combined_text = _normalize_text(
         " ".join(
             segment.text
             for segment in group
+            if segment.text.strip()
         )
     )
 
-    if len(combined_text) < MIN_EVENT_TEXT_LENGTH:
+    if not combined_text or _is_out_of_character(combined_text):
+        return False
+
+    if len(combined_text) < (8 if context_aware else MIN_EVENT_TEXT_LENGTH):
         return False
 
     duration = max(
@@ -1510,17 +1504,19 @@ def _is_meaningful_group(
         combined_text,
     )
 
-    if len(words) < 4:
+    if len(words) < (2 if context_aware else 4):
         return False
 
     semantic = semantic_event_decision(combined_text)
 
-    # Obvious chatter can be rejected before an expensive LLM call.
     if (
-        semantic.non_event_score >= 0.64
-        and semantic.margin < -0.08
+        semantic.non_event_score >= (0.80 if context_aware else 0.64)
+        and semantic.margin < (-0.20 if context_aware else -0.08)
     ):
         return False
+
+    if context_aware:
+        return True
 
     if not semantic.keep:
         return False
@@ -1720,71 +1716,50 @@ def _merge_similar_events(
 
 def generate_timeline_from_embeddings(
 ) -> tuple[list[TimelineEvent], int]:
-    """
-    Generate a chronological timeline from transcription documents.
+    """Generate grounded events using chronological transcript context.
 
-    Processing stages:
-    1. Read every transcription document from ChromaDB.
-    2. Convert documents into timestamped segments.
-    3. Group related nearby segments.
-    4. Reject jokes, chatter, OOC talk and non-events semantically.
-    5. Use the local LLM to validate importance and automatically extract
-       exact location/time entities when available.
-    6. Fall back to semantic classification/heuristics if Ollama is offline.
-    7. Merge similar adjacent events.
+    AI reviews bounded batches once for occurrence, category and evidence.
+    Context resolves references; evidence and map entities must come from the
+    current group. Offline candidates retain the conservative local checks.
     """
-
     documents = get_all_transcription_documents()
-
-    segments = _expand_documents_into_segments(
-        documents
-    )
-
-    segments.sort(
-        key=lambda segment: (
-            segment.start_time,
-            segment.end_time,
-        )
-    )
-
+    segments = _expand_documents_into_segments(documents)
+    segments.sort(key=lambda segment: (segment.start_time, segment.end_time))
     groups = _group_segments(segments)
-
-    candidate_groups = [
-        group
+    group_texts = [
+        _normalize_text(" ".join(s.text for s in group if s.text.strip()))
         for group in groups
-        if group and _is_meaningful_group(group)
     ]
-
-    candidate_texts = [
-        _normalize_text(
-            " ".join(s.text for s in group if s.text.strip())
+    candidate_indices = [
+        index for index, group in enumerate(groups)
+        if group and _is_meaningful_group(group, context_aware=True)
+    ]
+    candidate_groups = [groups[index] for index in candidate_indices]
+    candidate_contexts = [
+        (
+            group_texts[index - 1] if index > 0 else "",
+            group_texts[index],
+            group_texts[index + 1] if index + 1 < len(groups) else "",
         )
-        for group in candidate_groups
+        for index in candidate_indices
     ]
     logger.info("Timeline: %d segments, %d groups, %d candidates",
                 len(segments), len(groups), len(candidate_groups))
     analyses = analyze_timeline_events([
-        (text, " | ".join(_unique_strings([
-            s.speaker for s in group if s.speaker.casefold() != "unknown"
+        (group_texts[index], " | ".join(_unique_strings([
+            s.speaker for s in groups[index] if s.speaker.casefold() != "unknown"
         ])))
-        for text, group in zip(candidate_texts, candidate_groups)
-    ])
-    events = [
-        _create_event_from_group(group, ai_analysis=analysis)
-        for group, analysis in zip(candidate_groups, analyses)
-    ]
+        for index in candidate_indices
+    ], contexts=candidate_contexts)
 
-    events = [event for event in events if event is not None]
-
-    events.sort(
-        key=lambda event: (
-            event.start_time,
-            event.end_time,
-        )
-    )
-
-    merged_events = _merge_similar_events(
-        events
-    )
-
-    return merged_events, len(segments)
+    events = []
+    for group, analysis in zip(candidate_groups, analyses):
+        # An outage/malformed response cannot promote a context-only fragment
+        # through the more permissive AI prefilter into an unvalidated event.
+        if analysis is None and not _is_meaningful_group(group):
+            continue
+        event = _create_event_from_group(group, ai_analysis=analysis)
+        if event is not None:
+            events.append(event)
+    events.sort(key=lambda event: (event.start_time, event.end_time))
+    return _merge_similar_events(events), len(segments)

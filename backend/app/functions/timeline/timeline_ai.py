@@ -277,17 +277,26 @@ def _validate_analysis(cleaned: str, data: dict) -> TimelineAIAnalysis:
 logger = logging.getLogger(__name__)
 TIMELINE_AI_BATCH_SIZE = 8
 TIMELINE_AI_BATCH_CHARS = 12000
+TIMELINE_AI_CONTEXT_CHARS = 1000
 
 
 def analyze_timeline_events(
     candidates: list[tuple[str, str]],
+    *,
+    contexts: list[tuple[str, str, str]] | None = None,
 ) -> list[TimelineAIAnalysis | None]:
     """Validate bounded batches against each candidate's own source.
 
     None selects local fallback. Missing/duplicate IDs never shift results.
     Transport failures stop AI work for this run. Oversized candidates use
     local fallback rather than truncating evidence.
+
+    Previous/following groups help resolve the current transcript's meaning.
+    They never supply evidence or entities to its validator. Context is bounded
+    and included in the batch size limit; the current source stays complete.
     """
+    if contexts is not None and len(contexts) != len(candidates):
+        raise ValueError("Each candidate must have exactly one context tuple")
     results: list[TimelineAIAnalysis | None] = [None] * len(candidates)
     if not TIMELINE_AI_ENABLED:
         return results
@@ -297,6 +306,10 @@ def analyze_timeline_events(
     for index, (text, speakers) in enumerate(candidates):
         cleaned = " ".join(text.split()).strip()
         item = dict(id=index, transcript=cleaned, speakers=speakers)
+        if contexts is not None:
+            previous, _, following = contexts[index]
+            item["previous"] = " ".join(previous.split())[-TIMELINE_AI_CONTEXT_CHARS:]
+            item["following"] = " ".join(following.split())[:TIMELINE_AI_CONTEXT_CHARS]
         item_size = len(json.dumps(item))
         if not cleaned or item_size > TIMELINE_AI_BATCH_CHARS:
             continue
@@ -320,7 +333,12 @@ def analyze_timeline_events(
                         {"role": "system", "content": SYSTEM_PROMPT +
                          '\nAnalyze each candidate independently. Return {"results": [...]} '
                          'with one object using the schema above plus the exact integer id '
-                         'for each candidate. Never borrow evidence or entities from another candidate.'},
+                         'for each candidate. The transcript field is the CURRENT candidate. '
+                         'Use PREVIOUS (previous field) and FOLLOWING (following field) context '
+                         'only to resolve references and understand the current event. '
+                         'Do not keep a candidate just because a nearby event occurs. '
+                         'Evidence, locations and temporal_entities must come exclusively from '
+                         'the current transcript, never from context or another candidate.'},
                         {"role": "user", "content": json.dumps(batch)},
                     ],
                     "stream": False, "format": "json",
