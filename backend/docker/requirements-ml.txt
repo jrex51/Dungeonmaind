@@ -1,7 +1,7 @@
 # Docker-only ML cache inputs. The canonical requirements.txt is unchanged.
 hf-xet==1.1.5
 whisperx==3.7.6
-torch==2.8.0
+torch==2.13.0
 torchaudio==2.8.0
 ctranslate2==4.6.3
 sentence-transformers==5.6.0
