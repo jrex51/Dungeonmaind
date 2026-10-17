@@ -1,10 +1,9 @@
 FROM ollama/ollama
 
-COPY ./run-ollama.sh /tmp/run-ollama.sh
-
-WORKDIR /tmp
-
-RUN chmod +x run-ollama.sh \
-    && ./run-ollama.sh
-
+# Download models at runtime into the persistent Ollama volume, not the image.
+COPY run-ollama.sh /usr/local/bin/start-ollama.sh
+# ZIP checkouts on Windows can have CRLF line endings.
+RUN sed -i 's/\r$//' /usr/local/bin/start-ollama.sh
 EXPOSE 11434
+ENTRYPOINT ["/bin/bash", "/usr/local/bin/start-ollama.sh"]
+CMD []

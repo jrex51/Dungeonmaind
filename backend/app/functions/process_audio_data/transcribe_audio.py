@@ -162,6 +162,7 @@ async def transcribe_audio(
     content_type: str,
     batch_size: int = 4,
     time_offset: float = 0.0,
+    decoded_audio: AudioSegment | None = None,
 ):
     print("==========================================")
     print("STARTING AUDIO TRANSCRIPTION")
@@ -178,7 +179,7 @@ async def transcribe_audio(
     # 1. Decode ONLY the actual session audio
     # -----------------------------------------------------
 
-    session_audio = decode_audio_bytes(
+    session_audio = decoded_audio if decoded_audio is not None else decode_audio_bytes(
         audio_bytes,
         content_type=content_type,
     )
