@@ -29,8 +29,12 @@ from app.functions.timeline.event_detector import semantic_event_decision
 from app.functions.timeline.timeline_ai import (
     TimelineAIAnalysis,
     analyze_timeline_events,
+    explicit_event_evidence,
     grounded_event_title,
     item_event_sentences,
+    transcript_sentences,
+    travel_event_sentences,
+    travel_location_evidence,
 )
 
 
@@ -1444,16 +1448,17 @@ def _shorten_text(
     return f"{shortened}…"
 
 
-def _build_title(
+def _select_event_evidence(
     category: TimelineCategory,
     combined_text: str,
-    locations: list[str],
 ) -> str | None:
     sentences = (
         item_event_sentences(combined_text)
         if category == TimelineCategory.item
-        else re.split(r"(?<=[.!?])\s+", combined_text)
+        else transcript_sentences(combined_text)
     )
+    if category == TimelineCategory.travel:
+        sentences = travel_event_sentences(combined_text)
     if not sentences:
         return None
     # Rank source sentences using the existing category vocabulary. If it has
@@ -1464,8 +1469,18 @@ def _build_title(
     if len(sentences) > 1 and not any(scores):
         scores = [_semantic_category_scores(sentence).get(category, 0.0)
                   for sentence in sentences]
-    evidence = sentences[max(range(len(sentences)), key=lambda index: scores[index])]
-    return grounded_event_title(combined_text, category.value, evidence)
+    return sentences[max(range(len(sentences)), key=lambda index: scores[index])]
+
+
+def _build_title(
+    category: TimelineCategory,
+    combined_text: str,
+    *,
+    evidence: str | None = None,
+) -> str | None:
+    if evidence is None:
+        evidence = _select_event_evidence(category, combined_text)
+    return grounded_event_title(combined_text, category.value, evidence) if evidence else None
 
 
 def _is_meaningful_group(
@@ -1485,9 +1500,6 @@ def _is_meaningful_group(
     if not combined_text or _is_out_of_character(combined_text):
         return False
 
-    if len(combined_text) < (8 if context_aware else MIN_EVENT_TEXT_LENGTH):
-        return False
-
     duration = max(
         segment.end_time
         for segment in group
@@ -1497,6 +1509,12 @@ def _is_meaningful_group(
     )
 
     if duration < MIN_EVENT_DURATION_SECONDS:
+        return False
+
+    if explicit_event_evidence(combined_text) is not None:
+        return True
+
+    if len(combined_text) < (8 if context_aware else MIN_EVENT_TEXT_LENGTH):
         return False
 
     words = re.findall(
@@ -1520,10 +1538,12 @@ def _is_meaningful_group(
 
     if not semantic.keep:
         return False
-    # Only item events need the additional offline action-evidence check.
-    if _detect_category(combined_text) == TimelineCategory.item:
+    category = _detect_category(combined_text)
+    if category == TimelineCategory.item:
         return bool(item_event_sentences(combined_text))
-    return semantic.keep
+    if category == TimelineCategory.travel:
+        return _select_event_evidence(category, combined_text) is not None
+    return True
 
 
 def _create_event_from_group(
@@ -1555,19 +1575,28 @@ def _create_event_from_group(
         except ValueError:
             category = _detect_category(combined_text)
 
-        # When AI analysis succeeds, trust only exact transcript spans that
-        # survived validation in timeline_ai.py. This avoids the older
-        # capital-letter heuristic mistaking character names for locations.
+        evidence = ai_analysis.evidence
+        title = ai_analysis.title
         temporal_entities = list(ai_analysis.temporal_entities)
         locations = list(ai_analysis.locations)
     else:
-        category = _detect_category(combined_text)
-        temporal_entities, locations = (
-            _extract_event_entities(
-                combined_text,
-                speakers,
-            )
-        )
+        explicit = explicit_event_evidence(combined_text)
+        if explicit is None:
+            category = _detect_category(combined_text)
+            evidence = _select_event_evidence(category, combined_text)
+        else:
+            category = TimelineCategory(explicit[0])
+            evidence = explicit[1]
+        title = _build_title(category, combined_text, evidence=evidence) if evidence else None
+        temporal_entities, locations = [], []
+
+    if title is None:
+        return None
+    if evidence and not locations:
+        location_text = travel_location_evidence(evidence) if category == TimelineCategory.travel else evidence
+        local_times, locations = _extract_event_entities(location_text, speakers)
+        if ai_analysis is None:
+            temporal_entities = local_times
 
     start_time = min(
         segment.start_time
@@ -1578,18 +1607,6 @@ def _create_event_from_group(
         segment.end_time
         for segment in group
     )
-
-    if ai_analysis is not None and ai_analysis.title:
-        title = ai_analysis.title
-    else:
-        title = _build_title(
-            category,
-            combined_text,
-            locations,
-        )
-
-    if title is None:
-        return None
 
     description = _shorten_text(
         combined_text,
@@ -1718,9 +1735,8 @@ def generate_timeline_from_embeddings(
 ) -> tuple[list[TimelineEvent], int]:
     """Generate grounded events using chronological transcript context.
 
-    AI reviews bounded batches once for occurrence, category and evidence.
-    Context resolves references; evidence and map entities must come from the
-    current group. Offline candidates retain the conservative local checks.
+    Clear, grounded actions are handled locally. AI reviews the remaining
+    candidates in bounded batches with neighboring groups for context.
     """
     documents = get_all_transcription_documents()
     segments = _expand_documents_into_segments(documents)
@@ -1734,6 +1750,8 @@ def generate_timeline_from_embeddings(
         index for index, group in enumerate(groups)
         if group and _is_meaningful_group(group, context_aware=True)
     ]
+    local_indices = {index for index in candidate_indices if explicit_event_evidence(group_texts[index])}
+    candidate_indices = [index for index in candidate_indices if index not in local_indices]
     candidate_groups = [groups[index] for index in candidate_indices]
     candidate_contexts = [
         (
@@ -1743,8 +1761,8 @@ def generate_timeline_from_embeddings(
         )
         for index in candidate_indices
     ]
-    logger.info("Timeline: %d segments, %d groups, %d candidates",
-                len(segments), len(groups), len(candidate_groups))
+    logger.info("Timeline: %d segments, %d groups, %d local events, %d AI candidates",
+                len(segments), len(groups), len(local_indices), len(candidate_groups))
     analyses = analyze_timeline_events([
         (group_texts[index], " | ".join(_unique_strings([
             s.speaker for s in groups[index] if s.speaker.casefold() != "unknown"
@@ -1752,7 +1770,10 @@ def generate_timeline_from_embeddings(
         for index in candidate_indices
     ], contexts=candidate_contexts)
 
-    events = []
+    events = [
+        event for index in sorted(local_indices)
+        if (event := _create_event_from_group(groups[index])) is not None
+    ]
     for group, analysis in zip(candidate_groups, analyses):
         # An outage/malformed response cannot promote a context-only fragment
         # through the more permissive AI prefilter into an unvalidated event.

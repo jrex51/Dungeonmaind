@@ -78,10 +78,11 @@ class TimelineGroundingTests(unittest.TestCase):
 
     def test_proposal_and_negation_are_not_completed_actions(self):
         for text in ['I am going to take the silver key.', 'Aria would take the silver key.',
+                     'Aria can pick up the silver key.',
                      'Aria did not receive the silver key.', 'If Aria received the key, we could enter.']:
             with self.subTest(text=text):
                 self.assertFalse(self.analyze(text, keep=True, occurred=True, category="item").keep)
-                self.assertIsNone(self.generator._build_title(TimelineCategory.item, text, []))
+                self.assertIsNone(self.generator._build_title(TimelineCategory.item, text))
         self.assertTrue(self.analyze('Aria took the silver key.').keep)
 
     def test_great_weapon_master_is_not_item_acquisition(self):
@@ -89,7 +90,34 @@ class TimelineGroundingTests(unittest.TestCase):
                      'I take all three attacks at Great Weapon Master at him.']:
             with self.subTest(text=text):
                 self.assertFalse(self.analyze(text, keep=True, occurred=True, category="item").keep)
-                self.assertIsNone(self.generator._build_title(TimelineCategory.item, text, []))
+                self.assertIsNone(self.generator._build_title(TimelineCategory.item, text))
+
+    def test_travel_rejects_plans_and_negations_even_when_ai_confirms(self):
+        for sentence in (
+            'We could travel to Emberkeep tomorrow, but not today.',
+            "We didn't go to Emberkeep.",
+            'We need to reach Stonebridge.',
+            'We must go to Stonebridge.',
+            'We travel to Emberkeep tomorrow.',
+            'We planned to leave River Watch and eventually arrive in Stonebridge.',
+            'If we reach Stonebridge, the guards will see us.',
+            'It leads into a cellar directly below Stonebridge.',
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertFalse(self.analyze(sentence, category='travel').keep)
+                self.assertIsNone(self.generator._build_title(TimelineCategory.travel, sentence))
+
+    def test_discovery_question_does_not_establish_an_outcome(self):
+        result = self.analyze('Do I find any treasure?', category='discovery')
+        self.assertFalse(result.keep)
+
+    def test_travel_location_excludes_negated_destination_in_same_sentence(self):
+        text = "We didn't go to Emberkeep, but we arrived at Stonebridge."
+        result = self.analyze(text, category='travel', locations=['Emberkeep', 'Stonebridge', 'bridge'])
+        self.assertTrue(result.keep)
+        self.assertEqual(result.locations, ('Stonebridge',))
+        local = self.generator._create_event_from_group(self.group(text))
+        self.assertEqual(local.locations, ['Stonebridge'])
 
     def test_actual_item_actions_pass_shared_ai_and_offline_validation(self):
         for text in [
@@ -102,7 +130,7 @@ class TimelineGroundingTests(unittest.TestCase):
                 result = self.analyze(text, keep=True, occurred=True, category='item')
                 self.assertTrue(result.keep)
                 self.assertEqual(result.title, text)
-                self.assertEqual(self.generator._build_title(TimelineCategory.item, text, []), text)
+                self.assertEqual(self.generator._build_title(TimelineCategory.item, text), text)
 
     def test_rules_actions_are_not_item_events_despite_ai_confirmation(self):
         for text in [
@@ -114,7 +142,7 @@ class TimelineGroundingTests(unittest.TestCase):
         ]:
             with self.subTest(text=text):
                 self.assertFalse(self.analyze(text, keep=True, occurred=True, category='item').keep)
-                self.assertIsNone(self.generator._build_title(TimelineCategory.item, text, []))
+                self.assertIsNone(self.generator._build_title(TimelineCategory.item, text))
 
     def test_ai_item_validation_checks_selected_evidence_not_other_sentences(self):
         mention = 'The guard mentioned the silver key.'
@@ -156,7 +184,7 @@ class TimelineGroundingTests(unittest.TestCase):
                                (TimelineCategory.quest, 'The party completed the quest.'),
                                (TimelineCategory.travel, 'The party arrived in Waterdeep.')]:
             with self.subTest(category=category):
-                self.assertEqual(self.generator._build_title(category, text, ['Invented']), text)
+                self.assertEqual(self.generator._build_title(category, text), text)
 
     def test_overlong_evidence_keeps_event_and_full_evidence(self):
         text = ('After walking along the winding road through the forest for several days '
@@ -168,7 +196,7 @@ class TimelineGroundingTests(unittest.TestCase):
         self.assertTrue(result.title.startswith('Excerpt: “'))
         self.assertTrue(result.title.endswith('…”'))
         self.assertIn(result.title[len('Excerpt: “'):-2], text)
-        self.assertEqual(self.generator._build_title(TimelineCategory.travel, text, []),
+        self.assertEqual(self.generator._build_title(TimelineCategory.travel, text),
                          result.title)
         event = self.generator._create_event_from_group(self.group(text), ai_analysis=result)
         self.assertEqual(event.title, result.title)
@@ -213,23 +241,23 @@ class TimelineGroundingTests(unittest.TestCase):
         ]:
             with self.subTest(category=category):
                 text = 'Okay everyone, here we go. ' + sentence
-                self.assertEqual(self.generator._build_title(category, text, []), sentence)
+                self.assertEqual(self.generator._build_title(category, text), sentence)
 
     def test_fallback_reuses_semantic_ranking_without_keyword_matches(self):
         text = 'Okay everyone, here we go. We made it to Waterdeep.'
         with patch.object(self.generator, '_semantic_category_scores', side_effect=[
             {TimelineCategory.travel: 0.1}, {TimelineCategory.travel: 0.8},
         ]):
-            self.assertEqual(self.generator._build_title(TimelineCategory.travel, text, []),
+            self.assertEqual(self.generator._build_title(TimelineCategory.travel, text),
                              'We made it to Waterdeep.')
 
     def test_offline_item_guard_does_not_discard_unrelated_negation(self):
         text = 'Aria could not open the chest, but the guard gave her the key.'
-        self.assertEqual(self.generator._build_title(TimelineCategory.item, text, []), text)
+        self.assertEqual(self.generator._build_title(TimelineCategory.item, text), text)
 
     def test_fallback_skips_intent_and_uses_actual_action(self):
         text = 'Aria wanted to take the key. The guard gave her the key.'
-        self.assertEqual(self.generator._build_title(TimelineCategory.item, text, []),
+        self.assertEqual(self.generator._build_title(TimelineCategory.item, text),
                          'The guard gave her the key.')
 
     def test_generator_rejects_unsubstantiated_ai_event(self):
@@ -259,7 +287,7 @@ class TimelineGroundingTests(unittest.TestCase):
 
     def test_generation_omits_rejected_events_before_sorting(self):
         generator = self.generator
-        text = 'Aria received the silver key.'
+        text = 'Aria took it.'
         group = self.group(text)
         accepted = self.analyze(text)
         rejected = self.analyze('The guard mentioned the silver key.', occurred=False)
@@ -301,12 +329,12 @@ class TimelineBatchTests(unittest.TestCase):
     def respond(self, url, *, json, timeout):
         import json as json_module
         items = json_module.loads(json['messages'][1]['content'])
-        return self.response([self.row(item['id'], item['transcript']) for item in reversed(items)])
+        return self.response([self.row(item['id'], 0) for item in reversed(items)])
 
     def test_full_pipeline_batches_once_and_merges_without_reanalysis(self):
         generator = self.generator
         groups = [[TimelineSourceSegment(
-            text=f'At dawn the party arrived in Waterdeep via gate {i}.',
+            text=f'At dawn Waterdeep came into view as we made it through gate {i}.',
             speaker='DM', start_time=i * 10, end_time=i * 10 + 10,
         )] for i in range(17)]
         segments = [group[0] for group in groups]
@@ -319,7 +347,7 @@ class TimelineBatchTests(unittest.TestCase):
              patch.object(ai, 'analyze_timeline_event', side_effect=AssertionError('single analysis')), \
              patch.object(ai.requests, 'post', side_effect=self.respond) as post:
             events, count = generator.generate_timeline_from_embeddings()
-        self.assertEqual(post.call_count, 3)
+        self.assertEqual(post.call_count, 6)
         self.assertEqual(count, 17)
         self.assertEqual(len(events), 2)
         self.assertEqual(sum(len(e.source_segments) for e in events), 17)
@@ -348,11 +376,9 @@ class TimelineBatchTests(unittest.TestCase):
                 self.row(3, texts[0])]
         with patch.object(ai.requests, 'post', return_value=self.response(rows)):
             results = ai.analyze_timeline_events([(text, '') for text in texts])
-        self.assertEqual([r.keep for r in results], [True, False, False, False])
+        self.assertEqual([r.keep if r is not None else None for r in results], [True, False, None, None])
         self.assertEqual(results[0].title, texts[0])
         self.assertEqual(results[0].locations, ('Waterdeep',))
-        self.assertEqual(results[3].locations, ())
-        self.assertEqual(results[3].temporal_entities, ())
 
     def test_missing_duplicate_and_unknown_ids_do_not_shift_results(self):
         texts = ['The party arrived in Waterdeep.'] * 4
@@ -387,20 +413,49 @@ class TimelineBatchTests(unittest.TestCase):
         response = Mock()
         response.json.return_value = {'message': {'content': 'not json'}}
         with patch.object(ai.requests, 'post', side_effect=[response, self.response([
-                self.row(8, 'The party arrived in Waterdeep.')])]) as post:
-            results = ai.analyze_timeline_events([('The party arrived in Waterdeep.', '')] * 9)
+                self.row(3, 0)])]) as post:
+            results = ai.analyze_timeline_events([('The party arrived in Waterdeep.', '')] * 4)
         self.assertEqual(post.call_count, 2)
-        self.assertEqual(results[:8], [None] * 8)
-        self.assertTrue(results[8].keep)
+        self.assertEqual(results[:3], [None] * 3)
+        self.assertTrue(results[3].keep)
 
     def test_batches_bound_text_size_without_truncating_sources(self):
-        texts = ['A' * 6000, 'B' * 6000, 'C' * 12001]
+        limit = ai.TIMELINE_AI_BATCH_CHARS
+        texts = ['A' * (limit // 2), 'B' * (limit // 2), 'C' * limit]
         with patch.object(ai.requests, 'post', side_effect=self.respond) as post:
             results = ai.analyze_timeline_events([(text, '') for text in texts])
         self.assertEqual(post.call_count, 2)
         self.assertEqual(results[0].evidence, texts[0])
         self.assertEqual(results[1].evidence, texts[1])
         self.assertIsNone(results[2])
+        for call in post.call_args_list:
+            payload = call.kwargs['json']
+            self.assertLessEqual(len(payload['messages'][1]['content']), limit)
+            self.assertEqual(payload['options']['num_predict'], ai.TIMELINE_AI_OUTPUT_TOKENS)
+            self.assertEqual(call.kwargs['timeout'], ai.TIMELINE_AI_TIMEOUT)
+
+    def test_batch_evidence_index_selects_original_sentence_and_rejects_bad_index(self):
+        completed = 'The party arrived at Stonebridge at noon.'
+        text = 'The party could travel to Emberkeep tomorrow. ' + completed
+        rows = [
+            dict(id=0, evidence=1, category='travel', locations=['Emberkeep', 'stonebridge'],
+                 temporal_entities=['at noon']),
+            self.row(1, 9),
+            self.row(2, 0),
+        ]
+        with patch.object(ai.requests, 'post', return_value=self.response(rows)):
+            kept, malformed, proposed = ai.analyze_timeline_events([(text, '')] * 3)
+        self.assertEqual(kept.evidence, completed)
+        self.assertEqual(kept.locations, ('Stonebridge',))
+        self.assertIsNone(malformed)
+        self.assertFalse(proposed.keep)
+
+    def test_compact_rejection_does_not_trigger_local_fallback(self):
+        row = dict(id=0, evidence=-1, category='other', locations=[], temporal_entities=[])
+        with patch.object(ai.requests, 'post', return_value=self.response([row])):
+            rejected, = ai.analyze_timeline_events([('I open it.', '')])
+        self.assertFalse(rejected.keep)
+        self.assertIsNone(rejected.evidence)
 
     def test_grouping_allows_more_than_six_segments_and_checks_incoming_end(self):
         segments = [TimelineSourceSegment(text='We continued along the road.',

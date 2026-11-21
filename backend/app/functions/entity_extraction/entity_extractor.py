@@ -392,6 +392,10 @@ LOCATION_DESCRIPTORS = {
 # ============================================================
 
 LOCATION_ACTIONS = [
+    "travel to",
+    "travel from",
+    "travels to",
+    "travels from",
     "travelled to",
     "traveled to",
     "travelled from",
@@ -408,6 +412,10 @@ LOCATION_ACTIONS = [
     "walked to",
     "arrived at",
     "arrived in",
+    "arrive at",
+    "arrive in",
+    "arrives at",
+    "arrives in",
     "headed to",
     "headed toward",
     "headed towards",
@@ -415,6 +423,12 @@ LOCATION_ACTIONS = [
     "moved into",
     "camped at",
     "rested at",
+    "rest at",
+    "rests at",
+    "rest in",
+    "rests in",
+    "rested in",
+    "made it to",
     "went to",
     "entered",
     "reached",
@@ -608,41 +622,24 @@ def _extract_named_locations_after_actions(
 
     pattern = re.compile(
         rf"""
-        \b(?:{actions})\b
+        \b(?P<action>(?i:{actions}))\b
         \s+
         (?:a\s+|an\s+|the\s+)?
         (?P<location>{proper_name})
+        (?:\s+to\s+(?P<destination>{proper_name}))?
         """,
         re.VERBOSE,
     )
 
     for match in pattern.finditer(text):
-
-        value = _normalize_text(
-            match.group("location")
-        )
-
-        if value in CAPITALIZED_STOP_WORDS:
-            continue
-
-        start = match.start("location")
-        end = match.end("location")
-
-        if _span_overlaps(
-            start,
-            end,
-            temporal_entities,
-        ):
-            continue
-
-        entities.append(
-            _make_entity(
-                value,
-                "place_candidate",
-                start,
-                end,
-            )
-        )
+        groups = ("location", "destination") if match["action"].lower().endswith(" from") else ("location",)
+        for group in groups:
+            value = match[group]
+            if not value or value in CAPITALIZED_STOP_WORDS:
+                continue
+            start, end = match.span(group)
+            if not _span_overlaps(start, end, temporal_entities):
+                entities.append(_make_entity(value, "place_candidate", start, end))
 
     return entities
 
@@ -679,8 +676,7 @@ def _extract_named_location_compounds(
         rf"""
         \b
         (?P<location>
-            [A-Z][A-Za-zÀ-ÖØ-öø-ÿ'-]*
-            \s+
+            (?:[A-Z][A-Za-zÀ-ÖØ-öø-ÿ'-]*\s+)+
             (?i:{location_words})
         )
         \b
