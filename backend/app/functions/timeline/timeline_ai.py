@@ -15,6 +15,7 @@ import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
+from time import perf_counter
 
 import requests
 
@@ -51,34 +52,118 @@ class TimelineAIAnalysis:
     evidence: str | None = None
 
 
+NON_OCCURRENCE = re.compile(
+    r"\b(?:going to|gonna|will|would|can|could|should|must|might|may|if|unless|"
+    r"(?:want|hope|plan|intend|need|try|decide|expect)(?:s|ed)? to|"
+    r"planned to|planning to|tried to|trying to|decided to|supposed to|about to|let['’]s|"
+    r"propos(?:e[ds]?|ing)|suggest(?:s|ed|ing)?|consider(?:s|ed|ing)?|"
+    r"tomorrow|next session|"
+    r"not|never|no|nobody|\w+n['’]t|cannot)\b",
+    re.IGNORECASE,
+)
+_TRAVEL_DESTINATION = (
+    r"(?:(?-i:[A-Z])\w*|(?:the |a |an )?(?:[\w-]+ ){0,2}"
+    r"(?:town|village|city|bridge|road|forest|cave|cellar|tower|camp|gate|"
+    r"dungeon|tavern|inn|castle|temple|keep|river|chamber|room|home|valley)\b)"
+)
+TRAVEL_ACTION = re.compile(
+    r"\b(?:arrive[ds]? (?:at|in)|made it to|(?:go(?:es)?|went) (?:back )?to|"
+    r"travel(?:s|l?ed)? (?:to|from|through)|return(?:s|ed)? (?:to|from)|"
+    r"(?:walk|head)(?:s|ed)? (?:to|towards?|into|through)|"
+    rf"(?:reach|enter|cross)(?:es|s|ed)?)\s+{_TRAVEL_DESTINATION}",
+    re.IGNORECASE,
+)
+TRAVEL_DESCRIPTION = re.compile(
+    r"^(?:it|(?:the|a|an) (?:\w+ )?(?:road|path|bridge|passage|stairs|staircase|tunnel)) "
+    r"(?:leads?|runs?|connects?)\b",
+    re.IGNORECASE,
+)
+COMBAT_ACTION = re.compile(
+    r"\b(?:ambush(?:es|ed)?|attack(?:s|ed)?|defeat(?:s|ed)?|kill(?:s|ed)?)\s+"
+    r"(?:the |a |an |us\b|you\b|him\b|her\b|them\b|(?-i:[A-Z]))"
+    r"|\b(?:fight|battle|combat) (?:is over|ends?|ended|starts?|started|begins?|began)\b",
+    re.IGNORECASE,
+)
+REST_ACTION = re.compile(r"\b(?:takes?|took) (?:a |the )?(?:short|long) rest\b", re.IGNORECASE)
+ITEM_ACQUISITION = re.compile(
+    r"\b(?:obtain(?:s|ed)?|acquir(?:e[ds]?)|receiv(?:e[ds]?)|found|finds?|"
+    r"pick(?:s|ed)? up|takes?|took|grab(?:s|bed)?|pull(?:s|ed)? out|"
+    r"bought|purchas(?:e[ds]?)|loot(?:s|ed)?|gave|gives?|hand(?:s|ed)?)\s+"
+    r"(?!(?:(?:a |the )?(?:look|glance|location|picture)|out|that|where|how)\b)"
+    r"[^.!?;]{0,70}\b(?:keys?|potions?|scrolls?|amulets?|rings?|swords?|shields?|"
+    r"daggers?|coins?|treasure|loot|relics?|artifacts?|items?)\b",
+    re.IGNORECASE,
+)
+ITEM_MECHANICS = re.compile(
+    r"\b(?:attacks?|great weapon master|dice|rolls?|modifier|damage|"
+    r"spell slots?|actions?|saving throws?|proficiency bonus|advantage|"
+    r"disadvantage|d\d+|rerolls?|ability checks?)\b",
+    re.IGNORECASE,
+)
+ITEM_ACTION = re.compile(
+    r"\b(?:obtained|acquired|received|picked up|took|bought|purchased|"
+    r"looted|stole|sold|gave|handed|lost|destroyed|used|identified|"
+    r"obtain|obtains|acquire|acquires|receive|receives|pick up|picks up|"
+    r"take|takes|buy|buys|give|gives|use|uses)\s+\S+",
+    re.IGNORECASE,
+)
+ITEM_ACTION_OR_ACQUISITION = re.compile(
+    rf"{ITEM_ACTION.pattern}|{ITEM_ACQUISITION.pattern}", re.IGNORECASE
+)
+
+
+def transcript_sentences(text: str) -> list[str]:
+    return re.split(r"(?<=[.!?])\s+", text.strip()) if text.strip() else []
+
+
+def _occurring_clauses(sentence: str) -> list[str]:
+    if sentence.endswith("?") or re.match(r"\s*(?:if|unless|before)\b", sentence, re.IGNORECASE):
+        return []
+    clauses = re.split(
+        r"[,;]?\s+\b(?:but|and|so)\s+(?=(?:I|we|you|they|he|she|the|"
+        r"eventually (?:arrived|reached|entered|returned|travell?ed|went|made))\b)",
+        sentence, flags=re.IGNORECASE,
+    )
+    return [clause for clause in clauses if not NON_OCCURRENCE.search(clause)]
+
+
+def _action_sentences(text: str, action: re.Pattern, *, item: bool = False) -> list[str]:
+    """Keep the whole sentence, including qualifiers outside the action clause."""
+    return [
+        sentence for sentence in transcript_sentences(text)
+        if any(action.search(clause) and not (item and ITEM_MECHANICS.search(clause))
+               for clause in _occurring_clauses(sentence))
+    ]
+
+
 def item_event_sentences(text: str) -> list[str]:
     """Return sentences with item-action evidence for AI and offline validation."""
-    candidates = []
-    for sentence in re.split(r"(?<=[.!?])\s+", text):
-        # Check individual clauses so an unrelated modal/negation does not
-        # suppress a completed transfer elsewhere in the sentence.
-        clauses = re.split(r"[,;]|\b(?:and|but|so)\b", sentence, flags=re.IGNORECASE)
-        for clause in clauses:
-            if clause.rstrip().endswith("?") or re.search(
-                r"\b(?:going to|gonna|will|would|could|should|might|may|if|"
-                r"want(?:s|ed)? to|plan(?:s|ned)? to|intend(?:s|ed)? to|try to|"
-                r"not|never|no|didn't|doesn't|don't|wasn't|weren't|can't|cannot|"
-                r"attacks?|great weapon master|dice|rolls?|modifier|damage|"
-                r"spell slots?|actions?|saving throws?|proficiency bonus|advantage|"
-                r"disadvantage|d\d+|rerolls?|ability checks?)\b",
-                clause, re.IGNORECASE,
-            ):
-                continue
-            if re.search(
-                r"\b(?:obtained|acquired|received|picked up|took|bought|purchased|"
-                r"looted|stole|sold|gave|handed|lost|destroyed|used|identified|"
-                r"obtain|obtains|acquire|acquires|receive|receives|pick up|picks up|"
-                r"take|takes|buy|buys|give|gives|use|uses)\s+\S+",
-                clause, re.IGNORECASE,
-            ):
-                candidates.append(sentence)
-                break
-    return candidates
+    return _action_sentences(text, ITEM_ACTION_OR_ACQUISITION, item=True)
+
+
+def travel_event_sentences(text: str) -> list[str]:
+    return _action_sentences(text, TRAVEL_ACTION)
+
+
+def explicit_event_evidence(text: str) -> tuple[str, str] | None:
+    """Recognize clear in-world actions independently of embedding scores."""
+    for category, pattern in (("travel", TRAVEL_ACTION), ("combat", COMBAT_ACTION),
+                              ("item", ITEM_ACQUISITION), ("rest", REST_ACTION)):
+        sentences = _action_sentences(text, pattern, item=category == "item")
+        if sentences:
+            return category, sentences[0]
+    return None
+
+
+def travel_evidence_allowed(evidence: str) -> bool:
+    if travel_event_sentences(evidence):
+        return True
+    return (bool(_occurring_clauses(evidence)) and not NON_OCCURRENCE.search(evidence)
+            and not TRAVEL_DESCRIPTION.match(evidence))
+
+
+def travel_location_evidence(evidence: str) -> str:
+    return " ".join(_occurring_clauses(evidence))
 
 
 def _grounded_evidence(text: str, evidence: object) -> str | None:
@@ -87,7 +172,7 @@ def _grounded_evidence(text: str, evidence: object) -> str | None:
         return None
     source = " ".join(text.split()).strip()
     candidate = " ".join(evidence.split()).strip()
-    return next((sentence for sentence in re.split(r"(?<=[.!?])\s+", source)
+    return next((sentence for sentence in transcript_sentences(source)
                  if sentence.casefold() == candidate.casefold()), None)
 
 
@@ -141,18 +226,16 @@ def _exact_spans(values: object, source_text: str) -> tuple[str, ...]:
 
     output: list[str] = []
     seen: set[str] = set()
-    lower_source = source_text.casefold()
-
     for raw in values:
         if not isinstance(raw, str):
             continue
         candidate = " ".join(raw.split()).strip(" \t\n\r.,;:!?\"'()[]{}")
         if len(candidate) < 2:
             continue
-        start = lower_source.find(candidate.casefold())
-        if start < 0:
+        match = re.search(rf"(?<!\w){re.escape(candidate)}(?!\w)", source_text, re.IGNORECASE)
+        if match is None:
             continue
-        original = source_text[start:start + len(candidate)].strip()
+        original = source_text[match.start():match.end()].strip()
         key = original.casefold()
         if key and key not in seen:
             seen.add(key)
@@ -255,6 +338,10 @@ def _validate_analysis(cleaned: str, data: dict) -> TimelineAIAnalysis:
     # an item event, even if the model incorrectly confirms occurrence.
     if keep and category == "item":
         keep = bool(item_event_sentences(evidence))
+    if keep and category == "travel":
+        keep = travel_evidence_allowed(evidence)
+    if keep and category == "discovery":
+        keep = not evidence.endswith("?")
 
     reason = data.get("reason")
     if isinstance(reason, str):
@@ -267,7 +354,10 @@ def _validate_analysis(cleaned: str, data: dict) -> TimelineAIAnalysis:
         importance=importance,
         category=category,
         title=title,
-        locations=_exact_spans(data.get("locations"), cleaned),
+        locations=_exact_spans(
+            data.get("locations"),
+            travel_location_evidence(evidence) if evidence and category == "travel" else evidence or "",
+        ),
         temporal_entities=_exact_spans(data.get("temporal_entities"), cleaned),
         reason=reason,
         evidence=evidence,
@@ -275,9 +365,42 @@ def _validate_analysis(cleaned: str, data: dict) -> TimelineAIAnalysis:
 
 
 logger = logging.getLogger(__name__)
-TIMELINE_AI_BATCH_SIZE = 8
-TIMELINE_AI_BATCH_CHARS = 12000
-TIMELINE_AI_CONTEXT_CHARS = 1000
+TIMELINE_AI_BATCH_SIZE = 3
+TIMELINE_AI_BATCH_CHARS = 3000
+TIMELINE_AI_CONTEXT_CHARS = 240
+TIMELINE_AI_OUTPUT_TOKENS = 384
+
+BATCH_SYSTEM_PROMPT = """For each input candidate, identify its main completed D&D event.
+Return JSON {"results":[{"id":42,"evidence":3,"category":"travel","locations":["Stonebridge"],
+"temporal_entities":["at noon"]}]} with one result per candidate. Copy each id.
+Evidence is the key of the sentence in CURRENT transcript that proves the event happened.
+Use evidence -1 and category other for chatter, plans, negations or mechanics such as Great Weapon Master.
+Use PREVIOUS and FOLLOWING only as context. Copy places from the selected sentence
+and times from CURRENT transcript."""
+
+
+def _batch_response_format(batch: list[dict]) -> dict:
+    string_array = {"type": "array", "items": {"type": "string"}}
+    return {
+        "type": "object",
+        "required": ["results"],
+        "properties": {
+            "results": {
+                "type": "array", "minItems": len(batch), "maxItems": len(batch),
+                "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["id", "category", "evidence", "locations", "temporal_entities"],
+                    "properties": {
+                        "id": {"type": "integer", "enum": [item["id"] for item in batch]},
+                        "category": {"enum": sorted(VALID_CATEGORIES)},
+                        "evidence": {"type": "integer", "minimum": -1},
+                        "locations": string_array,
+                        "temporal_entities": string_array,
+                    },
+                },
+            },
+        },
+    }
 
 
 def analyze_timeline_events(
@@ -302,56 +425,60 @@ def analyze_timeline_events(
         return results
     batches: list[list[dict]] = []
     batch: list[dict] = []
-    size = 0
+    size = 2  # JSON array brackets
     for index, (text, speakers) in enumerate(candidates):
         cleaned = " ".join(text.split()).strip()
-        item = dict(id=index, transcript=cleaned, speakers=speakers)
+        item = dict(id=index, transcript=dict(enumerate(transcript_sentences(cleaned))), speakers=speakers)
         if contexts is not None:
             previous, _, following = contexts[index]
             item["previous"] = " ".join(previous.split())[-TIMELINE_AI_CONTEXT_CHARS:]
             item["following"] = " ".join(following.split())[:TIMELINE_AI_CONTEXT_CHARS]
-        item_size = len(json.dumps(item))
-        if not cleaned or item_size > TIMELINE_AI_BATCH_CHARS:
+        item_size = len(json.dumps(item, separators=(",", ":")))
+        if not cleaned or item_size + 2 > TIMELINE_AI_BATCH_CHARS:
             continue
         if batch and (len(batch) >= TIMELINE_AI_BATCH_SIZE
-                      or size + item_size > TIMELINE_AI_BATCH_CHARS):
+                      or size + 1 + item_size > TIMELINE_AI_BATCH_CHARS):
             batches.append(batch)
-            batch, size = [], 0
+            batch, size = [], 2
+        size += item_size + (1 if batch else 0)
         batch.append(item)
-        size += item_size
     if batch:
         batches.append(batch)
 
     for number, batch in enumerate(batches, 1):
-        logger.info("Timeline AI batch %d/%d (%d candidates)", number, len(batches), len(batch))
+        prompt = json.dumps(batch, separators=(",", ":"))
+        started = perf_counter()
         try:
             response = requests.post(
                 f"{OLLAMA_URL}/api/chat",
                 json={
                     "model": settings.llm_model,
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT +
-                         '\nAnalyze each candidate independently. Return {"results": [...]} '
-                         'with one object using the schema above plus the exact integer id '
-                         'for each candidate. The transcript field is the CURRENT candidate. '
-                         'Use PREVIOUS (previous field) and FOLLOWING (following field) context '
-                         'only to resolve references and understand the current event. '
-                         'Do not keep a candidate just because a nearby event occurs. '
-                         'Evidence, locations and temporal_entities must come exclusively from '
-                         'the current transcript, never from context or another candidate.'},
-                        {"role": "user", "content": json.dumps(batch)},
+                        {"role": "system", "content": BATCH_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
                     ],
-                    "stream": False, "format": "json",
-                    "options": {"temperature": 0.0},
+                    "stream": False, "format": _batch_response_format(batch),
+                    "options": {"temperature": 0.0, "num_predict": TIMELINE_AI_OUTPUT_TOKENS},
                 },
                 timeout=TIMELINE_AI_TIMEOUT,
             )
             response.raise_for_status()
         except requests.RequestException as error:
-            logger.warning("Timeline AI unavailable; using local fallback for remaining candidates: %s", error)
+            logger.warning(
+                "Timeline AI batch %d/%d failed after %.2fs; using local fallback for remaining candidates: %s",
+                number, len(batches), perf_counter() - started, error,
+            )
             break
         try:
-            content = response.json()["message"]["content"]
+            reply = response.json()
+            content = reply["message"]["content"]
+            logger.info(
+                "Timeline AI batch %d/%d (%d candidates, %d chars) took %.2fs "
+                "(load/prompt/generation ns: %s/%s/%s, output tokens: %s)",
+                number, len(batches), len(batch), len(prompt), perf_counter() - started,
+                reply.get("load_duration"), reply.get("prompt_eval_duration"),
+                reply.get("eval_duration"), reply.get("eval_count"),
+            )
             data = _extract_json_object(content) if isinstance(content, str) else None
             rows = data.get("results") if data else None
             if not isinstance(rows, list):
@@ -366,5 +493,16 @@ def analyze_timeline_events(
         for item in batch:
             matches = by_id.get(item["id"], [])
             if len(matches) == 1:
-                results[item["id"]] = _validate_analysis(item["transcript"], matches[0])
+                row = matches[0]
+                evidence = row.get("evidence")
+                sentences = item["transcript"]
+                if type(evidence) is int:
+                    if evidence != -1 and evidence not in sentences:
+                        continue
+                    row = {"keep": evidence != -1, "occurred": evidence != -1, "importance": 1.0,
+                           **row, "evidence": sentences.get(evidence)}
+                analysis = _validate_analysis(" ".join(sentences.values()), row)
+                if row.get("keep") is True and row.get("occurred") is True and not analysis.evidence:
+                    continue
+                results[item["id"]] = analysis
     return results

@@ -119,7 +119,7 @@ class ContextualTimelineTests(unittest.TestCase):
         post.assert_called_once()
         payload = post.call_args.kwargs['json']
         items = json.loads(payload['messages'][1]['content'])
-        self.assertEqual(items, [dict(id=0, transcript=current, speakers='DM',
+        self.assertEqual(items, [dict(id=0, transcript={'0': current}, speakers='DM',
                                      previous=previous, following=following)])
         for label in ['PREVIOUS', 'CURRENT', 'FOLLOWING']:
             self.assertIn(label, payload['messages'][0]['content'])
@@ -151,9 +151,7 @@ class ContextualTimelineTests(unittest.TestCase):
                  ])):
                 result = ai.analyze_timeline_events([(text, '')],
                     contexts=[(adjacent, text, adjacent)])[0]
-            self.assertFalse(result.keep)
-            self.assertIsNone(self.generator._create_event_from_group(
-                [TimelineGroupingTests.segment(text)], ai_analysis=result))
+            self.assertIsNone(result)
 
     def test_contextual_item_classification_cannot_bypass_action_evidence(self):
         for text in [
@@ -210,6 +208,41 @@ class ContextualTimelineTests(unittest.TestCase):
         self.assertEqual([event.title for event in events], ['Aria received the silver key.'])
         post.assert_not_called()
 
+    def test_timeout_recovers_explicit_events_even_when_embeddings_reject_group(self):
+        texts = [
+            "We could travel to Emberkeep tomorrow, but not today. "
+            "We travel from River Watch to Stonebridge.",
+            "A goblin ambushes the party beside the Broken Watch tower. Roll initiative.",
+            "You find the silver key and take it into your inventory.",
+            "I use Great Weapon Master on my attack.",
+            "We didn't go to Emberkeep. We intended to enter the cellar.",
+        ]
+        with patch.object(self.generator, 'semantic_event_decision',
+                return_value=types.SimpleNamespace(keep=False, non_event_score=0.2, margin=0.1)), \
+             patch.object(ai.requests, 'post', side_effect=ai.requests.Timeout()) as post:
+            events, _ = self.generate(texts)
+        post.assert_called_once()
+        self.assertEqual([(event.category.value, event.locations) for event in events], [
+            ('travel', ['River Watch', 'Stonebridge']),
+            ('combat', ['Broken Watch tower']),
+            ('item', []),
+        ])
+        self.assertEqual(events[0].title, 'We travel from River Watch to Stonebridge.')
+        self.assertEqual(events[2].title, texts[2])
+
+    def test_rest_gets_explicit_place_when_ai_omits_it_or_times_out(self):
+        text = "The part it takes a short rest at Stonebridge."
+        with patch.object(ai.requests, 'post', return_value=self.response([
+                self.row(0, 0, category='rest')])):
+            analysis, = ai.analyze_timeline_events([(text, '')])
+        group = [TimelineGroupingTests.segment(text)]
+        event = self.generator._create_event_from_group(group, ai_analysis=analysis)
+        self.assertEqual(event.locations, ['Stonebridge'])
+        with patch.object(ai.requests, 'post', side_effect=ai.requests.Timeout()) as post:
+            events, _ = self.generate([text])
+        post.assert_not_called()
+        self.assertEqual([event.locations for event in events], [['Stonebridge']])
+
     def test_ooc_and_obvious_noise_never_reach_llm(self):
         with patch.object(ai.requests, 'post') as post:
             events, _ = self.generate(['Our sponsor gave us the silver key.'])
@@ -223,8 +256,8 @@ class ContextualTimelineTests(unittest.TestCase):
         post.assert_not_called()
 
     def test_chronological_context_edges_and_missing_response_ids_stay_aligned(self):
-        texts = ['We discovered the hidden passage.', 'Aria received the silver key.',
-                 'The party arrived in Waterdeep.']
+        texts = ['We discovered the hidden passage.', 'Aria takes it.',
+                 'Waterdeep came into view as we made it through the gate.']
         with patch.object(ai.requests, 'post', return_value=self.response([
             self.row(2, texts[2], category='travel'),
             self.row(0, texts[0]), self.row(0, texts[0]),
@@ -248,12 +281,12 @@ class ContextualTimelineTests(unittest.TestCase):
                 contexts=[(previous, 'ignored mismatched current', following)])[0]
         self.assertTrue(result.keep)
         items = json.loads(post.call_args.kwargs['json']['messages'][1]['content'])
-        self.assertEqual(items[0]['transcript'], text.strip())
+        self.assertEqual(' '.join(items[0]['transcript'].values()), text.strip())
         self.assertEqual(items[0]['previous'], previous[-ai.TIMELINE_AI_CONTEXT_CHARS:])
         self.assertEqual(items[0]['following'], following[:ai.TIMELINE_AI_CONTEXT_CHARS])
 
     def test_context_counts_toward_batch_size_limit(self):
-        text = 'Aria received the silver key. ' + 'X' * 4800
+        text = 'Aria received the silver key. ' + 'X' * (ai.TIMELINE_AI_BATCH_CHARS // 2)
         context = ('P' * 1000, text, 'F' * 1000)
         with patch.object(ai.requests, 'post', return_value=self.response([])) as post:
             ai.analyze_timeline_events([(text, '')] * 2, contexts=[context] * 2)
