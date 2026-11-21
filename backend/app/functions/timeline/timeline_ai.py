@@ -116,7 +116,8 @@ def transcript_sentences(text: str) -> list[str]:
     return re.split(r"(?<=[.!?])\s+", text.strip()) if text.strip() else []
 
 
-def _occurring_clauses(sentence: str) -> list[str]:
+def occurring_clauses(sentence: str) -> list[str]:
+    """Return clauses that can describe an action that happened in play."""
     if sentence.endswith("?") or re.match(r"\s*(?:if|unless|before)\b", sentence, re.IGNORECASE):
         return []
     clauses = re.split(
@@ -132,7 +133,7 @@ def _action_sentences(text: str, action: re.Pattern, *, item: bool = False) -> l
     return [
         sentence for sentence in transcript_sentences(text)
         if any(action.search(clause) and not (item and ITEM_MECHANICS.search(clause))
-               for clause in _occurring_clauses(sentence))
+               for clause in occurring_clauses(sentence))
     ]
 
 
@@ -158,12 +159,12 @@ def explicit_event_evidence(text: str) -> tuple[str, str] | None:
 def travel_evidence_allowed(evidence: str) -> bool:
     if travel_event_sentences(evidence):
         return True
-    return (bool(_occurring_clauses(evidence)) and not NON_OCCURRENCE.search(evidence)
+    return (bool(occurring_clauses(evidence)) and not NON_OCCURRENCE.search(evidence)
             and not TRAVEL_DESCRIPTION.match(evidence))
 
 
 def travel_location_evidence(evidence: str) -> str:
-    return " ".join(_occurring_clauses(evidence))
+    return " ".join(occurring_clauses(evidence))
 
 
 def _grounded_evidence(text: str, evidence: object) -> str | None:

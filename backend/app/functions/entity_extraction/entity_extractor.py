@@ -445,6 +445,10 @@ LOCATION_ACTIONS = [
 
 
 LOCATION_PREPOSITIONS = [
+    "north of",
+    "south of",
+    "east of",
+    "west of",
     "inside",
     "outside",
     "beneath",
