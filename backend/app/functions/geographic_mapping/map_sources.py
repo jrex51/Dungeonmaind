@@ -135,6 +135,7 @@ def collect_candidates(
     events: Iterable,
     segments: list[Segment],
     canonical: Callable[[str], str] = lambda name: name,
+    aliases: dict[str, list[str]] | None = None,
 ) -> list[Candidate]:
     """
     Sentences, around each event, that mention two or more distinct places.
@@ -142,15 +143,21 @@ def collect_candidates(
     Windows of neighbouring events overlap, so a sentence is kept once and the
     places and travel flags of every event that reached it are merged. When no
     transcript segment overlaps an event (the transcript was cleared, say), the
-    event's own source segments are used instead.
+    event's own source segments are used instead. Either spelling can match
+    when the map knows an alias for one of the event's places.
     """
 
     merged: dict[tuple, Candidate] = {}
+    aliases = aliases or {}
 
     for event in events:
-        places = list(getattr(event, "locations", None) or [])
-        if len({canonical(place) for place in places}) < 2:
+        locations = getattr(event, "locations", None) or []
+        event_places = list(dict.fromkeys(canonical(place) for place in locations))
+        if len(event_places) < 2:
             continue
+        places = list(event_places)
+        for place in event_places:
+            places.extend(aliases.get(place, []))
 
         is_travel = is_travel_event(event)
         window = event_window(segments, event.start_time, event.end_time)

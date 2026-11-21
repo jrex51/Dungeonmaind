@@ -19,6 +19,7 @@ where the party goes far more often than how places sit relative to each other.
 
 import re
 from datetime import datetime, timezone
+from itertools import chain
 from typing import Iterable
 
 from app.base_models.map_models import (
@@ -35,13 +36,14 @@ from app.functions.geographic_mapping.map_sources import (
     is_travel_event,
     load_timeline_events,
     load_transcript_documents,
-    mentioned_places,
     segments_from_documents,
 )
 from app.functions.geographic_mapping.spatial_relation_extractor import (
     INVERSE,
     extract_relations,
+    travel_endpoints,
 )
+from app.functions.timeline.timeline_ai import transcript_sentences
 
 
 DETERMINERS = re.compile(r"^(?:the|a|an)\s+", re.IGNORECASE)
@@ -79,7 +81,11 @@ def location_kind(name: str, generic_words: set[str]) -> LocationKind:
     return LocationKind.generic
 
 
-def build_alias_map(names: Iterable[str], generic_words: set[str]) -> dict[str, str]:
+def build_alias_map(
+    names: Iterable[str],
+    generic_words: set[str],
+    transcript_texts: Iterable[str] = (),
+) -> dict[str, str]:
     """
     Map surface forms onto a canonical place name.
 
@@ -93,14 +99,32 @@ def build_alias_map(names: Iterable[str], generic_words: set[str]) -> dict[str, 
 
     named = sorted(
         (n for n in unique if location_kind(n, generic_words) == LocationKind.named),
-        key=len,
-        reverse=True,
+        key=lambda name: (-len(name), name),
     )
 
     alias_of: dict[str, str] = {}
+    spaced: dict[str, list[str]] = {}
+    for name in named:
+        words = name.split()
+        if len(words) > 1 and all(word.isalpha() and word[0].isupper() for word in words):
+            spaced.setdefault("".join(words).casefold(), []).append(name)
+
+    # ASR can write a proper name as one word. Use only spellings present in
+    # the source, and only when they match a single established multiword name.
+    joined = {key: names[0] for key, names in spaced.items() if len(names) == 1}
+    alias_of.update(
+        {name: joined[name.casefold()] for name in unique if name.casefold() in joined}
+    )
+    if joined:
+        pattern = re.compile(r"\b(?:" + "|".join(map(re.escape, joined)) + r")\b", re.IGNORECASE)
+        for text in transcript_texts:
+            for match in pattern.finditer(text):
+                spelling = match.group()
+                if spelling[0].isupper():
+                    alias_of[spelling] = joined[spelling.casefold()]
 
     for candidate in unique:
-        if candidate in named:
+        if candidate in named or candidate in alias_of:
             continue
 
         core = DETERMINERS.sub("", candidate).casefold()
@@ -166,8 +190,18 @@ def generate_map(
     if generic_words is None:
         generic_words = _generic_location_words()
 
+    segments = segments_from_documents(documents)
     alias_of = build_alias_map(
-        (place for event in located for place in event.locations), generic_words
+        (place for event in located for place in event.locations),
+        generic_words,
+        chain(
+            (segment.text for segment in segments),
+            (
+                source.text
+                for event in located
+                for source in getattr(event, "source_segments", None) or []
+            ),
+        ),
     )
 
     def canonical(name: str) -> str:
@@ -175,7 +209,9 @@ def generate_map(
 
     # ---- nodes -------------------------------------------------------
     nodes: dict[str, MapNode] = {}
-    aliases_seen: dict[str, set[str]] = {}
+    aliases: dict[str, list[str]] = {}
+    for spelling, name in sorted(alias_of.items()):
+        aliases.setdefault(name, []).append(spelling)
 
     for event in sorted(located, key=lambda e: e.start_time):
         for name in dict.fromkeys(canonical(raw) for raw in event.locations):
@@ -194,17 +230,11 @@ def generate_map(
                 node.mentions += 1
                 node.last_seen = max(node.last_seen, event.end_time)
 
-        for raw in event.locations:
-            if raw.strip() != canonical(raw):
-                aliases_seen.setdefault(make_node_id(canonical(raw)), set()).add(raw.strip())
-
-    for node_id, node in nodes.items():
-        node.aliases = sorted(aliases_seen.get(node_id, set()))
+    for node in nodes.values():
+        node.aliases = aliases.get(node.name, [])
 
     # ---- edges: stated relations ---------------------------------------
-    candidates = collect_candidates(
-        located, segments_from_documents(documents), canonical
-    )
+    candidates = collect_candidates(located, segments, canonical, aliases)
 
     found = extract_relations(
         {index: (c.text, c.places) for index, c in enumerate(candidates)},
@@ -264,33 +294,40 @@ def generate_map(
         if edge.relation == SpatialRelation.travelled_to
     }
     confirmed: set[str] = set()
-    journey: list[tuple[str, object]] = []
+    journey: list[tuple[str, bool, str, float]] = []
 
     for event in sorted(located, key=lambda e: e.start_time):
         if not is_travel_event(event):
             continue
 
-        text = _event_text(event)
-        ordered = mentioned_places(text, event.locations) or list(event.locations)
-        ordered += [p for p in event.locations if p not in ordered]
+        event_names = list(dict.fromkeys(canonical(place) for place in event.locations))
+        places = list(event_names)
+        for name in event_names:
+            places.extend(aliases.get(name, []))
+        endpoints: list[tuple[str, bool, str]] = []
+        for sentence in transcript_sentences(_event_text(event)):
+            for origins, destinations in travel_endpoints(sentence, places):
+                endpoints.extend((canonical(place), False, sentence) for place in origins)
+                endpoints.extend((canonical(place), True, sentence) for place in destinations)
 
         # Within one event, a name inside another name is the same spot, not a
         # second stop: the timeline once listed both "Waterdeep" and the
         # transcription slip "Waterdeep Adorn" for one sentence, which drew a
         # trip from Waterdeep to itself.
-        stops: list[str] = []
-        for raw in ordered:
-            name = canonical(raw).casefold()
-            if any(_same_spot(name, stop) for stop in stops):
+        names = {name.casefold() for name, _, _ in endpoints}
+        stops: set[str] = set()
+        for name, destination, sentence in endpoints:
+            node_id = make_node_id(name)
+            if node_id in stops or any(
+                len(other) < len(name) and _same_spot(name.casefold(), other) for other in names
+            ):
                 continue
-            stops.append(name)
-
-            node_id = make_node_id(canonical(raw))
+            stops.add(node_id)
             if node_id in nodes and (not journey or journey[-1][0] != node_id):
-                journey.append((node_id, event))
+                journey.append((node_id, destination, sentence, event.start_time))
 
-    for (source_id, _), (target_id, event) in zip(journey, journey[1:]):
-        if source_id == target_id:
+    for (source_id, *_), (target_id, destination, sentence, timestamp) in zip(journey, journey[1:]):
+        if not destination or source_id == target_id:
             continue
 
         # Text order is not always travel order ("reached Neverwinter, having
@@ -307,8 +344,8 @@ def generate_map(
                 source=source_id,
                 target=target_id,
                 relation=SpatialRelation.travelled_to,
-                evidence=(event.description or event.title)[:2000],
-                timestamp=event.start_time,
+                evidence=sentence[:2000],
+                timestamp=timestamp,
             )
             confirmed.add(edge_id)
         elif edge_id not in confirmed:

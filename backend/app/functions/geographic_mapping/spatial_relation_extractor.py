@@ -50,8 +50,10 @@ import json
 import os
 import re
 import urllib.request
+from typing import Iterator
 
 from app.base_models.map_models import SpatialRelation
+from app.functions.timeline.timeline_ai import TRAVEL_ACTION, occurring_clauses
 
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -84,7 +86,7 @@ CLAUSE_BREAK = re.compile(r"\b(?:and|or|but|then|while|after|before|because|so)\
 
 # A cue that is negated states the opposite: "Balgus is not in the tavern".
 # Checked on the few words just before the cue (one word may sit between, as
-# in "not really near"), and on trip markers ("we never left Waterdeep").
+# in "not really near"). Movement uses the timeline's full-clause guard.
 NEGATED_BEFORE = re.compile(r"(?:\b(?:not|never|no\s+longer|nowhere)|n't)\s+(?:[a-z']+\s+)?$")
 
 
@@ -165,10 +167,11 @@ def _cue_pattern(cue: str) -> str:
 # Movement direction comes from the word in front of each place, not from which
 # place is mentioned first: in "back to the tavern after leaving Greyspine
 # Manor" the trip runs Manor -> tavern although the tavern comes first.
-ORIGIN_MARKERS = [
-    "from", "leaving", "left", "out of", "departing", "departed",
+DEPARTURE_MARKERS = [
+    "leaving", "left", "departing", "departed",
     "exiting", "exited", "fleeing", "fled", "escaping", "escaped",
 ]
+ORIGIN_MARKERS = [*DEPARTURE_MARKERS, "from", "out of"]
 DESTINATION_MARKERS = [
     "to", "toward", "towards", "into", "onto", "reached", "reaching",
     "arrived at", "arrived in", "arrive at", "arrive in", "arriving at",
@@ -233,7 +236,7 @@ def _place_spans(sentence: str, places: list[str]) -> list[tuple[int, int, str]]
     lowered = sentence.casefold()
     spans: list[tuple[int, int, str]] = []
 
-    for place in set(places):
+    for place in {place.casefold(): place for place in places}.values():
         for match in re.finditer(rf"\b{re.escape(place.casefold())}\b", lowered):
             spans.append((match.start(), match.end(), place))
 
@@ -297,15 +300,31 @@ def extract_cue_relations(
     if not allow_travel:
         return []
 
-    origins = _marked_places(lowered, spans, ORIGIN_MARKERS)
-    destinations = _marked_places(lowered, spans, DESTINATION_MARKERS)
-
-    for origin in origins:
-        for destination in reversed(destinations):
-            if destination != origin:
-                return [(origin, SpatialRelation.travelled_to, destination)]
+    for origins, destinations in travel_endpoints(sentence, places):
+        for origin in origins:
+            for destination in reversed(destinations):
+                if destination != origin:
+                    return [(origin, SpatialRelation.travelled_to, destination)]
 
     return []
+
+
+def travel_endpoints(
+    sentence: str,
+    places: list[str],
+) -> Iterator[tuple[list[str], list[str]]]:
+    """Yield origin and destination mentions in clauses with movement evidence."""
+    for clause in occurring_clauses(sentence):
+        lowered = clause.casefold()
+        spans = _place_spans(clause, places)
+        if not spans:
+            continue
+        if not TRAVEL_ACTION.search(clause) and not _marked_places(lowered, spans, DEPARTURE_MARKERS):
+            continue
+        yield (
+            _marked_places(lowered, spans, ORIGIN_MARKERS),
+            _marked_places(lowered, spans, DESTINATION_MARKERS),
+        )
 
 
 def _marked_places(
@@ -319,15 +338,12 @@ def _marked_places(
 
     for marker in markers:
         for match in re.finditer(rf"\b{re.escape(marker)}\b", lowered):
-            if _negated(lowered, match.start()):
-                continue
-
-            following = [
-                span for span in spans
-                if span[0] >= match.end() and span[0] - match.end() <= MAX_CUE_GAP
-            ]
-            if following:
-                marked[following[0][0]] = following[0][2]
+            for start, _, place in spans:
+                if start >= match.end() and re.fullmatch(
+                    r"\s+(?:(?:the|a|an)\s+)?", lowered[match.end():start]
+                ):
+                    marked[start] = place
+                    break
 
     return [marked[position] for position in sorted(marked)]
 
@@ -360,7 +376,6 @@ def parse_validator_answer(answer: object) -> str:
 
 
 def _ollama_pair_relation(text: str, place_a: str, place_b: str) -> str:
-    # Imported here so the module stays importable without the settings stack.
     model = MAP_AI_MODEL
     if not model:
         from app.core.config import settings
@@ -467,6 +482,10 @@ def _validated_relation(
     """Ask about A -> B; confirm directional answers by asking B -> A."""
 
     travelled = SpatialRelation.travelled_to.value
+    travel = travel and any(
+        len({span[2] for span in _place_spans(clause, [place_a, place_b])}) == 2
+        for clause in occurring_clauses(sentence)
+    )
     answer = parse_validator_answer(llm(sentence, place_a, place_b))
 
     # A compass direction the sentence never mentions is no answer at all.
@@ -493,7 +512,7 @@ def _validated_relation(
 
     if relation == SpatialRelation.travelled_to:
         # Movement both ways in one sentence means the model ignored the order.
-        if parse_validator_answer(llm(sentence, place_b, place_a)) == travelled:
+        if not travel or parse_validator_answer(llm(sentence, place_b, place_a)) == travelled:
             return None
 
     return place_a, relation, place_b
