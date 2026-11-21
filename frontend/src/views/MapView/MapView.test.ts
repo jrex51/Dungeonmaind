@@ -135,7 +135,7 @@ describe('map page modes', () => {
   it('shows explicitly labeled sample data without requests or store contamination', async () => {
     route.query = { demo: 'sample' }
     const wrapper = mount(MapView)
-    expect(wrapper.text()).toContain('Sample demo — invented data, not extracted session results.')
+    expect(wrapper.text()).toContain('Sample demo with fictional locations and evidence.')
     expect(wrapper.text()).toContain('Willowbrook')
     expect(wrapper.get('.generate-button').attributes('disabled')).toBeDefined()
     expect(fetchMock).not.toHaveBeenCalled()
@@ -156,7 +156,7 @@ describe('map page modes', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
     await wrapper.get('.mode-panel button').trigger('click')
-    expect(wrapper.text()).toContain('Sample map data')
+    expect(wrapper.find('[aria-label="Sample map data"]').exists()).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     await wrapper.get('.mode-panel button').trigger('click')
     await flushPromises()
@@ -185,7 +185,10 @@ describe('map page modes', () => {
     }
     fetchMock.mockImplementation(async () => Response.json(realData))
     const wrapper = mount(MapView)
-    await wrapper.findAll('li button')[0]!.trigger('click')
+    const willowbrook = wrapper
+      .findAll('li button')
+      .find((button) => button.text() === 'Willowbrook')!
+    await willowbrook.trigger('click')
     expect(wrapper.get('[aria-label="Selection details"]').text()).toContain('Willowbrook')
     await wrapper.get('.mode-panel button').trigger('click')
     await flushPromises()

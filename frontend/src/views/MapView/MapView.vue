@@ -38,10 +38,7 @@ function setSampleMode(sample: boolean): void {
       <button type="button" class="back-button" @click="router.push({ name: 'home' })">
         ← Back to session
       </button>
-      <div>
-        <h1>Geographic Map</h1>
-        <p>Review locations and geographic relationships from the current session.</p>
-      </div>
+      <h1>Campaign Map</h1>
       <button
         type="button"
         class="generate-button"
@@ -54,14 +51,13 @@ function setSampleMode(sample: boolean): void {
 
     <section class="mode-panel" aria-label="Map data mode">
       <template v-if="sampleMode">
-        <p><strong>Sample demo — invented data, not extracted session results.</strong></p>
-        <p>Generation is disabled in demo mode. No map API requests are made.</p>
+        <p><strong>Sample demo with fictional locations and evidence.</strong></p>
         <button type="button" :disabled="busy" @click="setSampleMode(false)">
           Use session data
         </button>
       </template>
       <template v-else>
-        <p>Session data mode. Map generation runs only when you click Generate Map.</p>
+        <p>Current session</p>
         <button type="button" :disabled="busy" @click="setSampleMode(true)">
           Show sample demo
         </button>
@@ -99,8 +95,7 @@ function setSampleMode(sample: boolean): void {
       class="data-panel"
       :aria-label="sampleMode ? 'Sample map data' : 'Session map data'"
     >
-      <h2>{{ sampleMode ? 'Sample map data' : 'Session map data' }}</h2>
-      <p>
+      <p class="map-summary">
         {{ displayedMap.nodes.length }} locations · {{ displayedMap.edges.length }} relationships ·
         {{ displayedMap.source_segment_count }} source segments
       </p>
@@ -113,9 +108,9 @@ function setSampleMode(sample: boolean): void {
 
 <style scoped>
 .map-page {
-  width: min(1050px, calc(100% - 2rem));
-  margin: 2rem auto;
-  padding: 1.5rem;
+  width: min(1160px, calc(100% - 2rem));
+  margin: 1.5rem auto;
+  padding-bottom: 1.5rem;
   box-sizing: border-box;
 }
 
@@ -123,11 +118,11 @@ function setSampleMode(sample: boolean): void {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  border: 1px solid rgba(255, 239, 190, 0.25);
-  border-radius: 18px;
-  background: rgba(154, 124, 64, 0.94);
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #b98e5c;
+  border-radius: 8px;
+  background: #4e3022;
   color: #fff5d4;
   box-shadow: 0 8px 30px rgba(26, 14, 2, 0.38);
 }
@@ -136,6 +131,7 @@ function setSampleMode(sample: boolean): void {
   padding: 0;
   margin: 0;
   text-align: left;
+  color: inherit;
 }
 
 .map-page p {
@@ -145,17 +141,16 @@ function setSampleMode(sample: boolean): void {
 
 button {
   padding: 0.7rem 1rem;
-  border: 1px solid #4a575e;
-  border-radius: 10px;
-  color: white;
-  background: rgba(53, 73, 94, 0.95);
+  border: 1px solid #a67747;
+  border-radius: 5px;
+  color: #fff5d4;
+  background: #63432d;
   cursor: pointer;
   font-family: 'MedievalSharp', cursive;
 }
 
 .generate-button {
-  background: #8f3f28;
-  border-color: #6a3b1d;
+  background: #853c29;
 }
 
 button:disabled {
@@ -175,15 +170,29 @@ button:focus-visible {
 .mode-panel,
 .status-panel,
 .data-panel {
-  margin-top: 1.25rem;
-  padding: 1.5rem;
-  border-radius: 14px;
-  color: #392401;
-  background: rgba(224, 202, 139, 0.95);
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #a77b4e;
+  border-radius: 8px;
+  color: #422918;
+  background: #e9d3ab;
 }
 
 .mode-panel {
-  border: 2px solid #705820;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.mode-panel p {
+  margin: 0;
+}
+
+.map-summary {
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
 }
 
 .status-panel {
@@ -196,15 +205,23 @@ button:focus-visible {
 
 @media (max-width: 760px) {
   .map-page {
-    padding: 0;
+    width: calc(100% - 1.25rem);
+    margin-top: 0.65rem;
   }
 
   .map-header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0.75rem;
   }
 
-  button {
-    width: 100%;
+  .map-header h1 {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    font-size: 1.65rem;
+  }
+
+  .data-panel {
+    padding: 0.65rem;
   }
 }
 </style>
