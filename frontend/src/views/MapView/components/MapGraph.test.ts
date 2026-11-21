@@ -16,7 +16,6 @@ vi.mock('cytoscape', async (importOriginal) => {
         container: undefined,
         headless: true,
         styleEnabled: true,
-        layout: { name: 'preset' },
       })
       instances.push(graph)
       return graph
@@ -44,46 +43,65 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('MapGraph', () => {
-  it('synchronizes canvas selection, accessible buttons and details; clears on background and Escape', async () => {
+  it('synchronizes marker and dotted route taps with evidence, timestamps and keyboard buttons', async () => {
     const wrapper = mount(MapGraph, { props: { data: mapSample } })
     const graph = instances[0]!
-    graph.getElementById('sample-village').select()
+    expect(graph.getElementById('sample-village').style('shape')).toBe('diamond')
+    const route = graph.getElementById('sample-travel')
+    expect(route.style('line-dash-pattern')).toBe('1 8')
+    expect(route.style('line-cap')).toBe('round')
+    expect(route.style('target-arrow-shape')).toBe('none')
+    expect(graph.getElementById('sample-north')).toHaveLength(0)
+    graph.getElementById('sample-village').emit('tap')
     await wrapper.vm.$nextTick()
     const details = () => wrapper.get('[aria-label="Selection details"]').text()
     expect(details()).toContain('Willowbrook')
     expect(details()).toContain('Mentions3')
     expect(details()).toContain('00:00:10')
     expect(details()).toContain('00:02:00')
+    expect(details()).toContain(mapSample.edges[0]!.evidence)
+    expect(details()).toContain('00:00:30')
     expect(wrapper.get('[aria-pressed="true"]').text()).toContain('Willowbrook')
+    route.emit('tap')
+    await wrapper.vm.$nextTick()
+    expect(route.hasClass('highlighted')).toBe(true)
+    expect(graph.getElementById('sample-village').hasClass('highlighted')).toBe(false)
+    expect(details()).toContain('Willowbrook travelled to Silverwood Forest')
+    expect(details()).toContain(mapSample.edges[2]!.evidence)
+    expect(details()).toContain('00:02:00')
+    graph.emit('tap')
+    await wrapper.vm.$nextTick()
+    expect(details()).toContain('Select a location')
     const edgeButton = wrapper
       .findAll('li button')
       .find((button) => button.text().includes('north of'))!
     await edgeButton.trigger('click')
-    expect(graph.getElementById('sample-north').selected()).toBe(true)
-    expect(graph.getElementById('sample-village').selected()).toBe(false)
-    expect(details()).toContain('SourceSilverwood Forest')
-    expect(details()).toContain('TargetWillowbrook')
+    expect(details()).toContain('Silverwood Forest north of Willowbrook')
     expect(details()).toContain(mapSample.edges[0]!.evidence)
-    expect(details()).toContain('00:00:30')
-    graph.emit('tap')
-    await wrapper.vm.$nextTick()
-    expect(details()).toContain('Select a location')
-    await edgeButton.trigger('click')
     await wrapper.trigger('keydown', { key: 'Escape' })
-    expect(graph.elements(':selected')).toHaveLength(0)
+    expect(graph.elements('.highlighted')).toHaveLength(0)
     expect(details()).toContain('Select a location')
   })
 
-  it('fits on request and resize, destroys stale instances on data replacement and unmount', async () => {
+  it('zooms and pans with keyboard controls, fits on request and resize, and destroys stale areas', async () => {
     const wrapper = mount(MapGraph, { props: { data: structuredClone(mapSample) } })
     const graph = instances[0]!
+    graph.zoom(1)
+    await wrapper.get('[aria-label="Zoom in"]').trigger('click')
+    expect(graph.zoom()).toBeCloseTo(1.25)
+    await wrapper.get('[aria-label="Zoom out"]').trigger('click')
+    expect(graph.zoom()).toBeCloseTo(1)
+    const { y } = graph.pan()
+    await wrapper.get('.graph-canvas').trigger('keydown', { key: 'ArrowUp' })
+    expect(graph.pan().y).toBeCloseTo(y + 42)
+
     const fit = vi.spyOn(graph, 'fit')
     const resized = vi.spyOn(graph, 'resize')
-    await wrapper.get('.graph-toolbar button').trigger('click')
+    await wrapper.get('.view-controls button:last-child').trigger('click')
     expect(fit).toHaveBeenCalled()
     resize()
     expect(resized).toHaveBeenCalledTimes(2)
-    graph.getElementById('sample-village').select()
+    graph.getElementById('sample-village').emit('tap')
     await wrapper.setProps({
       data: {
         nodes: [
@@ -97,8 +115,11 @@ describe('MapGraph', () => {
     expect(disconnect).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).not.toContain('Willowbrook')
     expect(wrapper.get('[aria-label="Selection details"]').text()).toContain('Select a location')
+    expect(wrapper.get('[aria-label="Unplaced locations"]').text()).toContain('Session place')
+    expect(instances).toHaveLength(1)
+
+    await wrapper.setProps({ data: mapSample })
     const current = instances[1]!
-    expect(current.nodes().map((node) => node.id())).toEqual(['real'])
     wrapper.unmount()
     expect(current.destroyed()).toBe(true)
     expect(disconnect).toHaveBeenCalledTimes(2)
@@ -107,12 +128,14 @@ describe('MapGraph', () => {
   it('handles empty maps and clears stale selection when locations disappear', async () => {
     const wrapper = mount(MapGraph, { props: { data: structuredClone(mapSample) } })
     const graph = instances[0]!
-    graph.getElementById('sample-village').select()
+    graph.getElementById('sample-village').emit('tap')
     await wrapper.setProps({ data: { ...mapSample, nodes: [] } })
     expect(graph.destroyed()).toBe(true)
     expect(wrapper.text()).toContain('No locations to display.')
-    expect(wrapper.get('.graph-toolbar button').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('only shown in the relationship list')
+    expect(wrapper.find('.view-controls').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="Relationships"]').findAll('button')).toHaveLength(
+      mapSample.edges.length,
+    )
     await wrapper.setProps({ data: { nodes: [], edges: [], source_segment_count: 0 } })
     expect(wrapper.text()).toContain('No geographic relationships found.')
     expect(instances).toHaveLength(1)
@@ -122,7 +145,7 @@ describe('MapGraph', () => {
     const data = reactive(structuredClone(mapSample))
     const wrapper = mount(MapGraph, { props: { data } })
     const graph = instances[0]!
-    graph.getElementById('sample-village').select()
+    graph.getElementById('sample-village').emit('tap')
     data.nodes[0]!.name = 'Updated place'
     await wrapper.vm.$nextTick()
     expect(graph.destroyed()).toBe(true)
@@ -139,10 +162,57 @@ describe('MapGraph', () => {
     const wrapper = mount(MapGraph, { props: { data: { ...mapSample, edges: [edge] } } })
     const buttons = wrapper.findAll('li button')
     await buttons[buttons.length - 1]!.trigger('click')
-    expect(wrapper.get('[aria-label="Selection details"]').text()).toContain('Targetmissing')
+    expect(wrapper.get('[aria-label="Selection details"]').text()).toContain(
+      'Silverwood Forest north of missing',
+    )
     expect(wrapper.text()).toContain(edge.evidence)
     expect(wrapper.find('img').exists()).toBe(false)
-    await wrapper.findAll('.graph-toolbar button')[1]!.trigger('click')
+    await wrapper.get('.details-heading button').trigger('click')
     expect(wrapper.find('[aria-pressed="true"]').exists()).toBe(false)
+  })
+
+  it('shows unplaced locations separately with their relationship evidence', async () => {
+    const wrapper = mount(MapGraph, { props: { data: mapSample } })
+    const unplaced = wrapper.get('[aria-label="Unplaced locations"]')
+    expect(unplaced.findAll('button').map((button) => button.text())).toEqual(['Old Watchtower'])
+    expect(instances[0]!.getElementById('sample-tower')).toHaveLength(0)
+    await unplaced.get('button').trigger('click')
+    const details = wrapper.get('[aria-label="Selection details"]')
+    expect(details.text()).toContain('Old Watchtower')
+    expect(details.text()).toContain(mapSample.edges[1]!.evidence)
+    expect(details.text()).toContain('00:01:30')
+  })
+
+  it('switches independent areas and highlights the location selected through the index', async () => {
+    const secondArea = {
+      nodes: [
+        { ...mapSample.nodes[0]!, id: 'second:a', name: 'Second area' },
+        { ...mapSample.nodes[0]!, id: 'second:b', name: 'Second landmark' },
+      ],
+      edge: {
+        ...mapSample.edges[0]!,
+        id: 'second:direction',
+        source: 'second:a',
+        target: 'second:b',
+      },
+    }
+    const wrapper = mount(MapGraph, {
+      props: {
+        data: {
+          ...mapSample,
+          nodes: [...mapSample.nodes, ...secondArea.nodes],
+          edges: [...mapSample.edges, secondArea.edge],
+        },
+      },
+    })
+    const location = wrapper.findAll('li button').find((button) => button.text() === 'Second area')!
+    await location.trigger('click')
+    expect(instances[0]!.destroyed()).toBe(true)
+    expect(instances[1]!.getElementById('second:a').hasClass('highlighted')).toBe(true)
+    expect(instances[1]!.getElementById('sample-village')).toHaveLength(0)
+    await wrapper.get('select').setValue('0')
+    expect(instances[1]!.destroyed()).toBe(true)
+    expect(instances[2]!.getElementById('sample-village')).toHaveLength(1)
+    expect(wrapper.get('[aria-label="Selection details"]').text()).toContain('Select a location')
   })
 })
